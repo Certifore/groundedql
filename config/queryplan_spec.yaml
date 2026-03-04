@@ -1,0 +1,220 @@
+version: 1
+name: QueryPlan Spec
+description: >
+  Instructions for generating QueryPlan JSON for the dsl_compiler library.
+  Output must be VALID JSON only (no markdown).
+
+system_instructions: |
+  You are a QueryPlan generator.
+  Your job is to convert a natural-language question into a JSON QueryPlan object.
+  You MUST output JSON only.
+
+  IMPORTANT:
+  - Use ONLY the logical table + column names from the provided schema.
+  - Do NOT use physical DB column names or DB table names.
+  - Do NOT write SQL.
+  - Prefer deterministic, consistent plans: same question -> same JSON.
+  - Always include limit + offset unless rollup is used (rollup queries typically return 1 row).
+
+naming_conventions: |
+  - dataset: one of the schema table names (e.g., "assets", "work_orders")
+  - columns: use schema logical column names exactly (snake_case)
+  - always qualify columns as "<table>.<column>" in advanced plans (recommended)
+
+defaults:
+  limit: 100
+  offset: 0
+  max_limit: 1000
+
+semantics_rules: |
+  - When a question asks "how many work orders", interpret as COUNT_DISTINCT(work_order_id),
+    because the work orders table may have multiple rows per work order id (phases/steps).
+  - If the user asks for "average per building" or any "average of grouped values", use rollup.
+  - Use contains for fuzzy matching building names and keywords (ILIKE %...%).
+  - Use is_not_null when you need to exclude missing values.
+
+legacy_queryplan_format:
+  description: >
+    This format is easier for LLMs and should be used for simple analytics queries.
+    It will be compiled internally to the advanced format.
+  shape:
+    version: "1.0"
+    dataset: "<string>"
+    dimensions:
+      - field: "<column>"
+        alias: "<optional identifier>"
+    metrics:
+      - agg: "count | count_distinct | sum | avg | min | max"
+        field: "<column or *>"
+        alias: "<identifier>"
+    filters:
+      - field: "<column>"
+        op: "<operator>"
+        value: "<any or null>"
+    order_by:
+      - by: "<alias or column>"
+        dir: "asc | desc"
+    limit: "<int>"
+    offset: "<int>"
+    rollup: "<optional rollup block>"
+
+advanced_queryplan_format:
+  description: >
+    This format supports the full feature set: CTEs, set operations, CASE, EXISTS, windows, etc.
+  top_level_keys:
+    - dataset
+    - select
+    - joins
+    - where
+    - group_by
+    - having
+    - order_by
+    - limit
+    - offset
+    - distinct
+    - rollup
+    - with
+    - set_op
+
+operators_supported:
+  comparison:
+    - "="
+    - "!="
+    - ">"
+    - ">="
+    - "<"
+    - "<="
+  membership:
+    - "in"
+    - "not_in"
+  text:
+    - "contains"
+    - "not_contains"
+    - "starts_with"
+    - "ends_with"
+  null_checks:
+    - "is_null"
+    - "is_not_null"
+
+expression_nodes:
+  col:
+    example: { "col": "assets.asset_tag" }
+  lit:
+    example: { "lit": "CHEN" }
+  func:
+    example: { "func": "count", "args": [] }
+  count_distinct:
+    example: { "func": "count_distinct", "args": [ { "col": "work_orders.work_order_id" } ] }
+  case:
+    example:
+      case:
+        whens:
+          - when: { cmp: { left: { col: "assets.keyword_of_asset" }, op: "contains", right: "FIRE EXTINGUISHER" } }
+            then: { lit: "fire_extinguisher" }
+        else: { lit: "other" }
+  cast:
+    example:
+      cast:
+        expr: { col: "assets.replacement_year" }
+        type: "integer"
+  over:
+    example:
+      over:
+        expr: { func: "row_number", args: [] }
+        partition_by: [ { col: "work_orders.building_id" } ]
+        order_by:
+          - expr: { col: "work_orders.entry_date" }
+            dir: "desc"
+
+boolean_nodes:
+  and:
+    example: { "and": [ { "cmp": { "left": { "col": "assets.building_name" }, "op": "contains", "right": "CHEN" } } ] }
+  or:
+    example: { "or": [ ... ] }
+  not:
+    example: { "not": { "cmp": { "left": { "col": "assets.asset_tag" }, "op": "is_null" } } }
+  cmp:
+    example: { "cmp": { "left": { "col": "assets.building_name" }, "op": "contains", "right": "CHEN" } }
+  exists:
+    example:
+      exists:
+        plan:
+          dataset: "work_orders"
+          where:
+            cmp:
+              left: { col: "work_orders.building_name" }
+              op: "contains"
+              right: "CHEN"
+          limit: 1
+          offset: 0
+
+rollup:
+  description: >
+    rollup runs an outer aggregation over the inner grouped query output.
+    Use it for: avg of counts, sum of sums, etc.
+  shape:
+    metrics:
+      - agg: "avg | sum | min | max | count | count_distinct"
+        field: "<inner alias>"
+        alias: "<identifier>"
+    dimensions: "<optional outer grouping>"
+    filters: "<optional filters on inner outputs>"
+    order_by: "<optional>"
+    limit: "<int, often 1>"
+    offset: "<int>"
+
+with_ctes:
+  description: >
+    Use WITH when you need multi-step logic and want readable deterministic plans.
+  shape:
+    - name: "<identifier>"
+      plan: "<QueryPlan>"
+
+set_operations:
+  description: >
+    Use set_op for union/intersect/except of two SELECT queries with the same columns.
+  shape:
+    set_op:
+      op: "union | union_all | intersect | except"
+      left: "<QueryPlan>"
+      right: "<QueryPlan>"
+
+examples:
+  - question: "Show me all fire extinguishers in the Chen building"
+    plan:
+      version: "1.0"
+      dataset: "assets"
+      dimensions: []
+      metrics: []
+      filters:
+        - field: "building_name"
+          op: "contains"
+          value: "CHEN"
+        - field: "keyword_of_asset"
+          op: "contains"
+          value: "FIRE EXTINGUISHER"
+      limit: 100
+      offset: 0
+
+  - question: "What's the average number of work orders per building across campus?"
+    plan:
+      version: "1.0"
+      dataset: "work_orders"
+      dimensions:
+        - field: "building_id"
+          alias: "building_id"
+      metrics:
+        - agg: "count_distinct"
+          field: "work_order_id"
+          alias: "work_orders_per_building"
+      filters:
+        - field: "building_id"
+          op: "is_not_null"
+          value: null
+      rollup:
+        metrics:
+          - agg: "avg"
+            field: "work_orders_per_building"
+            alias: "avg_work_orders_per_building"
+        limit: 1
+        offset: 0

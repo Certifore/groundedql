@@ -1,0 +1,184 @@
+[
+    {
+      "name": "cte_top_buildings",
+      "question": "Top 5 buildings by distinct work orders (CTE)",
+      "plan": {
+        "with": [
+          {
+            "name": "per_building",
+            "plan": {
+              "version": "1.0",
+              "dataset": "work_orders",
+              "dimensions": [
+                { "field": "building_id", "alias": "building_id" }
+              ],
+              "metrics": [
+                { "agg": "count_distinct", "field": "work_order_id", "alias": "work_orders" }
+              ],
+              "filters": [
+                { "field": "building_id", "op": "is_not_null", "value": null }
+              ],
+              "limit": 1000,
+              "offset": 0
+            }
+          }
+        ],
+        "dataset": "per_building",
+        "select": [
+          { "expr": { "col": "per_building.building_id" }, "alias": "building_id" },
+          { "expr": { "col": "per_building.work_orders" }, "alias": "work_orders" }
+        ],
+        "order_by": [
+          { "by": "work_orders", "dir": "desc" }
+        ],
+        "limit": 5,
+        "offset": 0
+      }
+    },
+  
+    {
+      "name": "setop_union_assets_chen_beckman",
+      "question": "Union assets in CHEN and BECKMAN (set_op UNION ALL)",
+      "plan": {
+        "set_op": {
+          "op": "union_all",
+          "left": {
+            "dataset": "assets",
+            "select": [
+              { "expr": { "col": "assets.asset_tag" }, "alias": "asset_tag" },
+              { "expr": { "col": "assets.building_name" }, "alias": "building_name" }
+            ],
+            "where": {
+              "cmp": { "left": { "col": "assets.building_name" }, "op": "contains", "right": "CHEN" }
+            },
+            "limit": 50,
+            "offset": 0
+          },
+          "right": {
+            "dataset": "assets",
+            "select": [
+              { "expr": { "col": "assets.asset_tag" }, "alias": "asset_tag" },
+              { "expr": { "col": "assets.building_name" }, "alias": "building_name" }
+            ],
+            "where": {
+              "cmp": { "left": { "col": "assets.building_name" }, "op": "contains", "right": "BECKMAN" }
+            },
+            "limit": 50,
+            "offset": 0
+          }
+        },
+        "order_by": [
+          { "by": "building_name", "dir": "asc" },
+          { "by": "asset_tag", "dir": "asc" }
+        ],
+        "limit": 20,
+        "offset": 0
+      }
+    },
+  
+    {
+      "name": "case_asset_category",
+      "question": "Classify assets as fire extinguisher vs other (CASE)",
+      "plan": {
+        "dataset": "assets",
+        "select": [
+          { "expr": { "col": "assets.asset_tag" }, "alias": "asset_tag" },
+          { "expr": { "col": "assets.keyword_of_asset" }, "alias": "keyword_of_asset" },
+          {
+            "expr": {
+              "case": {
+                "whens": [
+                  {
+                    "when": {
+                      "cmp": {
+                        "left": { "col": "assets.keyword_of_asset" },
+                        "op": "contains",
+                        "right": "FIRE EXTINGUISHER"
+                      }
+                    },
+                    "then": { "lit": "fire_extinguisher" }
+                  }
+                ],
+                "else": { "lit": "other" }
+              }
+            },
+            "alias": "asset_category"
+          }
+        ],
+        "where": {
+          "cmp": { "left": { "col": "assets.building_name" }, "op": "contains", "right": "CHEN" }
+        },
+        "order_by": [
+          { "by": { "col": "assets.asset_tag" }, "dir": "asc" }
+        ],
+        "limit": 20,
+        "offset": 0
+      }
+    },
+  
+    {
+      "name": "exists_any_chen_workorders",
+      "question": "Return 10 assets in CHEN only if there exists ANY CHEN work order (EXISTS)",
+      "plan": {
+        "dataset": "assets",
+        "select": [
+          { "expr": { "col": "assets.asset_tag" }, "alias": "asset_tag" },
+          { "expr": { "col": "assets.building_name" }, "alias": "building_name" }
+        ],
+        "where": {
+          "and": [
+            {
+              "cmp": { "left": { "col": "assets.building_name" }, "op": "contains", "right": "CHEN" }
+            },
+            {
+              "exists": {
+                "plan": {
+                  "dataset": "work_orders",
+                  "where": {
+                    "cmp": { "left": { "col": "work_orders.building_name" }, "op": "contains", "right": "CHEN" }
+                  },
+                  "limit": 1,
+                  "offset": 0
+                }
+              }
+            }
+          ]
+        },
+        "limit": 10,
+        "offset": 0
+      }
+    },
+  
+    {
+      "name": "window_row_number_recent_workorders",
+      "question": "Show recent work orders in CHEN with row_number() over(partition by building_id order by entry_date desc) (WINDOW)",
+      "plan": {
+        "dataset": "work_orders",
+        "select": [
+          { "expr": { "col": "work_orders.work_order_id" }, "alias": "work_order_id" },
+          { "expr": { "col": "work_orders.building_id" }, "alias": "building_id" },
+          { "expr": { "col": "work_orders.entry_date" }, "alias": "entry_date" },
+          {
+            "expr": {
+              "over": {
+                "expr": { "func": "row_number", "args": [] },
+                "partition_by": [ { "col": "work_orders.building_id" } ],
+                "order_by": [
+                  { "expr": { "col": "work_orders.entry_date" }, "dir": "desc" }
+                ]
+              }
+            },
+            "alias": "rn"
+          }
+        ],
+        "where": {
+          "cmp": { "left": { "col": "work_orders.building_name" }, "op": "contains", "right": "CHEN" }
+        },
+        "order_by": [
+          { "by": { "col": "work_orders.entry_date" }, "dir": "desc" }
+        ],
+        "limit": 20,
+        "offset": 0
+      }
+    }
+  ]

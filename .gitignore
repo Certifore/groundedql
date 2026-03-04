@@ -1,0 +1,35 @@
+# --- Secrets / local config ---
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# --- Python virtualenvs ---
+.venv/
+venv/
+env/
+env_dsl/
+
+# --- Python cache / bytecode ---
+__pycache__/
+*.py[cod]
+
+# --- Packaging / builds ---
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# --- Test outputs ---
+test/**/suite_results.json
+test/**/suite_results*.json
+
+# --- OS / editor junk ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~

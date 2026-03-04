@@ -1,0 +1,288 @@
+version: 1
+dialect: postgres
+
+tables:
+  - name: assets
+    db_table: '"finalAssets"'
+    description: >
+      Stores information about assets.
+
+    columns:
+      - name: asset_tag
+        db_column: asset_tag
+        type: varchar
+        description: >
+          Unique tag or identifier assigned to the asset.
+          Example: 'ASSET-001234'
+
+      - name: asset_type
+        db_column: asset_type
+        type: varchar
+        description: >
+          Specific type of asset.
+          Example: 'SERIALIZED'
+
+      - name: description_of_asset
+        db_column: description_of_asset
+        type: varchar
+        description: >
+          Brief description of the asset (may contain keywords).
+          Example: 'FIRE EXTINGUISHER, DRY CHEMICAL - ELEVATOR MECHANICAL ROOM'
+
+      - name: region_code
+        db_column: region_code
+        type: varchar
+        description: >
+          Region code where the asset is located.
+          Example: '10'
+
+      - name: facility_id
+        db_column: facility_id
+        type: varchar
+        description: >
+          Facility ID for the asset.
+          Example: '11'
+
+      - name: building_name
+        db_column: building_name
+        type: varchar
+        description: >
+          Name of the building where the asset can be found.
+          Example: 'CHEN NEUROSCIENCE RESEARCH BLDG'
+
+      - name: building_code
+        db_column: building_code
+        type: varchar
+        description: >
+          Code of the building where the asset can be found.
+          Example: '99'
+
+      - name: date_purchased
+        db_column: date_purchased
+        type: timestamp
+        description: >
+          Date the asset was purchased.
+          Format: YYYY-MM-DDTHH:mm:ss
+
+      - name: date_last_modified
+        db_column: date_last_modified
+        type: timestamp
+        description: >
+          Date the asset details were last modified.
+          Format: YYYY-MM-DDTHH:mm:ss
+
+      - name: location_code
+        db_column: location_code
+        type: varchar
+        description: >
+          Location code for the asset.
+          Example: 'B158ME'
+
+      - name: location_id
+        db_column: location_id
+        type: varchar
+        description: >
+          Location ID for the asset.
+          Example: '207'
+
+      - name: asset_group
+        db_column: asset_group
+        type: varchar
+        description: >
+          Group of assets this asset belongs to.
+
+      - name: tag_number
+        db_column: tag_number
+        type: varchar
+        description: >
+          Tag number of the asset.
+          Example: '9922'
+
+      - name: description_of_asset_in_detail
+        db_column: description_of_asset_in_detail
+        type: varchar
+        description: >
+          Detailed description of the asset.
+          Example: 'SIZE: 2.5", FOR SOUTH OF COMPUTER ROOM ONLY - NOT IN COMPUTER ROOM'
+
+      - name: keyword_of_asset
+        db_column: keyword_of_asset
+        type: varchar
+        description: >
+          Keyword(s) representing the asset type.
+          Example: 'FIRE EXTINGUISHER'
+
+      - name: location_of_asset_in_building
+        db_column: location_of_asset_in_building
+        type: varchar
+        description: >
+          Specific location of the asset within the building.
+          Example: 'RECEPTION'
+
+      - name: replacement_year
+        db_column: replacement_year
+        type: integer
+        description: >
+          Year the asset is scheduled for maintenance or replacement.
+          Example: 2032
+
+      - name: asset_status
+        db_column: asset_status
+        type: varchar
+        description: >
+          Maintenance status of the asset based on replacement_year.
+          Example: 'deferred' or 'not deferred'
+
+
+  - name: work_orders
+    db_table: '"finalWorkOrder"'
+    description: >
+      Stores work order phases related to assets.
+
+    columns:
+      - name: work_order_id
+        db_column: '"workOrderId"'
+        type: varchar
+        description: >
+          Unique identifier for the work order. Work orders with the same ID are related
+          to the same problem but may represent different steps toward resolution.
+          Example: 'WO12345'
+
+      - name: phase_id
+        db_column: '"phaseId"'
+        type: varchar
+        description: >
+          Identifier for the phase of a work order (stage in workflow).
+          Example: '1'
+
+      - name: work_order_description
+        db_column: '"workOrderDescription"'
+        type: varchar
+        description: >
+          Short description of the work order provided by the technician.
+          Example: 'Replaced broken window lock'
+
+      - name: shop_id
+        db_column: '"shopId"'
+        type: varchar
+        description: >
+          Unique ID of the shop or department responsible for this phase.
+          Example: '100'
+
+      - name: shop_name
+        db_column: '"shopName"'
+        type: varchar
+        description: >
+          Full name of the shop or department.
+          Example: 'Fire alarm shop'
+
+      - name: status_code
+        db_column: '"statusCode"'
+        type: varchar
+        description: >
+          Current status of the work order.
+          Example: 'CLOSED', 'COMPLETE', 'CANCELLED', 'SCHEDULED'
+
+      - name: priority_code
+        db_column: '"priorityCode"'
+        type: varchar
+        description: >
+          Priority level assigned to the work order.
+          Example: '1-EMERGENCY', '2-URGENT', '3-CALENDARED', '4-ROUTINE'
+
+      - name: order_type
+        db_column: '"orderType"'
+        type: varchar
+        description: >
+          General type of work order.
+          Example: 'PLANNED', 'HOUSING', 'SUPPORT', 'UNPLANNED'
+
+      - name: order_category
+        db_column: '"orderCategory"'
+        type: varchar
+        description: >
+          Specific category within the order type.
+          Example: 'PREVENTIVE', 'ROUTINE'
+
+      - name: edit_date
+        db_column: '"editDate"'
+        type: timestamp
+        description: >
+          Date the work order was last modified.
+          Format: YYYY-MM-DDTHH:mm:ss
+
+      - name: entry_date
+        db_column: '"entryDate"'
+        type: timestamp
+        description: >
+          Date the work order was entered into the database.
+          Format: YYYY-MM-DDTHH:mm:ss
+
+      - name: long_desc
+        db_column: '"longDesc"'
+        type: varchar
+        description: >
+          Detailed description associated with the work order phase.
+
+      - name: asset_tag
+        db_column: '"assetTag"'
+        type: varchar
+        description: >
+          Asset tag or identifier referenced by the work order.
+          Example: 'ASSET-001234'
+
+      - name: floor_id
+        db_column: '"floorId"'
+        type: varchar
+        description: >
+          Floor number where the work occurred.
+          Example: '3'
+
+      - name: room_number
+        db_column: '"roomNumber"'
+        type: varchar
+        description: >
+          Room number where the work order took place.
+          Example: 'B123'
+
+      - name: building_id
+        db_column: '"buildingId"'
+        type: varchar
+        description: >
+          Building identifier where the work occurred.
+          Example: '310'
+
+      - name: building_name
+        db_column: '"buildingName"'
+        type: varchar
+        description: >
+          Full name of the building.
+          Example: 'Beckman institute'
+
+      - name: worker_id
+        db_column: '"workerId"'
+        type: varchar
+        description: >
+          Unique ID of the worker responsible for this phase.
+          Example: '2215629'
+
+      - name: worker_name
+        db_column: '"workerName"'
+        type: varchar
+        description: >
+          Full name of the worker responsible for this phase.
+          Example: 'John Smith'
+
+
+# Soft link used by the compiler for deterministic joins (NOT enforced by DB).
+# Keep join_type: left because many work_orders.asset_tag values are missing in assets.asset_tag.
+links:
+  - name: work_orders_to_assets_by_asset_tag
+    from_table: work_orders
+    to_table: assets
+    join_type: left
+    optional: true
+    on:
+      - left: work_orders.asset_tag
+        op: "="
+        right: assets.asset_tag
