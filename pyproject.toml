@@ -39,6 +39,7 @@ Issues = "https://github.com/<your-org-or-user>/dsl_compiler/issues"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["dsl_compiler*"]
+exclude = ["test*", "tests*"]
 
 # Include your YAML files in source distributions AND wheels.
 # Easiest approach without moving files:
@@ -46,4 +47,4 @@ include = ["dsl_compiler*"]
 include-package-data = true
 
 [tool.setuptools.data-files]
-"config" = ["config/*.yaml"]
+"config" = ["config/queryplan_spec.yaml"]

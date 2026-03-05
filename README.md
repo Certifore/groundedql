@@ -4,7 +4,7 @@
 Deterministic, schema-validated JSON → SQL for Postgres.  
 Instead of letting an LLM generate free-form SQL, the LLM outputs a **QueryPlan JSON** (DSL), and this library compiles it into parameterized SQL and executes it safely.
 
-> **Status:** Not published to PyPI yet. Install from source (clone this repo).
+> **Status:** Not published to PyPI yet.
 
 ---
 
@@ -67,15 +67,21 @@ test_main.py
 
 ## Installation (from source)
 
-### 1) Clone the repo
+> Not on PyPI yet — for now users install from source.
+
+### Option A (recommended for development): Editable install (changes stay in sync)
+
+An editable install links the installed package to your local working copy.  
+That means if you edit the library code, your project will pick up changes immediately (restart your Python process/server).
+
+1) Clone the repo:
+
 ```bash
 git clone <YOUR_REPO_URL>
 cd dsl_compiler
 ````
 
-### 2) Create a virtualenv and install in editable mode
-
-Editable install lets you import `dsl_compiler` from anywhere, and changes you make in the repo immediately take effect.
+2. Create a virtualenv and install in editable mode:
 
 ```bash
 python -m venv .venv
@@ -84,11 +90,47 @@ pip install -U pip
 pip install -e .
 ```
 
-> Alternatively (not recommended for development), you can install only dependencies:
+✅ Result: `import dsl_compiler` works from anywhere inside that virtualenv, and code changes in this repo are reflected immediately.
+
+**Using it from another project (recommended dev workflow):**
+
+* Activate your other project’s virtualenv
+* Install this repo by path in editable mode:
 
 ```bash
-pip install -r requirements.txt
+pip install -e /absolute/path/to/dsl_compiler
 ```
+
+Now updates to `dsl_compiler` are automatically “in sync” for that project too.
+
+---
+
+### Option B: Non-editable install (stable snapshot)
+
+Use this if you want a fixed copy of the code (changes to the repo won’t affect your environment until you reinstall):
+
+```bash
+pip install .
+```
+
+To pick up updates later:
+
+```bash
+pip install --upgrade .
+```
+
+---
+
+### Option C: Install from Git (no PyPI)
+
+If the repo is hosted on GitHub, users can install directly:
+
+```bash
+pip install git+https://github.com/<user>/<repo>.git
+```
+
+This installs a snapshot. To get updates later, rerun the command.
+For reproducibility, pin to a tag/commit (recommended once you start releases).
 
 ---
 
@@ -277,6 +319,4 @@ Writes:
 MIT (recommended). Add a `LICENSE` file and update `pyproject.toml` accordingly.
 
 ```
-
-If you want, I can also add a short “**Troubleshooting**” section (common issues: wrong DB_PORT for Supabase pooler, schema.yaml paths, table case-sensitivity) since you already ran into those.
 ```

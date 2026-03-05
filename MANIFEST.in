@@ -1,2 +1,6 @@
 include README.md
-recursive-include config *.yaml
+include config/queryplan_spec.yaml
+
+exclude config/schema.yaml
+prune test
+prune tests
