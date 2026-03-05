@@ -2,7 +2,7 @@ version: 1
 name: QueryPlan Spec
 description: >
   Instructions for generating QueryPlan JSON for the dsl_compiler library.
-  Output must be VALID JSON only (no markdown).
+  Output MUST be VALID JSON only (no markdown, no prose, no SQL).
 
 system_instructions: |
   You are a QueryPlan generator.
@@ -10,29 +10,186 @@ system_instructions: |
   You MUST output JSON only.
 
   IMPORTANT:
-  - Use ONLY the logical table + column names from the provided schema.
-  - Do NOT use physical DB column names or DB table names.
+  - Use ONLY the logical table + column names from the provided schema.yaml.
+  - Do NOT use physical DB table names or physical DB column names.
   - Do NOT write SQL.
   - Prefer deterministic, consistent plans: same question -> same JSON.
-  - Always include limit + offset unless rollup is used (rollup queries typically return 1 row).
+  - Always include limit + offset at the top-level plan.
+  - If rollup is used, rollup queries typically return 1 row (rollup.limit=1, rollup.offset=0).
+  - Never output additional keys not defined by the format (unless the schema explicitly allows them).
 
 naming_conventions: |
   - dataset: one of the schema table names (e.g., "assets", "work_orders")
   - columns: use schema logical column names exactly (snake_case)
-  - always qualify columns as "<table>.<column>" in advanced plans (recommended)
+  - legacy format uses unqualified logical column names (e.g., "building_id")
+  - advanced format uses expression nodes and fully qualified column refs (e.g., { "col": "work_orders.building_id" })
 
 defaults:
   limit: 100
   offset: 0
   max_limit: 1000
 
+field_qualification_rule: |
+  Legacy QueryPlan format:
+  - metrics[*].field and dimensions[*].field MUST be unqualified logical column names (e.g., "building_id").
+  Advanced QueryPlan format:
+  - use expression nodes and fully qualify columns (e.g., { "col": "work_orders.building_id" }).
+  Do NOT mix formats.
+
+# -----------------------------------------------------------------------------
+# COMPILATION MENTAL MODEL (TEMPLATES ONLY — NEVER OUTPUT SQL)
+# -----------------------------------------------------------------------------
+compilation_model: |
+  The compiler is deterministic. Think of QueryPlan as a declarative description
+  that compiles into a fixed SQL shape.
+
+  NEVER output SQL. The following templates are ONLY to understand how to structure JSON.
+
+  BASE (no rollup):
+    SELECT <dimensions...>, <metrics...>
+    FROM <dataset>
+    WHERE <filters...>
+    GROUP BY <dimensions...>            (only if dimensions is non-empty)
+    ORDER BY <order_by...>
+    LIMIT <limit> OFFSET <offset>
+
+  METRICS compile to expressions:
+    count(field)            -> COUNT(field) or COUNT(*) if field == "*"
+    count_distinct(field)   -> COUNT(DISTINCT field)      (field MUST be a real column)
+    sum(field)              -> SUM(field)
+    avg(field)              -> AVG(field)
+    min(field)              -> MIN(field)
+    max(field)              -> MAX(field)
+
+  ROLLUP (outer aggregation over the inner grouped result):
+    WITH __inner AS (
+      <BASE query producing dimension output columns + metric aliases>
+    )
+    SELECT <rollup.metrics expressions over __inner output columns>
+    FROM __inner
+    WHERE <rollup.filters...>           (optional; filters on inner output columns)
+    GROUP BY <rollup.dimensions...>     (optional; group rollup results)
+    ORDER BY <rollup.order_by...>
+    LIMIT <rollup.limit> OFFSET <rollup.offset>
+
+  CRITICAL:
+  - rollup.metrics[*].field refers to an INNER OUTPUT COLUMN NAME (usually a metric alias),
+    NOT a raw dataset column name.
+
+# -----------------------------------------------------------------------------
+# HARD INVARIANTS (THE CONTRACT — DO NOT GUESS)
+# -----------------------------------------------------------------------------
+structural_invariants: |
+  Output MUST match these invariants exactly:
+
+  DATASET
+  - plan.dataset MUST be one of the logical schema table names (e.g., "assets", "work_orders").
+
+  DIMENSIONS
+  - plan.dimensions MUST be a list of objects.
+  - Each dimension MUST be: { "field": "<logical_column>", "alias": "<string>" }
+  - "alias" is REQUIRED for deterministic output. If not provided, set alias = field.
+
+  METRICS
+  - plan.metrics MUST be a list of objects.
+  - Each metric MUST be: { "agg": "<agg>", "field": "<logical_column_or_*>", "alias": "<string>" }
+  - "alias" MUST always be present and unique.
+  - Allowed fields:
+    - for agg="count": field may be "*" or a logical column
+    - for agg="count_distinct": field MUST be a logical column (NOT "*")
+    - for agg in ["sum","avg","min","max"]: field MUST be a logical column (NOT "*")
+
+  FILTERS
+  - plan.filters MUST be a list of objects:
+      { "field": "<logical_column>", "op": "<operator>", "value": <any_or_null> }
+  - "contains" means case-insensitive substring match (ILIKE %value%) at compile-time.
+
+  ORDER_BY
+  - plan.order_by MUST reference existing output column names:
+    - either a dimension alias, or a metric alias.
+    - NEVER order_by a raw dataset column name unless it is also selected as a dimension alias.
+
+  LIMIT/OFFSET
+  - limit and offset are OPTIONAL.
+  - If the user asks for "all", "across campus", or any aggregate over ALL rows (e.g., rollup),
+    OMIT limit entirely from the inner plan. The compiler will emit no LIMIT clause.
+  - If the user asks for "top N" or a specific count, set limit=N.
+  - rollup.limit is also optional. For scalar rollups (single result row), set rollup.limit=1.
+    For rollups that return multiple groups, omit rollup.limit.
+
+  - Always include plan.limit and plan.offset.
+  - plan.limit must be <= defaults.max_limit unless explicitly overridden by the user.
+
+  ROLLUP
+  - If plan.rollup is present, it MUST be an object with:
+      rollup.metrics: [ { "agg": ..., "field": "<inner_alias>", "alias": ... }, ... ]
+      rollup.limit, rollup.offset
+  - rollup.metrics MUST be non-empty.
+  - rollup.metrics[*].field MUST refer to:
+      (a) a metric alias produced by plan.metrics, OR
+      (b) a dimension alias produced by plan.dimensions
+    It MUST NOT refer to a raw dataset column (unless that column was explicitly output as a dimension alias).
+
+# -----------------------------------------------------------------------------
+# GENERIC PLAN CONSTRUCTION (SCALABLE — NOT PER-QUESTION PATTERNS)
+# -----------------------------------------------------------------------------
+plan_construction_procedure: |
+  Build the QueryPlan in this order:
+
+  1) Choose dataset:
+     - Pick the ONE dataset that contains the needed information ("assets" or "work_orders").
+     - If the question requires both, use advanced format (joins/links/with).
+
+  2) Extract filters:
+     - Convert constraints into filters using logical field names.
+     - For fuzzy text constraints (building name, keywords), use op="contains".
+     - If excluding missing values is necessary for correctness, add op="is_not_null".
+
+  3) Decide output shape:
+     - If the question asks for a LIST of entities: use dimensions + optional metrics.
+     - If the question asks for a SINGLE scalar: usually metrics only (no dimensions),
+       OR dimensions + rollup (if it is an "aggregate of grouped values").
+
+  4) Decide grouping:
+     - If the question says "by X", "per X", "grouped by X": put X in dimensions.
+     - If there are dimensions, the base query is grouped.
+
+  5) Decide metrics:
+     - Use exactly the aggregations requested.
+     - Always give each metric an alias.
+     - For "how many work orders": use count_distinct(work_order_id) per semantics_rules.
+
+  6) If the question is "average of grouped values":
+     - Inner: group by the dimension and compute the per-group metric with an alias.
+     - Rollup: compute avg over that INNER metric alias.
+     - Output should usually be 1 row: rollup.limit=1, rollup.offset=0.
+
+  7) Order + limit:
+     - For "top N": order_by metric alias desc + limit=N
+     - Otherwise keep order_by empty unless asked.
+
+  8) Decide limit:
+     - If rollup is present (aggregate over all grouped rows): OMIT limit from the inner plan.
+     - If user asks for "top N": set limit=N.
+     - If user asks for a list with no size constraint: set limit=100 (default).
+     - rollup.limit=1 when the rollup returns a single scalar (e.g., a single avg).
+
+# -----------------------------------------------------------------------------
+# SEMANTICS (DOMAIN INTERPRETATION RULES)
+# -----------------------------------------------------------------------------
 semantics_rules: |
   - When a question asks "how many work orders", interpret as COUNT_DISTINCT(work_order_id),
-    because the work orders table may have multiple rows per work order id (phases/steps).
-  - If the user asks for "average per building" or any "average of grouped values", use rollup.
-  - Use contains for fuzzy matching building names and keywords (ILIKE %...%).
-  - Use is_not_null when you need to exclude missing values.
+    because the work_orders dataset may contain multiple rows per work_order_id (phases/steps).
+  - If the user asks for "average per building" or any "average of grouped values", use rollup:
+      inner metrics compute per-building counts,
+      rollup.metrics computes avg across those per-building counts.
+  - Use contains for fuzzy matching building names and keywords (compiled as ILIKE %...%).
+  - Use is_not_null when you need to exclude missing values for correctness.
+  - Do NOT use avg(*) or avg(null). avg/sum/min/max require a real logical column field.
 
+# -----------------------------------------------------------------------------
+# LEGACY FORMAT (RECOMMENDED FOR MOST ANALYTICS QUERIES)
+# -----------------------------------------------------------------------------
 legacy_queryplan_format:
   description: >
     This format is easier for LLMs and should be used for simple analytics queries.
@@ -41,26 +198,30 @@ legacy_queryplan_format:
     version: "1.0"
     dataset: "<string>"
     dimensions:
-      - field: "<column>"
-        alias: "<optional identifier>"
+      - field: "<logical_column>"
+        alias: "<string>" # REQUIRED (if omitted, set alias = field)
     metrics:
       - agg: "count | count_distinct | sum | avg | min | max"
-        field: "<column or *>"
-        alias: "<identifier>"
+        field: "<logical_column_or_*>"
+        alias: "<string>" # REQUIRED and unique
     filters:
-      - field: "<column>"
+      - field: "<logical_column>"
         op: "<operator>"
         value: "<any or null>"
     order_by:
-      - by: "<alias or column>"
+      - by: "<dimension_alias_or_metric_alias>"
         dir: "asc | desc"
     limit: "<int>"
     offset: "<int>"
     rollup: "<optional rollup block>"
 
+# -----------------------------------------------------------------------------
+# ADVANCED FORMAT (FULL FEATURE SET)
+# -----------------------------------------------------------------------------
 advanced_queryplan_format:
   description: >
     This format supports the full feature set: CTEs, set operations, CASE, EXISTS, windows, etc.
+    Use advanced format only when needed; otherwise use legacy format.
   top_level_keys:
     - dataset
     - select
@@ -77,24 +238,10 @@ advanced_queryplan_format:
     - set_op
 
 operators_supported:
-  comparison:
-    - "="
-    - "!="
-    - ">"
-    - ">="
-    - "<"
-    - "<="
-  membership:
-    - "in"
-    - "not_in"
-  text:
-    - "contains"
-    - "not_contains"
-    - "starts_with"
-    - "ends_with"
-  null_checks:
-    - "is_null"
-    - "is_not_null"
+  comparison: ["=", "!=", ">", ">=", "<", "<="]
+  membership: ["in", "not_in"]
+  text: ["contains", "not_contains", "starts_with", "ends_with"]
+  null_checks: ["is_null", "is_not_null"]
 
 expression_nodes:
   col:
@@ -102,7 +249,7 @@ expression_nodes:
   lit:
     example: { "lit": "CHEN" }
   func:
-    example: { "func": "count", "args": [] }
+    example: { "func": "count", "args": [ { "col": "assets.asset_tag" } ] }
   count_distinct:
     example: { "func": "count_distinct", "args": [ { "col": "work_orders.work_order_id" } ] }
   case:
@@ -128,9 +275,18 @@ expression_nodes:
 
 boolean_nodes:
   and:
-    example: { "and": [ { "cmp": { "left": { "col": "assets.building_name" }, "op": "contains", "right": "CHEN" } } ] }
+    example:
+      and:
+        - cmp:
+            left: { col: "assets.building_name" }
+            op: "contains"
+            right: "CHEN"
+        - cmp:
+            left: { col: "assets.keyword_of_asset" }
+            op: "contains"
+            right: "FIRE EXTINGUISHER"
   or:
-    example: { "or": [ ... ] }
+    example: { "or": [ { "cmp": { "left": { "col": "assets.keyword_of_asset" }, "op": "contains", "right": "PUMP" } }, { "cmp": { "left": { "col": "assets.description_of_asset" }, "op": "contains", "right": "PUMP" } } ] }
   not:
     example: { "not": { "cmp": { "left": { "col": "assets.asset_tag" }, "op": "is_null" } } }
   cmp:
@@ -155,7 +311,7 @@ rollup:
   shape:
     metrics:
       - agg: "avg | sum | min | max | count | count_distinct"
-        field: "<inner alias>"
+        field: "<inner alias (metric alias or dimension alias)>"
         alias: "<identifier>"
     dimensions: "<optional outer grouping>"
     filters: "<optional filters on inner outputs>"
@@ -179,6 +335,24 @@ set_operations:
       left: "<QueryPlan>"
       right: "<QueryPlan>"
 
+# -----------------------------------------------------------------------------
+# VALIDATION CHECKLIST (RUN MENTALLY BEFORE OUTPUTTING JSON)
+# -----------------------------------------------------------------------------
+validation_checklist: |
+  Before outputting JSON, verify:
+  - dataset is a logical table name from schema.yaml
+  - dimensions is a list of {field, alias} objects (alias present)
+  - metrics is a list of {agg, field, alias} objects (alias present, unique)
+  - no metric uses avg/sum/min/max with field="*" or field=null
+  - order_by.by references a dimension alias or metric alias
+  - limit/offset present
+  - if rollup exists:
+      - rollup.metrics is non-empty list of objects
+      - rollup.metrics[*].field references an inner alias (metric alias or dimension alias)
+
+# -----------------------------------------------------------------------------
+# EXAMPLES (LEGACY FORMAT)
+# -----------------------------------------------------------------------------
 examples:
   - question: "Show me all fire extinguishers in the Chen building"
     plan:
@@ -193,6 +367,7 @@ examples:
         - field: "keyword_of_asset"
           op: "contains"
           value: "FIRE EXTINGUISHER"
+      order_by: []
       limit: 100
       offset: 0
 
@@ -211,6 +386,9 @@ examples:
         - field: "building_id"
           op: "is_not_null"
           value: null
+      order_by: []
+      offset: 0
+      # NOTE: limit is intentionally omitted — rollup needs ALL buildings
       rollup:
         metrics:
           - agg: "avg"

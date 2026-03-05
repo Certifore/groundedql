@@ -1,66 +1,52 @@
-# dsl_compiler/agent.py
-import yaml
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
 from sqlalchemy.engine import Engine
-from .compiler import Compiler
-from .executor import Executor
-from .llm_integration import get_llm_client
+
+from .planner import QueryPlanPlanner
+from .validation import validate_query_plan_dict
+from .api.api import execute_query_plan  # adjust import if your path differs
+from .llm_adapters import make_llm_client
+
 
 class QueryAgent:
-    """Orchestrates the process of converting a question to a database query and response."""
+    def __init__(
+        self,
+        *,
+        engine: Engine,
+        schema_path: str,
+        spec_path: str,
+        llm: Any,
+        max_plan_retries: int = 1,
+    ):
+        self.engine = engine
+        self.schema_path = schema_path
+        self.spec_path = spec_path
+        self.max_plan_retries = max_plan_retries
+        llm_client = make_llm_client(llm)  # auto-picks OpenAI/LangChain/callable adapter
+        self.planner = QueryPlanPlanner(
+            llm=llm_client,
+            schema_path=schema_path,
+            spec_path=spec_path,
+        )
 
-    def __init__(self, schema_path: str, engine: Engine, llm_config: dict):
-        with open(schema_path, 'r') as f:
-            self.schema = yaml.safe_load(f)
-        
-        self.llm_client = get_llm_client(llm_config)
-        self.compiler = Compiler(self.schema)
-        self.executor = Executor(engine)
+    def ask(self, question: str) -> Dict[str, Any]:
+        plan_dict = self.planner.plan_with_retry(question, max_retries=self.max_plan_retries)
 
-    def _get_system_prompt(self) -> str:
-        """Generates the system prompt with schema context for the LLM."""
-        schema_str = yaml.dump(self.schema)
-        return f"""
-You are a database query assistant. Your only job is to take a user's question
-and convert it into a JSON object that follows a specific DSL format.
-You must call the `process_dsl_query` tool with the generated JSON.
+        parsed, errors = validate_query_plan_dict(plan_dict, self.schema_path)
+        if errors:
+            return {
+                "error": {
+                    "message": "QueryPlan failed validation after retries.",
+                    "validation_errors": [{"path": e.path, "message": e.message} for e in errors],
+                    "plan": plan_dict,
+                }
+            }
 
-Here is the database schema you are working with:
-{schema_str}
-
-Here is an example of the DSL format (QueryPlan):
-{{
-  "dataset": "dataset_name",
-  "metrics": [{{ "agg": "COUNT", "field": "*", "alias": "count" }}],
-  "dimensions": [{{ "field": "column_name" }}],
-  "filters": [{{ "field": "column_name", "op": "operator", "value": "some_value" }}],
-  "limit": 100
-}}
-
-Based on the user's question, generate the appropriate JSON.
-"""
-
-    def ask(self, question: str) -> str:
-        """
-        Takes a user's question, generates DSL, compiles to SQL,
-        executes it, and returns a natural language response.
-        """
-        system_prompt = self._get_system_prompt()
-        
-        try:
-            # 1. Generate DSL using the LLM
-            dsl_json = self.llm_client.generate_dsl(system_prompt, question)
-
-            # 2. Compile DSL to SQL
-            sql_query, params = self.compiler.compile(dsl_json)
-
-            # 3. Execute SQL
-            results = self.executor.execute(sql_query, params)
-            if "error" in results:
-                return f"Error executing query: {results['error']['message']}"
-
-            # 4. Interpret results with LLM
-            final_response = self.llm_client.interpret_results(question, results['rows'])
-            
-            return final_response
-        except Exception as e:
-            return f"An unexpected error occurred: {str(e)}"
+        # execute
+        return execute_query_plan(
+            engine=self.engine,
+            schema_path=self.schema_path,
+            query_plan=plan_dict,
+        )

@@ -180,5 +180,82 @@
         "limit": 20,
         "offset": 0
       }
+    },
+    {
+      "name": "count_all_assets",
+      "question": "How many assets are there?",
+      "plan": {
+        "version": "1.0",
+        "dataset": "assets",
+        "dimensions": [],
+        "metrics": [{"agg": "count", "field": "*", "alias": "total_assets"}],
+        "filters": [],
+        "order_by": [],
+        "limit": 1,
+        "offset": 0
+      }
+    },
+    {
+      "name": "count_distinct_buildings_with_work_orders",
+      "question": "How many distinct buildings have work orders?",
+      "plan": {
+        "version": "1.0",
+        "dataset": "work_orders",
+        "dimensions": [],
+        "metrics": [{"agg": "count_distinct", "field": "building_id", "alias": "distinct_buildings"}],
+        "filters": [],
+        "order_by": [],
+        "limit": 1,
+        "offset": 0
+      }
+    },
+    {
+      "name": "avg_work_orders_per_building",
+      "question": "What is the average number of work orders per building across campus?",
+      "plan": {
+        "version": "1.0",
+        "dataset": "work_orders",
+        "dimensions": [{"field": "building_id", "alias": "building_id"}],
+        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
+        "filters": [{"field": "building_id", "op": "is_not_null", "value": null}],
+        "order_by": [],
+        "offset": 0,
+        "rollup": {
+          "metrics": [{"agg": "avg", "field": "wo_count", "alias": "avg_wo_per_building"}],
+          "limit": 1,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "name": "top_10_buildings_by_work_orders",
+      "question": "Which 10 buildings have the most work orders?",
+      "plan": {
+        "version": "1.0",
+        "dataset": "work_orders",
+        "dimensions": [{"field": "building_name", "alias": "building_name"}],
+        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
+        "filters": [{"field": "building_name", "op": "is_not_null", "value": null}],
+        "order_by": [{"by": "wo_count", "dir": "desc"}],
+        "limit": 10,
+        "offset": 0
+      }
+    },
+    {
+      "name": "fire_extinguishers_chen",
+      "question": "Show me all fire extinguishers in the Chen building.",
+      "plan": {
+        "version": "1.0",
+        "dataset": "assets",
+        "dimensions": [],
+        "metrics": [],
+        "filters": [
+          {"field": "building_name", "op": "contains", "value": "CHEN"},
+          {"field": "keyword_of_asset", "op": "contains", "value": "FIRE EXTINGUISHER"}
+        ],
+        "order_by": [],
+        "limit": 100,
+        "offset": 0
+      }
     }
   ]

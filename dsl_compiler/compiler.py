@@ -306,11 +306,11 @@ class Compiler:
 
         # If rollup is present, ignore inner order/limit/offset for correctness
         if rollup is None:
-            limit = plan.get("limit", self.default_limit)
+            limit = plan.get("limit")          # None = no LIMIT
             offset = plan.get("offset", 0)
             order_by = plan.get("order_by", []) or []
         else:
-            limit = None
+            limit = None                       # inner query is always unlimited when rollup is present
             offset = None
             order_by = []
 
@@ -331,7 +331,7 @@ class Compiler:
         from_alias = dataset
 
         # If dataset is a CTE name, do NOT alias it with the same name (can trigger SQLAlchemy CTE name collisions)
-        if dataset in cte_map:
+        if (dataset in cte_map):
             from_alias = f"{dataset}__src"
 
         base = source.alias(from_alias)
@@ -437,9 +437,10 @@ class Compiler:
 
         # LIMIT/OFFSET (only when no rollup)
         if rollup is None:
-            limit_i = self._clamp_int(limit, 1, self.max_limit, f"{path}.limit", default=self.default_limit)
-            offset_i = self._clamp_int(offset, 0, 10_000_000, f"{path}.offset", default=0)
-            query = query.limit(limit_i).offset(offset_i)
+            if limit is not None:              # only emit LIMIT if explicitly set
+                limit_i = self._clamp_int(limit, 1, self.max_limit, f"{path}.limit", default=self.default_limit)
+                offset_i = self._clamp_int(offset, 0, 10_000_000, f"{path}.offset", default=0)
+                query = query.limit(limit_i).offset(offset_i)
             return query
 
         # ---------- ROLLUP ----------
@@ -448,7 +449,7 @@ class Compiler:
         roll_dims = rollup.get("dimensions", []) or []
         roll_filters = rollup.get("filters", []) or []
         roll_order_by = rollup.get("order_by", []) or []
-        roll_limit = rollup.get("limit", self.default_limit)
+        roll_limit = rollup.get("limit")       # None = no LIMIT on rollup outer query
         roll_offset = rollup.get("offset", 0)
 
         _require(isinstance(roll_metrics, list) and len(roll_metrics) >= 1,
@@ -546,9 +547,10 @@ class Compiler:
                 ob_exprs.append(e.asc() if direction == "asc" else e.desc())
             outer_query = outer_query.order_by(*ob_exprs)
 
-        limit_i = self._clamp_int(roll_limit, 1, self.max_limit, f"{path}.rollup.limit", default=self.default_limit)
-        offset_i = self._clamp_int(roll_offset, 0, 10_000_000, f"{path}.rollup.offset", default=0)
-        outer_query = outer_query.limit(limit_i).offset(offset_i)
+        if roll_limit is not None:             # only emit LIMIT on rollup if explicitly set
+            limit_i = self._clamp_int(roll_limit, 1, self.max_limit, f"{path}.rollup.limit", default=self.default_limit)
+            offset_i = self._clamp_int(roll_offset, 0, 10_000_000, f"{path}.rollup.offset", default=0)
+            outer_query = outer_query.limit(limit_i).offset(offset_i)
 
         return outer_query
 
@@ -592,6 +594,17 @@ class Compiler:
                 expr = {"func": agg, "args": [{"col": field}]}
 
             select_items.append({"expr": expr, "alias": alias})
+
+        # If no dimensions and no metrics, select all columns from the schema table
+        if not select_items:
+            if dataset in self.tables:
+                for col in self.tables[dataset].columns.values():
+                    select_items.append({"expr": {"col": col.logical}, "alias": col.logical})
+            else:
+                # CTE or dynamic source — emit a literal star isn't safe; require at least 1 item
+                _require(False, "INVALID_PLAN",
+                         "Legacy plan with no dimensions and no metrics requires a known schema table.",
+                         "$.select")
 
         where = None
         if filts:

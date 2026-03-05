@@ -1,201 +1,190 @@
-```markdown
 # DSL-to-SQL Compiler for LLMs
 
 Deterministic, schema-validated JSON → SQL for Postgres.  
 Instead of letting an LLM generate free-form SQL, the LLM outputs a **QueryPlan JSON** (DSL), and this library compiles it into parameterized SQL and executes it safely.
 
-> **Status:** Not published to PyPI yet.
+> **Status:** Not published to PyPI yet. Install from source (see below).
 
 ---
 
-## Why this exists
+## Why This Exists
 
 LLM-generated SQL is often:
-- inconsistent (same question → different SQL),
-- unsafe (injection / unexpected joins),
-- brittle (minor schema changes break prompts).
+- **Inconsistent**: Same question → different SQL on every call.
+- **Unsafe**: Susceptible to injection and unauthorized schema traversal.
+- **Brittle**: Breaks when schema or column names change.
 
-This library makes the LLM do a simpler job:
-- extract intent + entities → generate a structured QueryPlan JSON
-- the compiler does deterministic SQL generation
+This library fixes that by splitting the problem in two:
+
+| Responsibility | Who does it |
+|---|---|
+| Extract intent + entities from natural language | LLM |
+| Generate deterministic, safe SQL | This library (compiler) |
+
+The LLM's only job is to produce a **QueryPlan JSON object**. The compiler handles everything else.
 
 ---
 
 ## Features
 
-- ✅ Deterministic JSON → SQL compilation (Postgres)
-- ✅ Schema allowlist: only tables/columns defined in YAML are usable
-- ✅ Fully parameterized queries (no string concatenation)
-- ✅ Supports advanced SQL constructs in the DSL:
-  - rollups (avg of grouped metrics via subquery)
-  - CTEs (`WITH`)
-  - set operations (`UNION`, `INTERSECT`, `EXCEPT`)
-  - `CASE` expressions
-  - `EXISTS`
-  - window functions (`OVER`)
-- ✅ Library-first design: plug into any agent/router
-- ✅ Optional convenience `QueryAgent` for demos
+- ✅ **Deterministic Compilation**: Same JSON → same SQL, every time.
+- ✅ **Schema Allowlist**: Only tables and columns defined in `schema.yaml` are accessible.
+- ✅ **Fully Parameterized**: All values use `bindparams` — no string concatenation.
+- ✅ **Auto-Fix Layer**: Scalar aggregate queries (`COUNT`, `AVG`, etc. with no dimensions) are automatically clamped to `limit=1`.
+- ✅ **Optional Retry Loop**: If the LLM produces an invalid QueryPlan, the planner sends validation errors back and retries once.
+- ✅ **Advanced SQL Support**:
+  - **Rollups**: Multi-level aggregations (e.g., average of per-building counts) via subquery.
+  - **CTEs**: `WITH` clauses for multi-step logic.
+  - **Set Operations**: `UNION`, `INTERSECT`, `EXCEPT`.
+  - **Expressions**: `CASE`, `CAST`, `COALESCE`, `EXISTS`, Window functions (`OVER`).
+- ✅ **LLM-Agnostic**: Works with OpenAI, LangChain, or any callable.
+- ✅ **Library-First**: Use `execute_query_plan` directly in any agent/router — no magic.
 
 ---
 
 ## Repository Layout
 
-```
-
+```text
 config/
-schema.yaml               # DB schema (logical -> physical mapping)
-queryplan_spec.yaml       # instructions/examples for LLM to output QueryPlan JSON
+  schema.yaml               # Logical → physical DB mapping (tables, columns, links)
+  queryplan_spec.yaml       # DSL spec + examples fed to the LLM as system context
 
 dsl_compiler/
-compiler.py               # QueryPlan -> SQL compiler
-executor.py               # query execution helper
-api/
-api.py                  # execute_query_plan entrypoint
-spec_api.py             # QueryPlan authoring spec helpers
-agent.py                  # optional: simple agent wrapper (demo)
-llm_integration.py        # optional: example LLM integration
+  __init__.py               # Public exports
+  compiler.py               # Core: QueryPlan JSON → parameterized SQL (SQLAlchemy Core)
+  executor.py               # Runs SQL against the DB, serializes results (dates, decimals)
+  queryplan_models.py       # Pydantic models + JSON Schema for QueryPlan validation
+  validation.py             # Semantic validation: dataset/column allowlist, rollup rules
+  planner.py                # LLM → QueryPlan JSON, with auto-fix + retry loop
+  llm_adapters.py           # LLM adapter factory (OpenAI, LangChain, callable)
+  llm_client.py             # Base LLMClient protocol + CallableLLMClient
+  agent.py                  # Optional: QueryAgent convenience wrapper (demo/integration)
+  api/
+    api.py                  # execute_query_plan — the main library entrypoint
+    spec_api.py             # get_queryplan_instructions — builds LLM system prompt
 
 test/
-regression_test/
-test_qs.json
-suite_results.json
-test_main.py
-
-````
+  test_main.py              # Regression test runner
+  regression_test/
+    test_qs.json            # Test questions + expected outputs
+    suite_results.json      # Written by test runner
+```
 
 ---
 
-## Installation (from source)
+## Installation
 
-> Not on PyPI yet — for now users install from source.
+> Not on PyPI yet. Install from source.
 
-### Option A (recommended for development): Editable install (changes stay in sync)
+### Recommended: Editable Install
 
-An editable install links the installed package to your local working copy.  
-That means if you edit the library code, your project will pick up changes immediately (restart your Python process/server).
-
-1) Clone the repo:
+Changes to the library are immediately reflected — no reinstall needed.
 
 ```bash
 git clone <YOUR_REPO_URL>
 cd dsl_compiler
-````
-
-2. Create a virtualenv and install in editable mode:
-
-```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -U pip
 pip install -e .
 ```
 
-✅ Result: `import dsl_compiler` works from anywhere inside that virtualenv, and code changes in this repo are reflected immediately.
-
-**Using it from another project (recommended dev workflow):**
-
-* Activate your other project’s virtualenv
-* Install this repo by path in editable mode:
+**Using from another project** (e.g. your backend repo):
 
 ```bash
+# Activate your backend's virtualenv, then:
 pip install -e /absolute/path/to/dsl_compiler
 ```
 
-Now updates to `dsl_compiler` are automatically “in sync” for that project too.
-
----
-
-### Option B: Non-editable install (stable snapshot)
-
-Use this if you want a fixed copy of the code (changes to the repo won’t affect your environment until you reinstall):
+### Stable Snapshot
 
 ```bash
 pip install .
-```
-
-To pick up updates later:
-
-```bash
+# To pick up updates later:
 pip install --upgrade .
 ```
 
----
-
-### Option C: Install from Git (no PyPI)
-
-If the repo is hosted on GitHub, users can install directly:
+### From Git (no clone)
 
 ```bash
 pip install git+https://github.com/<user>/<repo>.git
 ```
 
-This installs a snapshot. To get updates later, rerun the command.
-For reproducibility, pin to a tag/commit (recommended once you start releases).
-
 ---
 
 ## Configuration
 
-### 1) Database schema: `config/schema.yaml`
+### 1. `config/schema.yaml` — Logical → Physical Mapping
 
-You define **logical table/column names** and map them to the actual DB identifiers.
-
-Example (simplified):
+Define the logical names your QueryPlan JSON uses and map them to the actual Postgres identifiers.
+The compiler enforces this allowlist — no other tables or columns can be queried.
 
 ```yaml
 tables:
-  - name: assets
-    db_table: '"finalAssets"'        # physical table name in Postgres
+  - name: assets                       # logical name used in QueryPlan JSON
+    db_table: '"finalAssets"'          # physical Postgres table (quoted = case-sensitive)
     columns:
-      - name: asset_tag              # logical name used in QueryPlan JSON
-        db_column: asset_tag         # physical column name in DB
+      - name: asset_tag                # logical column name
+        db_column: asset_tag           # physical column name
+        type: varchar
+      - name: building_name
+        db_column: building_name
         type: varchar
 
   - name: work_orders
     db_table: '"finalWorkOrder"'
     columns:
       - name: work_order_id
-        db_column: '"workOrderId"'
+        db_column: '"workOrderId"'     # quoted physical name
         type: varchar
       - name: building_id
         db_column: '"buildingId"'
         type: varchar
+
+# Optional: define how tables can be joined
+links:
+  - name: work_orders_to_assets_by_asset_tag
+    from_table: work_orders
+    to_table: assets
+    join_type: left
+    on:
+      - left: work_orders.asset_tag
+        op: "="
+        right: assets.asset_tag
 ```
 
-**Important:** Your QueryPlan JSON must use **logical** names only
-(e.g., `work_orders.building_id`), not physical DB names.
+> **Important**: Your QueryPlan JSON must always use **logical names** (`work_orders.building_id`), never physical DB names (`"buildingId"`).
 
 ---
 
-### 2) QueryPlan authoring spec: `config/queryplan_spec.yaml`
+### 2. `config/queryplan_spec.yaml` — LLM Instructions
 
-This file explains to an LLM how to structure QueryPlan JSON consistently.
-The library provides APIs to fetch it as raw YAML or as a prompt-ready string.
+This file contains the DSL specification, structural rules, semantic rules, and examples.
+Feed it to your LLM as system context using `get_queryplan_instructions`.
+The richer this file, the more consistent the LLM's output.
 
 ---
 
-## Core Usage (recommended)
+## Core Usage
 
-### Execute a QueryPlan (JSON DSL) directly
+### Execute a QueryPlan Directly
 
-This is the main library interface. Use it inside any agent/router.
+The primary library interface. Use this inside any agent, router, or tool.
 
 ```python
-import json
 from sqlalchemy import create_engine
 from dsl_compiler import execute_query_plan
 
-engine = create_engine("postgresql+psycopg2://USER:PASSWORD@HOST:PORT/DB?sslmode=require")
+engine = create_engine("postgresql+psycopg2://user:pass@host:port/db?sslmode=require")
 
 plan = {
-  "version": "1.0",
-  "dataset": "assets",
-  "filters": [
-    {"field": "building_name", "op": "contains", "value": "CHEN"},
-    {"field": "keyword_of_asset", "op": "contains", "value": "FIRE EXTINGUISHER"}
-  ],
-  "limit": 20,
-  "offset": 0
+    "version": "1.0",
+    "dataset": "assets",
+    "filters": [
+        {"field": "building_name", "op": "contains", "value": "CHEN"},
+        {"field": "keyword_of_asset", "op": "contains", "value": "FIRE EXTINGUISHER"}
+    ],
+    "limit": 20,
+    "offset": 0
 }
 
 result = execute_query_plan(
@@ -203,27 +192,12 @@ result = execute_query_plan(
     schema_path="config/schema.yaml",
     query_plan=plan
 )
-
-print(json.dumps(result, indent=2, default=str))
+# result keys: rows, row_count, columns, sql, params  (or "error")
 ```
-
-Returned result includes:
-
-* `rows` (list of dicts)
-* `row_count`
-* `columns`
-* `sql` (compiled SQL)
-* `params` (bind params)
-* or `error`
 
 ---
 
-## Give your LLM the “how to write QueryPlans” instructions
-
-Use this helper to generate a prompt string that includes:
-
-* QueryPlan spec rules
-* your DB schema (optional)
+### Build the LLM System Prompt
 
 ```python
 from dsl_compiler import get_queryplan_instructions
@@ -231,92 +205,270 @@ from dsl_compiler import get_queryplan_instructions
 prompt = get_queryplan_instructions(
     schema_path="config/schema.yaml",
     spec_path="config/queryplan_spec.yaml",
-    include_schema_yaml=True,
+    include_schema_yaml=True,   # includes table/column descriptions inline
 )
-
-# Feed `prompt` into your LLM as system context.
-# The LLM should output ONLY a JSON QueryPlan object.
+# Feed `prompt` to your LLM as the system message.
+# Tell the LLM: "Output ONLY a JSON QueryPlan object."
 ```
 
 ---
 
-## Optional: Using QueryAgent (demo)
+### Optional: QueryAgent (Demo / Integration Wrapper)
 
-`QueryAgent` is a convenience wrapper for demos.
-In production, most users will call `execute_query_plan` directly.
+`QueryAgent` wires the planner + compiler + executor together in one call.
+Useful for demos and integrations. In production, most users call `execute_query_plan` directly.
 
 ```python
-from dsl_compiler.agent import QueryAgent
+from dsl_compiler import QueryAgent
 from sqlalchemy import create_engine
 
-engine = create_engine("postgresql+psycopg2://USER:PASSWORD@HOST:PORT/DB?sslmode=require")
+engine = create_engine("postgresql+psycopg2://user:pass@host:port/db?sslmode=require")
 
 agent = QueryAgent(
-    schema_path="config/schema.yaml",
     engine=engine,
-    llm_config={"provider": "openai", "api_key": "YOUR_API_KEY"}
+    schema_path="config/schema.yaml",
+    spec_path="config/queryplan_spec.yaml",
+    llm=your_langchain_or_openai_llm,   # see LLM Integration below
+    max_plan_retries=1,
 )
 
-print(agent.ask("How many distinct work orders per building?"))
+result = agent.ask("How many distinct buildings have work orders?")
+# Returns the execute_query_plan result dict directly
 ```
 
 ---
 
-## Example: Average work orders per building (SQL rollup, no Python math)
+## LLM Integration
+
+Pass any of the following as the `llm` argument to `QueryAgent` or `QueryPlanPlanner`:
+
+| What you pass | Adapter used |
+|---|---|
+| Object with `.generate_json(...)` | Used directly |
+| `openai.OpenAI()` instance | `OpenAIResponsesJSONAdapter` |
+| LangChain chat model (has `.invoke`) | `LangChainJSONAdapter` |
+| Plain `callable(json_schema, messages, temperature)` | `CallableLLMClient` |
+
+> **LangChain note**: LangChain models implement both `__call__` (deprecated) and `.invoke`. The adapter factory always routes LangChain models through `.invoke` with proper `BaseMessage` objects to avoid deprecation warnings.
+
+---
+
+## QueryPlan Format
+
+### Legacy Format (recommended for most queries)
 
 ```json
 {
   "version": "1.0",
   "dataset": "work_orders",
   "dimensions": [{"field": "building_id", "alias": "building_id"}],
-  "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "work_orders_per_building"}],
+  "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
   "filters": [{"field": "building_id", "op": "is_not_null", "value": null}],
+  "order_by": [{"by": "wo_count", "dir": "desc"}],
+  "limit": 10,
+  "offset": 0
+}
+```
+
+### With Rollup (aggregate of grouped values)
+
+When a query needs an aggregate *over* grouped results (e.g., "average work orders **per building**"), use `rollup`. The inner query groups and counts; the rollup outer query aggregates those counts.
+
+```json
+{
+  "version": "1.0",
+  "dataset": "work_orders",
+  "dimensions": [{"field": "building_id", "alias": "building_id"}],
+  "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
+  "filters": [{"field": "building_id", "op": "is_not_null", "value": null}],
+  "order_by": [],
+  "offset": 0,
   "rollup": {
-    "metrics": [{"agg": "avg", "field": "work_orders_per_building", "alias": "avg_work_orders_per_building"}],
+    "metrics": [{"agg": "avg", "field": "wo_count", "alias": "avg_wo_per_building"}],
     "limit": 1,
     "offset": 0
   }
 }
 ```
 
+> `limit` is **omitted** from the inner plan so all buildings are included before the average is computed.
+
+### Supported Operators
+
+| Category | Operators |
+|---|---|
+| Comparison | `=` `!=` `>` `>=` `<` `<=` |
+| Membership | `in` `not_in` |
+| Text (case-insensitive) | `contains` `not_contains` `starts_with` `ends_with` |
+| Null checks | `is_null` `is_not_null` |
+
+### Supported Aggregations
+
+`count` · `count_distinct` · `sum` · `avg` · `min` · `max`
+
+---
+
+## Auto-Fix Behaviour
+
+The planner applies deterministic fixes after the LLM responds:
+
+| Condition | Fix applied |
+|---|---|
+| No dimensions, all metrics are aggregations, no rollup | `limit` forced to `1`, `offset` forced to `0` |
+
+This prevents unnecessary `LIMIT 100` clauses on scalar queries like `COUNT(*)`.
+
 ---
 
 ## Regression Tests
 
+The test suite validates the compiler end-to-end against a real Postgres database.
+It covers legacy format, rollups, CTEs, set operations, CASE expressions, EXISTS, and window functions.
+
+### Setup
+
+The test runner reads DB credentials from the repo root `.env` file:
+
 ```bash
-python test/test_main.py
+# .env (repo root)
+DB_HOST=your-host
+DB_PORT=5432        # or 6543 for Supabase/PgBouncer pooler
+DB_NAME=your-db
+DB_USER=your-user
+DB_PASSWORD=your-password
 ```
 
-Reads:
+### Modes
 
-* `test/regression_test/test_qs.json`
+| Command | What it does |
+|---|---|
+| `python test/test_main.py` | Run all tests, print results. No baseline written. |
+| `python test/test_main.py update` | Run all tests and **overwrite** the saved baseline. |
+| `python test/test_main.py check` | Run all tests and **compare against baseline**. Exits `1` if any regression is found. |
 
-Writes:
+### First-Time Setup
 
-* `test/regression_test/suite_results.json`
+```bash
+# Create the baseline before your first push
+python test/test_main.py update
+```
+
+### Running Regression Checks (CI / Before Pushing)
+
+```bash
+python test/test_main.py check
+```
+
+Output:
+
+```
+[test] Connected: db=postgres, user=postgres
+[test] Mode=check  Tests=10  Schema=...
+
+  [PASS] cte_top_buildings
+  [PASS] setop_union_assets_chen_beckman
+  [PASS] case_asset_category
+  [PASS] exists_any_chen_workorders
+  [PASS] window_row_number_recent_workorders
+  [PASS] count_all_assets
+  [PASS] count_distinct_buildings_with_work_orders
+  [PASS] avg_work_orders_per_building
+  [PASS] top_10_buildings_by_work_orders
+  [PASS] fire_extinguishers_chen
+
+[test] Results: 10 passed, 0 failed, 0 errors out of 10 tests
+```
+
+### Adding a New Test
+
+1. Open `test/regression_test/test_qs.json`.
+2. Add a new entry with a `name`, `question`, and `plan`:
+
+```json
+{
+  "name": "my_new_test",
+  "question": "How many closed work orders are there?",
+  "plan": {
+    "version": "1.0",
+    "dataset": "work_orders",
+    "dimensions": [],
+    "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "closed_wo_count"}],
+    "filters": [{"field": "status_code", "op": "=", "value": "CLOSED"}],
+    "order_by": [],
+    "limit": 1,
+    "offset": 0
+  }
+}
+```
+
+3. Update the baseline to include the new test:
+
+```bash
+python test/test_main.py update
+```
+
+4. Verify everything passes:
+
+```bash
+python test/test_main.py check
+```
+
+### What the Check Compares
+
+For each test, `check` mode compares:
+- `row_count` — number of rows returned
+- `first_row` — the first row of results (as a dict)
+- `error` — whether an error occurred
+
+The `sql` field is saved in the baseline for human review but is **not** part of the regression comparison (SQL formatting can change without affecting correctness).
+
+### Test Suite Coverage
+
+| Test Name | Feature Covered |
+|---|---|
+| `count_all_assets` | Scalar aggregate, legacy format |
+| `count_distinct_buildings_with_work_orders` | `COUNT DISTINCT`, scalar aggregate |
+| `avg_work_orders_per_building` | Rollup (avg of per-group counts), unlimited inner query |
+| `top_10_buildings_by_work_orders` | `GROUP BY`, `ORDER BY`, `LIMIT` |
+| `fire_extinguishers_chen` | Filter-only query, auto select-all columns |
+| `cte_top_buildings` | CTE (`WITH`), advanced format |
+| `setop_union_assets_chen_beckman` | Set operation (`UNION ALL`) |
+| `case_asset_category` | `CASE` expression |
+| `exists_any_chen_workorders` | `EXISTS` subquery |
+| `window_row_number_recent_workorders` | Window function (`ROW_NUMBER OVER`) |
 
 ---
 
-## Roadmap
+## Troubleshooting
 
-* [ ] Publish to PyPI
-* [ ] Add first-class QueryPlan validation API (pre-execution)
-* [ ] Add more SQL features (joins inference, correlated subqueries, richer windows)
-* [ ] Add DB introspection to generate `schema.yaml` automatically
+| Issue | Fix |
+|---|---|
+| `SyntaxError` or `unmatched ')'` on import | File corruption from a bad merge — rewrite the file cleanly |
+| `'str' object has no attribute 'content'` | LangChain model hit the deprecated `__call__` path — ensure `make_llm_client` routes it to `LangChainJSONAdapter` via `.invoke` |
+| Wrong port for Supabase/PgBouncer | Use the transaction pooler port (usually `6543`) with `sslmode=require` |
+| Physical table names not quoted | Wrap `CamelCase` names in double quotes in `schema.yaml`: `db_table: '"MyTable"'` |
+| `LIMIT 100` on a scalar aggregate | Handled automatically by `_auto_fix_plan` in `planner.py` |
 
 ---
 
 ## Security Notes
 
-* The compiler only allows tables/columns defined in `schema.yaml`
-* Values are parameterized (bind params), reducing injection risk
-* In production, use a read-only DB user where possible
+- The compiler only allows tables/columns defined in `schema.yaml` — unknown references raise `QueryPlanError`.
+- All user-supplied values go through SQLAlchemy `bindparams` — no string interpolation.
+- In production, connect with a **read-only database user**.
+
+---
+
+## Roadmap
+
+- [ ] Publish to PyPI
+- [ ] First-class `validate_query_plan` API (pre-execution, callable independently)
+- [ ] DB introspection to auto-generate `schema.yaml`
+- [ ] Richer join inference (multi-hop links)
+- [ ] Correlated subqueries
 
 ---
 
 ## License
 
-MIT (recommended). Add a `LICENSE` file and update `pyproject.toml` accordingly.
-
-```
-```
+MIT — add a `LICENSE` file and update `pyproject.toml` accordingly.
