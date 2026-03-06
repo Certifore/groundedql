@@ -320,6 +320,125 @@ This prevents unnecessary `LIMIT 100` clauses on scalar queries like `COUNT(*)`.
 
 ---
 
+## Semantic Lint
+
+In addition to JSON-schema and Pydantic validation, the planner runs a **semantic lint** pass that compares the user's raw question against the generated plan. This catches plans that are structurally valid but semantically wrong — cases where the plan would execute without error but answer a different question than what was asked.
+
+### What it checks
+
+| Rule | Signal words in question | Plan invariant enforced |
+|---|---|---|
+| **Distinct** | `distinct`, `unique`, `different` | Any metric counting a named field must use `count_distinct`, not `count` |
+| **Grouping** | `per X`, `by X`, `each X`, `for each`, `grouped by` | `dimensions` must be non-empty when metrics are present |
+| **Top-N** | `top N`, `most`, `least`, `highest`, `lowest`, `ranked` | `order_by` must be set and `limit` must be present |
+| **Two-step aggregation** | `average per`, `stddev per`, `median per`, `variance per`, `average number of X per` | `rollup` must be present |
+
+### How it works
+
+- Runs after LLM generation and `_auto_fix_plan`, before Pydantic validation
+- Returns a list of plain-English error strings (empty = clean)
+- On failure, errors are appended to validation feedback and sent to the LLM as part of the retry message
+- Never modifies the plan — only reports issues
+- False positives waste one retry but don't break anything; false negatives are harmless
+
+### Using it directly
+
+```python
+from dsl_compiler import semantic_lint
+
+errors = semantic_lint(
+    "What is the average number of work orders per building?",
+    plan_dict
+)
+# errors = ["Lint: question implies an aggregate-of-aggregates ('average number of work orders per') but plan has no rollup..."]
+```
+
+---
+
+## Statistical Functions
+
+The compiler supports **any Postgres aggregate or statistical function** — you are not limited to `count`, `sum`, `avg`, `min`, `max`. Use the advanced format `func` expression node with the Postgres function name:
+
+| Function | Use case |
+|---|---|
+| `stddev` / `stddev_pop` | Standard deviation |
+| `variance` / `var_pop` | Variance |
+| `corr` | Pearson correlation (two args) |
+| `regr_slope` / `regr_intercept` | Linear regression |
+| `percentile_cont` / `percentile_disc` | Percentiles / median |
+| `mode` | Most frequent value |
+| `row_number`, `rank`, `dense_rank` | Window ranking |
+| `lag`, `lead`, `first_value`, `last_value` | Window offset |
+
+**Single-step** (aggregating raw column values directly):
+```json
+{
+  "dataset": "assets",
+  "select": [
+    {"expr": {"func": "stddev", "args": [{"cast": {"expr": {"col": "assets.replacement_year"}, "type": "integer"}}]}, "alias": "stddev_replacement_year"}
+  ],
+  "limit": 1, "offset": 0
+}
+```
+
+**Two-step** (aggregating over grouped values — requires rollup):
+```json
+{
+  "dataset": "work_orders",
+  "dimensions": [{"field": "building_id", "alias": "building_id"}],
+  "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
+  "filters": [{"field": "building_id", "op": "is_not_null", "value": null}],
+  "order_by": [], "offset": 0,
+  "rollup": {
+    "metrics": [{"agg": "stddev", "field": "wo_count", "alias": "stddev_wo_per_building"}],
+    "limit": 1, "offset": 0
+  }
+}
+```
+
+---
+
+## Relative Date Filters
+
+Filter values must be plain scalars — never SQL expressions. For time-relative filters use the `$relative_date` sentinel, which the library resolves to a concrete ISO-8601 UTC timestamp before compilation:
+
+```json
+{"field": "edit_date", "op": "<", "value": {"$relative_date": {"op": "now_minus_days", "days": 7}}}
+{"field": "entry_date", "op": ">=", "value": {"$relative_date": {"op": "now_minus_hours", "hours": 24}}}
+{"field": "edit_date", "op": ">=", "value": {"$relative_date": {"op": "today"}}}
+```
+
+Supported ops: `now_minus_days`, `now_minus_hours`, `today`.
+
+---
+
+## Error Handling
+
+The library raises typed exceptions instead of returning error dicts when `raise_on_error=True`:
+
+```python
+from dsl_compiler.exceptions import QueryPlanError, DatabaseExecutionError, SchemaError
+
+result = execute_query_plan(
+    engine=engine,
+    schema_path="config/schema.yaml",
+    query_plan=plan,
+    raise_on_error=True,   # default False for backward compatibility
+)
+```
+
+| Exception | When raised |
+|---|---|
+| `SchemaError` | `schema.yaml` is missing or malformed |
+| `QueryPlanError` | Plan is structurally or semantically invalid |
+| `AmbiguousColumnError` | Unqualified column name exists in multiple joined tables |
+| `DatabaseExecutionError` | Valid plan but Postgres rejected the query |
+| `QueryCostError` | Plan exceeds configured `max_cost` complexity threshold |
+
+All exceptions inherit from `DSLCompilerError` for a single catch-all.
+
+---
+
 ## Regression Tests
 
 The test suite validates the compiler end-to-end against a real Postgres database.

@@ -7,6 +7,8 @@ from sqlalchemy import text as sqla_text
 import datetime
 from decimal import Decimal
 
+from .exceptions import DatabaseExecutionError
+
 def _jsonify(v: Any) -> Any:
     if isinstance(v, (datetime.datetime, datetime.date)):
         return v.isoformat()
@@ -37,4 +39,4 @@ class Executor:
                 return {"rows": rows, "row_count": len(rows), "columns": cols}
 
         except Exception as e:
-            return {"error": {"message": str(e)}}
+            raise DatabaseExecutionError(str(e), sql=sql, original=e) from e

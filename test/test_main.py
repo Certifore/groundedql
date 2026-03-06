@@ -25,6 +25,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
 from dsl_compiler import execute_query_plan
+from dsl_compiler.semantic_lint import semantic_lint
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -84,7 +85,7 @@ for p in [SCHEMA_PATH, SUITE_PATH]:
         raise SystemExit(f"[test] Required file not found: {p}")
 
 # ---------------------------------------------------------------------------
-# Run suite
+# Run suite — handles both DB tests and lint tests
 # ---------------------------------------------------------------------------
 with open(SUITE_PATH) as f:
     suite: list = json.load(f)
@@ -92,41 +93,84 @@ with open(SUITE_PATH) as f:
 print(f"[test] Mode={MODE}  Tests={len(suite)}  Schema={SCHEMA_PATH}\n")
 
 results = []
-passed = 0
-failed = 0
 errors = 0
 
 for i, test in enumerate(suite):
     name = test.get("name", f"test_{i}")
     question = test.get("question", "")
     plan = test.get("plan")
+    test_type = test.get("type", "db")  # "db" or "lint"
 
-    try:
-        res = execute_query_plan(
-            engine=engine,
-            schema_path=str(SCHEMA_PATH),
-            query_plan=plan,
-        )
-    except Exception as e:
-        res = {"error": {"message": str(e)}}
+    if test_type == "lint":
+        lint_spec = test.get("lint", {})
+        expect = lint_spec.get("expect")        # "fires" or "clean"
+        fragment = lint_spec.get("fragment", "")
 
-    entry = {
-        "name": name,
-        "question": question,      # <-- added for easy review
-        "plan": plan,
-        "row_count": res.get("row_count"),
-        "columns": res.get("columns"),
-        "first_row": res["rows"][0] if res.get("rows") else None,
-        "error": res.get("error"),
-        "sql": res.get("sql"),
-    }
-    results.append(entry)
+        lint_errors = semantic_lint(question, plan)
 
-    status = "ERROR" if entry["error"] else "OK"
-    print(f"  [{i+1}/{len(suite)}] {name}: {status}  row_count={entry['row_count']}")
-    if entry["error"]:
-        print(f"         ERROR: {entry['error']['message']}")
-        errors += 1
+        if expect == "fires":
+            ok = any(fragment.lower() in e.lower() for e in lint_errors)
+            result_entry = {
+                "name": name,
+                "question": question,
+                "type": "lint",
+                "plan": plan,
+                "lint_expect": expect,
+                "lint_fragment": fragment,
+                "lint_errors": lint_errors,
+                "passed": ok,
+                "error": None if ok else f"Expected lint to fire with fragment '{fragment}' but got: {lint_errors}",
+            }
+        else:  # "clean"
+            ok = not lint_errors
+            result_entry = {
+                "name": name,
+                "question": question,
+                "type": "lint",
+                "plan": plan,
+                "lint_expect": expect,
+                "lint_fragment": fragment,
+                "lint_errors": lint_errors,
+                "passed": ok,
+                "error": None if ok else f"Expected lint clean but got: {lint_errors}",
+            }
+
+        results.append(result_entry)
+        status = "PASS" if ok else "FAIL"
+        print(f"  [{i+1}/{len(suite)}] {name}: [{status}]")
+        if not ok:
+            print(f"         {result_entry['error']}")
+            errors += 1
+
+    else:
+        # Standard DB test
+        try:
+            res = execute_query_plan(
+                engine=engine,
+                schema_path=str(SCHEMA_PATH),
+                query_plan=plan,
+            )
+        except Exception as e:
+            res = {"error": {"message": str(e)}}
+
+        entry = {
+            "name": name,
+            "question": question,
+            "type": "db",
+            "plan": plan,
+            "row_count": res.get("row_count"),
+            "columns": res.get("columns"),
+            "first_row": res["rows"][0] if res.get("rows") else None,
+            "error": res.get("error"),
+            "sql": res.get("sql"),
+        }
+        results.append(entry)
+
+        status = "ERROR" if entry["error"] else "OK"
+        print(f"  [{i+1}/{len(suite)}] {name}: {status}  row_count={entry['row_count']}")
+        if entry["error"]:
+            print(f"         ERROR: {entry['error']['message']}")
+            errors += 1
 
 print()
 
@@ -162,6 +206,7 @@ with open(BASELINE_PATH) as f:
 baseline_by_name = {r["name"]: r for r in baseline.get("results", [])}
 
 regression_failures = []
+passed = failed = 0
 
 for entry in results:
     name = entry["name"]
@@ -171,25 +216,36 @@ for entry in results:
         print(f"  [NEW]  {name} — not in baseline (run 'update' to add)")
         continue
 
-    row_count_match = entry["row_count"] == base["row_count"]
-    first_row_match = entry["first_row"] == base["first_row"]
-    error_match = entry["error"] == base["error"]
-
-    if row_count_match and first_row_match and error_match:
-        passed += 1
-        print(f"  [PASS] {name}")
+    if entry.get("type") == "lint":
+        ok = entry["passed"] == base["passed"]
+        if ok:
+            passed += 1
+            print(f"  [PASS] {name}")
+        else:
+            failed += 1
+            regression_failures.append(name)
+            print(f"  [FAIL] {name}")
+            print(f"         passed baseline={base['passed']}  current={entry['passed']}")
     else:
-        failed += 1
-        regression_failures.append(name)
-        print(f"  [FAIL] {name}")
-        if not row_count_match:
-            print(f"         row_count: baseline={base['row_count']}  current={entry['row_count']}")
-        if not first_row_match:
-            print(f"         first_row baseline: {base['first_row']}")
-            print(f"         first_row current:  {entry['first_row']}")
-        if not error_match:
-            print(f"         error baseline: {base['error']}")
-            print(f"         error current:  {entry['error']}")
+        row_count_match = entry["row_count"] == base["row_count"]
+        first_row_match = entry["first_row"] == base["first_row"]
+        error_match = entry["error"] == base["error"]
+
+        if row_count_match and first_row_match and error_match:
+            passed += 1
+            print(f"  [PASS] {name}")
+        else:
+            failed += 1
+            regression_failures.append(name)
+            print(f"  [FAIL] {name}")
+            if not row_count_match:
+                print(f"         row_count: baseline={base['row_count']}  current={entry['row_count']}")
+            if not first_row_match:
+                print(f"         first_row baseline: {base['first_row']}")
+                print(f"         first_row current:  {entry['first_row']}")
+            if not error_match:
+                print(f"         error baseline: {base['error']}")
+                print(f"         error current:  {entry['error']}")
 
 print(f"\n[test] Results: {passed} passed, {failed} failed, {errors} errors out of {len(results)} tests")
 

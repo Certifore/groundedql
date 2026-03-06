@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 from .queryplan_models import queryplan_json_schema
 from .validation import validate_query_plan_dict, ValidationErrorItem
 from .llm_adapters import make_llm_client
+from .api.api import _resolve_relative_dates
+from .semantic_lint import semantic_lint
 
 
 SCALAR_AGGS = {"count", "count_distinct", "sum", "avg", "min", "max"}
@@ -35,6 +37,10 @@ def _is_scalar_aggregate(plan_dict: dict) -> bool:
 
 def _auto_fix_plan(plan_dict: dict) -> dict:
     """Apply deterministic post-generation fixes to the plan."""
+    # Resolve relative date sentinels BEFORE Pydantic validation so
+    # $relative_date dicts don't fail the Union[str, int, float, ...] type check.
+    plan_dict = _resolve_relative_dates(plan_dict)
+
     if _is_scalar_aggregate(plan_dict):
         plan_dict = {**plan_dict, "limit": 1, "offset": 0}
     return plan_dict
@@ -131,18 +137,30 @@ class QueryPlanPlanner:
         print(f"[DSL] LLM QueryPlan: {plan_dict}")
 
         _, errs = validate_query_plan_dict(plan_dict, self.schema_path)
-        if not errs:
+        lint_errs = semantic_lint(question, plan_dict)
+
+        if not errs and not lint_errs:
             return plan_dict
 
-        # retry loop
         retries = 0
-        while errs and retries < max_retries:
+        while (errs or lint_errs) and retries < max_retries:
             retries += 1
+
+            feedback_parts = []
+            if errs:
+                feedback_parts.append(
+                    "Validation errors:\n" + _format_errors(errs)
+                )
+            if lint_errs:
+                feedback_parts.append(
+                    "Semantic lint warnings (plan does not match question intent):\n"
+                    + "\n".join(f"- {e}" for e in lint_errs)
+                )
+
             feedback = (
                 "The previous JSON did NOT pass validation.\n"
-                "Fix the JSON and output a corrected QueryPlan.\n"
-                "Validation errors:\n"
-                f"{_format_errors(errs)}"
+                "Fix the JSON and output a corrected QueryPlan.\n\n"
+                + "\n\n".join(feedback_parts)
             )
             messages = base_messages + [{"role": "system", "content": feedback}]
 
@@ -153,7 +171,8 @@ class QueryPlanPlanner:
             )
             plan_dict = _auto_fix_plan(plan_dict)
             print(f"[DSL] LLM QueryPlan (retry {retries}): {plan_dict}")
-            _, errs = validate_query_plan_dict(plan_dict, self.schema_path)
 
-        # return last attempt (even if still invalid) so caller can decide what to do
+            _, errs = validate_query_plan_dict(plan_dict, self.schema_path)
+            lint_errs = semantic_lint(question, plan_dict)
+
         return plan_dict

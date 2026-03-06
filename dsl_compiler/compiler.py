@@ -26,7 +26,7 @@ class QueryPlanError(Exception):
 
 def _require(cond: bool, code: str, message: str, path: str = "$", suggestion: Optional[str] = None):
     if not cond:
-        raise QueryPlanError(code, message, path, suggestion)
+        raise QueryPlanError(message, code=code, path=path, suggestion=suggestion)
 
 
 # -----------------------------
@@ -191,11 +191,18 @@ class Compiler:
             )
 
         self._param_counter = 0
+        self._alias_counter = 0
+
+    def _new_alias(self, logical_name: str) -> str:
+        """Generate a unique table alias to prevent self-join collisions."""
+        self._alias_counter += 1
+        return f"{logical_name}_{self._alias_counter}"
 
     # ---------- Public API ----------
     def compile(self, plan: dict) -> Tuple[str, Dict[str, Any]]:
         _require(isinstance(plan, dict), "INVALID_PLAN", "QueryPlan must be an object.", "$")
         self._param_counter = 0  # reset per compile for cleaner param names
+        self._alias_counter = 0  # reset per compile
 
         # Build a SQLAlchemy selectable (Select or CompoundSelect)
         selectable = self._build_selectable(plan, cte_map={}, path="$")
@@ -328,11 +335,7 @@ class Compiler:
         _require(len(joins) <= self.max_joins, "QUERY_TOO_COMPLEX", "Too many joins.", f"{path}.joins")
 
         source = self._resolve_relation(dataset, cte_map, f"{path}.dataset")
-        from_alias = dataset
-
-        # If dataset is a CTE name, do NOT alias it with the same name (can trigger SQLAlchemy CTE name collisions)
-        if (dataset in cte_map):
-            from_alias = f"{dataset}__src"
+        from_alias = self._new_alias(dataset)
 
         base = source.alias(from_alias)
 
@@ -657,9 +660,8 @@ class Compiler:
                  "INVALID_PLAN", "Link references unknown tables.", path)
 
         if link.from_table not in alias_map:
-            alias_map[link.from_table] = self._sa_tables[link.from_table].alias(link.from_table)
-        if link.to_table not in alias_map:
-            alias_map[link.to_table] = self._sa_tables[link.to_table].alias(link.to_table)
+            alias_map[link.from_table] = self._sa_tables[link.from_table].alias(self._new_alias(link.from_table))
+        alias_map[link.to_table] = self._sa_tables[link.to_table].alias(self._new_alias(link.to_table))
 
         right_tbl = alias_map[link.to_table]
 
@@ -696,6 +698,14 @@ class Compiler:
     def _col(self, alias_map: Dict[str, sa.FromClause], default_table: str, ref: str, path: str) -> sa.ColumnElement:
         _require(isinstance(ref, str), "INVALID_PLAN", "Column ref must be string.", path)
         t, c = _split_ref(ref, default_table)
+
+        if "." not in ref:
+            matching_tables = []
+            for tname, tdef in self.tables.items():
+                if tname in alias_map and c in tdef.columns:
+                    matching_tables.append(tname)
+            if len(matching_tables) > 1:
+                raise QueryPlanError("AMBIGUOUS_COLUMN", f"Ambiguous column '{c}' in tables {matching_tables}.", path)
 
         _require(t in alias_map, "INVALID_PLAN", f"Table/alias '{t}' referenced but not in FROM/JOIN.", path)
 

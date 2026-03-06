@@ -130,6 +130,16 @@ structural_invariants: |
       (b) a dimension alias produced by plan.dimensions
     It MUST NOT refer to a raw dataset column (unless that column was explicitly output as a dimension alias).
 
+  FILTER VALUES AND DATES
+  - filter values MUST be plain scalars (string, number, null, list).
+  - NEVER put SQL expressions (e.g. "CURRENT_TIMESTAMP - INTERVAL '7 days'") as a value.
+    The compiler treats all values as bind parameters — SQL expressions will be rejected by Postgres.
+  - For relative date filters, use the $relative_date sentinel object instead:
+      {"field": "edit_date", "op": ">=", "value": {"$relative_date": {"op": "now_minus_days", "days": 7}}}
+      {"field": "entry_date", "op": ">=", "value": {"$relative_date": {"op": "now_minus_hours", "hours": 24}}}
+      {"field": "edit_date", "op": ">=", "value": {"$relative_date": {"op": "today"}}}
+  - The library resolves $relative_date to a concrete ISO-8601 UTC timestamp at query time.
+
 # -----------------------------------------------------------------------------
 # GENERIC PLAN CONSTRUCTION (SCALABLE — NOT PER-QUESTION PATTERNS)
 # -----------------------------------------------------------------------------
@@ -186,6 +196,18 @@ semantics_rules: |
   - Use contains for fuzzy matching building names and keywords (compiled as ILIKE %...%).
   - Use is_not_null when you need to exclude missing values for correctness.
   - Do NOT use avg(*) or avg(null). avg/sum/min/max require a real logical column field.
+  - For time-based filters (e.g. "in the last 7 days", "past 24 hours", "since yesterday"),
+    use the $relative_date sentinel in the filter value — NEVER a SQL string expression.
+    Examples:
+      "last 7 days"  -> {"$relative_date": {"op": "now_minus_days", "days": 7}}
+      "last 24 hours" -> {"$relative_date": {"op": "now_minus_hours", "hours": 24}}
+      "today"        -> {"$relative_date": {"op": "today"}}
+  - For statistical questions (standard deviation, variance, median, percentile, correlation),
+    use the advanced format with the appropriate Postgres function name in a `func` node.
+    Do NOT use avg as a proxy for these — use the correct function.
+  - Two-step aggregations (e.g. "stddev of per-building counts", "median of per-shop totals")
+    require rollup just like avg-of-counts does: inner query groups and counts, outer query
+    applies the statistical function over the inner alias.
 
 # -----------------------------------------------------------------------------
 # LEGACY FORMAT (RECOMMENDED FOR MOST ANALYTICS QUERIES)
@@ -236,6 +258,57 @@ advanced_queryplan_format:
     - rollup
     - with
     - set_op
+
+  statistical_functions: |
+    The compiler supports ANY Postgres aggregate or statistical function via the `func` expression node.
+    You are NOT limited to count/sum/avg/min/max.
+
+    Use the advanced format `{"func": "<pg_function_name>", "args": [...]}` for any of these:
+
+    STATISTICAL AGGREGATES (use in select or rollup metrics):
+      stddev / stddev_samp     -> sample standard deviation
+      stddev_pop               -> population standard deviation
+      variance / var_samp      -> sample variance
+      var_pop                  -> population variance
+      corr                     -> Pearson correlation coefficient (two args)
+      covar_samp               -> sample covariance (two args)
+      covar_pop                -> population covariance (two args)
+      regr_slope               -> slope of linear regression
+      regr_intercept           -> intercept of linear regression
+      regr_r2                  -> R² of linear regression
+
+    ORDERED-SET AGGREGATES (require WITHIN GROUP — use advanced format with over node):
+      percentile_cont          -> continuous percentile (e.g. median)
+      percentile_disc          -> discrete percentile
+      mode                     -> most frequent value
+
+    WINDOW FUNCTIONS (use with "over" node):
+      row_number               -> sequential row number within partition
+      rank                     -> rank with gaps
+      dense_rank               -> rank without gaps
+      ntile                    -> divide rows into N buckets
+      lag / lead               -> access previous/next row value
+      first_value / last_value -> first/last value in window frame
+      cume_dist                -> cumulative distribution
+      percent_rank             -> relative rank as fraction
+
+    EXAMPLES:
+
+    Standard deviation of work orders per building:
+    {
+      "func": "stddev",
+      "args": [{"col": "work_orders.work_order_id"}]
+    }
+
+    Median (50th percentile) using rollup inner alias:
+    Use a CTE or rollup to first compute per-group counts, then apply percentile
+    in the outer query via the advanced format.
+
+    When to use rollup vs direct func:
+    - Direct func: when aggregating raw column values in one pass
+      (e.g. stddev of replacement_year across all assets)
+    - Rollup: when aggregating over already-grouped values
+      (e.g. stddev of per-building work order counts — requires two-step)
 
 operators_supported:
   comparison: ["=", "!=", ">", ">=", "<", "<="]
@@ -396,3 +469,81 @@ examples:
             alias: "avg_work_orders_per_building"
         limit: 1
         offset: 0
+
+  - question: "Show open work orders in Downs Lauritsen with no update in the last 7 days"
+    plan:
+      version: "1.0"
+      dataset: "work_orders"
+      dimensions:
+        - field: "work_order_id"
+          alias: "work_order_id"
+        - field: "phase_id"
+          alias: "phase_id"
+        - field: "work_order_description"
+          alias: "work_order_description"
+        - field: "status_code"
+          alias: "status_code"
+        - field: "shop_name"
+          alias: "shop_name"
+        - field: "edit_date"
+          alias: "edit_date"
+      metrics: []
+      filters:
+        - field: "building_name"
+          op: "contains"
+          value: "DOWNS LAURITSEN"
+        - field: "status_code"
+          op: "="
+          value: "OPEN"
+        - field: "edit_date"
+          op: "<"
+          value:
+            $relative_date:
+              op: now_minus_days
+              days: 7
+      order_by:
+        - by: "edit_date"
+          dir: "asc"
+      limit: 100
+      offset: 0
+
+  - question: "What is the standard deviation of work orders per building?"
+    note: "Two-step: inner groups by building, outer applies stddev — same pattern as avg rollup"
+    plan:
+      version: "1.0"
+      dataset: "work_orders"
+      dimensions:
+        - field: "building_id"
+          alias: "building_id"
+      metrics:
+        - agg: "count_distinct"
+          field: "work_order_id"
+          alias: "wo_count"
+      filters:
+        - field: "building_id"
+          op: "is_not_null"
+          value: null
+      order_by: []
+      offset: 0
+      rollup:
+        metrics:
+          - agg: "stddev"
+            field: "wo_count"
+            alias: "stddev_wo_per_building"
+        limit: 1
+        offset: 0
+
+  - question: "What is the standard deviation of asset replacement years?"
+    note: "Single-step: stddev directly on a raw column — no rollup needed"
+    plan:
+      dataset: "assets"
+      select:
+        - expr:
+            func: stddev
+            args:
+              - cast:
+                  expr: {col: "assets.replacement_year"}
+                  type: "integer"
+          alias: "stddev_replacement_year"
+      limit: 1
+      offset: 0

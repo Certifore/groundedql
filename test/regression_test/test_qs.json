@@ -257,5 +257,219 @@
         "limit": 100,
         "offset": 0
       }
+    },
+    {
+      "name": "lint_distinct_fires_when_count_used",
+      "question": "How many distinct buildings have work orders?",
+      "type": "lint",
+      "lint": {
+        "expect": "fires",
+        "fragment": "count_distinct"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "dimensions": [],
+        "metrics": [{"agg": "count", "field": "building_id", "alias": "bc"}],
+        "filters": [],
+        "order_by": [],
+        "limit": 1,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_distinct_clean_when_count_distinct_used",
+      "question": "How many distinct buildings have work orders?",
+      "type": "lint",
+      "lint": {
+        "expect": "clean"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "dimensions": [],
+        "metrics": [{"agg": "count_distinct", "field": "building_id", "alias": "bc"}],
+        "filters": [],
+        "order_by": [],
+        "limit": 1,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_distinct_no_fire_for_count_star",
+      "question": "How many unique records are there?",
+      "type": "lint",
+      "lint": {
+        "expect": "clean"
+      },
+      "plan": {
+        "dataset": "assets",
+        "dimensions": [],
+        "metrics": [{"agg": "count", "field": "*", "alias": "total"}],
+        "filters": [],
+        "order_by": [],
+        "limit": 1,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_grouping_fires_when_no_dimensions",
+      "question": "How many work orders per building?",
+      "type": "lint",
+      "lint": {
+        "expect": "fires",
+        "fragment": "dimensions"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "dimensions": [],
+        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
+        "filters": [],
+        "order_by": [],
+        "limit": 100,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_grouping_clean_when_dimensions_present",
+      "question": "How many work orders per building?",
+      "type": "lint",
+      "lint": {
+        "expect": "clean"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "dimensions": [{"field": "building_id", "alias": "building_id"}],
+        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
+        "filters": [],
+        "order_by": [],
+        "limit": 100,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_grouping_no_fire_for_percent",
+      "question": "What percent of assets are fire extinguishers?",
+      "type": "lint",
+      "lint": {
+        "expect": "clean"
+      },
+      "plan": {
+        "dataset": "assets",
+        "dimensions": [],
+        "metrics": [{"agg": "count", "field": "*", "alias": "total"}],
+        "filters": [],
+        "order_by": [],
+        "limit": 1,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_top_n_fires_when_no_order_by",
+      "question": "Which top 10 buildings have the most work orders?",
+      "type": "lint",
+      "lint": {
+        "expect": "fires",
+        "fragment": "order_by"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "dimensions": [{"field": "building_name", "alias": "building_name"}],
+        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
+        "filters": [],
+        "order_by": [],
+        "limit": 10,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_top_n_fires_when_no_limit",
+      "question": "Which buildings have the most work orders?",
+      "type": "lint",
+      "lint": {
+        "expect": "fires",
+        "fragment": "limit"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "dimensions": [{"field": "building_name", "alias": "building_name"}],
+        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
+        "filters": [],
+        "order_by": [{"by": "wo_count", "dir": "desc"}],
+        "limit": null,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_top_n_clean_when_order_and_limit_present",
+      "question": "Which top 10 buildings have the most work orders?",
+      "type": "lint",
+      "lint": {
+        "expect": "clean"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "dimensions": [{"field": "building_name", "alias": "building_name"}],
+        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
+        "filters": [],
+        "order_by": [{"by": "wo_count", "dir": "desc"}],
+        "limit": 10,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_two_step_fires_when_no_rollup",
+      "question": "What is the average number of work orders per building?",
+      "type": "lint",
+      "lint": {
+        "expect": "fires",
+        "fragment": "rollup"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "dimensions": [{"field": "building_id", "alias": "building_id"}],
+        "metrics": [{"agg": "avg", "field": "work_order_id", "alias": "avg_wo"}],
+        "filters": [],
+        "order_by": [],
+        "limit": 1,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_two_step_clean_when_rollup_present",
+      "question": "What is the average number of work orders per building?",
+      "type": "lint",
+      "lint": {
+        "expect": "clean"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "dimensions": [{"field": "building_id", "alias": "building_id"}],
+        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
+        "filters": [],
+        "order_by": [],
+        "offset": 0,
+        "rollup": {
+          "metrics": [{"agg": "avg", "field": "wo_count", "alias": "avg_wo_per_building"}],
+          "limit": 1,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "name": "lint_stddev_per_fires_when_no_rollup",
+      "question": "What is the standard deviation of work orders per building?",
+      "type": "lint",
+      "lint": {
+        "expect": "fires",
+        "fragment": "rollup"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "dimensions": [{"field": "building_id", "alias": "building_id"}],
+        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
+        "filters": [],
+        "order_by": [],
+        "limit": 100,
+        "offset": 0
+      }
     }
   ]
