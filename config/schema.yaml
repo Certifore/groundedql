@@ -4,6 +4,8 @@ dialect: postgres
 tables:
   - name: assets
     db_table: '"finalAssets"'
+    primary_id: asset_tag   # optional: the column that uniquely identifies one entity.
+                            # used by the semantic linter to enforce correct counting.
     description: >
       Stores information about assets.
 
@@ -136,6 +138,9 @@ tables:
 
   - name: work_orders
     db_table: '"finalWorkOrder"'
+    primary_id: work_order_id   # optional: work orders have multiple rows per work_order_id
+                                # (one per phase). declaring this ensures count_distinct is
+                                # enforced when counting work orders.
     description: >
       Stores work order phases related to assets.
 
@@ -282,7 +287,7 @@ links:
     to_table: assets
     join_type: left
     optional: true
-    on:
+    "on":
       - left: work_orders.asset_tag
         op: "="
         right: assets.asset_tag

@@ -1,7 +1,8 @@
 version: 1
-name: QueryPlan Spec
+name: QCE QueryPlan Spec
 description: >
-  Instructions for generating QueryPlan JSON for the dsl_compiler library.
+  Instructions for generating QueryPlan JSON for the QCE (Query Compiler Engine).
+  QCE is a general-purpose SQL compiler for any Postgres database and any domain.
   Output MUST be VALID JSON only (no markdown, no prose, no SQL).
 
 system_instructions: |
@@ -188,11 +189,10 @@ plan_construction_procedure: |
 # SEMANTICS (DOMAIN INTERPRETATION RULES)
 # -----------------------------------------------------------------------------
 semantics_rules: |
-  - When a question asks "how many work orders", interpret as COUNT_DISTINCT(work_order_id),
-    because the work_orders dataset may contain multiple rows per work_order_id (phases/steps).
-  - If the user asks for "average per building" or any "average of grouped values", use rollup:
-      inner metrics compute per-building counts,
-      rollup.metrics computes avg across those per-building counts.
+  - Each dataset in schema.yaml may declare a primary_id — the column that uniquely
+    identifies one real-world entity. When a question asks "how many X", always use
+    count_distinct(primary_id) for that dataset. Do NOT count a non-primary field
+    when the intent is to count distinct entities.
   - Use contains for fuzzy matching building names and keywords (compiled as ILIKE %...%).
   - Use is_not_null when you need to exclude missing values for correctness.
   - Do NOT use avg(*) or avg(null). avg/sum/min/max require a real logical column field.
@@ -340,7 +340,7 @@ expression_nodes:
   over:
     example:
       over:
-        expr: { func: "row_number", args: [] }
+        expr: { func: "row_number", "args": [] }
         partition_by: [ { col: "work_orders.building_id" } ]
         order_by:
           - expr: { col: "work_orders.entry_date" }

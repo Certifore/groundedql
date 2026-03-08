@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 import psycopg2
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
+import yaml
 
 from dsl_compiler import execute_query_plan
 from dsl_compiler.semantic_lint import semantic_lint
@@ -85,6 +86,12 @@ for p in [SCHEMA_PATH, SUITE_PATH]:
         raise SystemExit(f"[test] Required file not found: {p}")
 
 # ---------------------------------------------------------------------------
+# Load schema for lint tests
+# ---------------------------------------------------------------------------
+with open(SCHEMA_PATH) as f:
+    _schema_for_lint = yaml.safe_load(f) or {}
+
+# ---------------------------------------------------------------------------
 # Run suite — handles both DB tests and lint tests
 # ---------------------------------------------------------------------------
 with open(SUITE_PATH) as f:
@@ -94,6 +101,16 @@ print(f"[test] Mode={MODE}  Tests={len(suite)}  Schema={SCHEMA_PATH}\n")
 
 results = []
 errors = 0
+
+def _lint_fires(question: str, plan: dict, fragment: str) -> tuple[bool, str]:
+    errors = semantic_lint(question, plan, _schema_for_lint)   # <-- pass schema
+    matched = any(fragment.lower() in e.lower() for e in errors)
+    msg = errors[0][:100] if errors else "(no errors)"
+    return matched, msg
+
+def _lint_clean(question: str, plan: dict) -> tuple[bool, str]:
+    errors = semantic_lint(question, plan, _schema_for_lint)   # <-- pass schema
+    return (not errors), (str(errors) if errors else "clean")
 
 for i, test in enumerate(suite):
     name = test.get("name", f"test_{i}")
@@ -106,10 +123,8 @@ for i, test in enumerate(suite):
         expect = lint_spec.get("expect")        # "fires" or "clean"
         fragment = lint_spec.get("fragment", "")
 
-        lint_errors = semantic_lint(question, plan)
-
         if expect == "fires":
-            ok = any(fragment.lower() in e.lower() for e in lint_errors)
+            ok, msg = _lint_fires(question, plan, fragment)
             result_entry = {
                 "name": name,
                 "question": question,
@@ -117,12 +132,12 @@ for i, test in enumerate(suite):
                 "plan": plan,
                 "lint_expect": expect,
                 "lint_fragment": fragment,
-                "lint_errors": lint_errors,
+                "lint_errors": msg,
                 "passed": ok,
-                "error": None if ok else f"Expected lint to fire with fragment '{fragment}' but got: {lint_errors}",
+                "error": None if ok else f"Expected lint to fire with fragment '{fragment}' but got: {msg}",
             }
         else:  # "clean"
-            ok = not lint_errors
+            ok, msg = _lint_clean(question, plan)
             result_entry = {
                 "name": name,
                 "question": question,
@@ -130,9 +145,9 @@ for i, test in enumerate(suite):
                 "plan": plan,
                 "lint_expect": expect,
                 "lint_fragment": fragment,
-                "lint_errors": lint_errors,
+                "lint_errors": msg,
                 "passed": ok,
-                "error": None if ok else f"Expected lint clean but got: {lint_errors}",
+                "error": None if ok else f"Expected lint clean but got: {msg}",
             }
 
         results.append(result_entry)
@@ -149,6 +164,7 @@ for i, test in enumerate(suite):
                 engine=engine,
                 schema_path=str(SCHEMA_PATH),
                 query_plan=plan,
+                statement_timeout_ms=120_000,   # 2 minutes — generous for test/dev DB latency
             )
         except Exception as e:
             res = {"error": {"message": str(e)}}

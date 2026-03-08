@@ -17,12 +17,18 @@ def _jsonify(v: Any) -> Any:
     return v
 
 class Executor:
-    def __init__(self, engine: Engine):
+    def __init__(self, engine: Engine, statement_timeout_ms: int = 30_000):
         self.engine = engine
+        self.statement_timeout_ms = statement_timeout_ms
 
     def execute(self, sql: str, params: Dict[str, Any]) -> Dict[str, Any]:
         try:
             with self.engine.begin() as conn:
+                # Enforce per-query statement timeout to prevent runaway queries
+                conn.execute(sqla_text(
+                    f"SET LOCAL statement_timeout = '{self.statement_timeout_ms}'"
+                ))
+
                 # If SQL already contains psycopg2-style %(name)s binds, pass through
                 if "%(" in sql:
                     res = conn.exec_driver_sql(sql, params)

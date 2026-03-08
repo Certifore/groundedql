@@ -3,9 +3,9 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dsl-compiler"                       # PyPI distribution name (can differ from import name)
+name = "qce"
+description = "QCE — Query Compiler Engine: deterministic, schema-validated JSON → SQL for Postgres."
 version = "0.1.0"
-description = "Deterministic JSON-to-SQL compiler/executor for Postgres analytics DSL"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

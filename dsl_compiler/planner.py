@@ -1,15 +1,31 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any, Dict, List, Optional
+
+import yaml
 
 from .queryplan_models import queryplan_json_schema
 from .validation import validate_query_plan_dict, ValidationErrorItem
 from .llm_adapters import make_llm_client
 from .api.api import _resolve_relative_dates
 from .semantic_lint import semantic_lint
+from .join_planner import auto_inject_joins
 
 
 SCALAR_AGGS = {"count", "count_distinct", "sum", "avg", "min", "max"}
+
+_TOP_N_QUESTION_SIGNALS = [
+    r"\btop\s+\d+\b", r"\bbottom\s+\d+\b", r"\bmost\b", r"\bleast\b",
+    r"\bhighest\b", r"\blowest\b", r"\branked\b", r"\bbest\b", r"\bworst\b",
+]
+
+import re
+
+def _has_top_n_signal(question: str) -> bool:
+    q = question.lower()
+    return any(re.search(p, q) for p in _TOP_N_QUESTION_SIGNALS)
 
 
 def _is_scalar_aggregate(plan_dict: dict) -> bool:
@@ -35,15 +51,44 @@ def _is_scalar_aggregate(plan_dict: dict) -> bool:
     )
 
 
-def _auto_fix_plan(plan_dict: dict) -> dict:
-    """Apply deterministic post-generation fixes to the plan."""
-    # Resolve relative date sentinels BEFORE Pydantic validation so
-    # $relative_date dicts don't fail the Union[str, int, float, ...] type check.
+def _auto_fix_plan(plan_dict: dict, question: str = "", schema: Optional[Dict[str, Any]] = None) -> tuple[dict, list[str]]:
+    """
+    Apply deterministic post-generation fixes to the plan.
+    Returns (fixed_plan, list_of_fixes_applied).
+    """
+    fixes = []
     plan_dict = _resolve_relative_dates(plan_dict)
 
     if _is_scalar_aggregate(plan_dict):
         plan_dict = {**plan_dict, "limit": 1, "offset": 0}
-    return plan_dict
+        fixes.append("scalar_aggregate_limit_clamped_to_1")
+
+    # LIMIT policy: grouped queries without a top-N signal should not have
+    # a default limit that silently truncates grouped results.
+    dimensions = plan_dict.get("dimensions", []) or []
+    rollup = plan_dict.get("rollup")
+    if (
+        dimensions
+        and rollup is not None
+        and plan_dict.get("limit") is not None
+        and not _has_top_n_signal(question)
+    ):
+        plan_dict = {k: v for k, v in plan_dict.items() if k != "limit"}
+        fixes.append("inner_rollup_limit_removed_for_full_aggregation")
+
+    # Auto-inject joins when multiple tables are referenced but no joins declared
+    if schema is not None:
+        original = plan_dict
+        plan_dict = auto_inject_joins(plan_dict, schema)
+        if plan_dict is not original:
+            fixes.append("joins_auto_injected_from_link_graph")
+
+    return plan_dict, fixes
+
+
+def _plan_hash(plan_dict: dict) -> str:
+    serialized = json.dumps(plan_dict, sort_keys=True, default=str)
+    return hashlib.sha256(serialized.encode()).hexdigest()[:12]
 
 
 def _format_errors(errors: List[ValidationErrorItem]) -> str:
@@ -94,9 +139,14 @@ class QueryPlanPlanner:
         with open(path, "r") as f:
             return f.read()
 
+    def _read_schema(self) -> Dict[str, Any]:
+        with open(self.schema_path, "r") as f:
+            return yaml.safe_load(f) or {}
+
     def plan(self, question: str) -> Dict[str, Any]:
         schema_text = self._read_text(self.schema_path)
         spec_text = self._read_text(self.spec_path)
+        schema = self._read_schema()    # needed for auto_inject_joins
 
         messages = build_planner_messages(
             question=question,
@@ -109,17 +159,18 @@ class QueryPlanPlanner:
             messages=messages,
             temperature=self.temperature,
         )
-        plan_dict = _auto_fix_plan(plan_dict)
+        plan_dict, _ = _auto_fix_plan(plan_dict, question, schema)
         print(f"[DSL] LLM QueryPlan: {plan_dict}")
         return plan_dict
 
     def plan_with_retry(self, question: str, max_retries: int = 1) -> Dict[str, Any]:
         """
-        Attempt to generate a valid QueryPlan, retrying once with validation
-        error feedback if the first attempt fails validation.
+        Generate a valid QueryPlan with targeted retry feedback.
+        Returns the plan dict augmented with a 'meta' key.
         """
         schema_text = self._read_text(self.schema_path)
         spec_text = self._read_text(self.spec_path)
+        schema = self._read_schema()
 
         base_messages = build_planner_messages(
             question=question,
@@ -127,52 +178,61 @@ class QueryPlanPlanner:
             spec_text=spec_text,
         )
 
+        all_auto_fixes: list[str] = []
+        retry_count = 0
+
         # attempt 1
         plan_dict = self.llm.generate_json(
             json_schema=queryplan_json_schema(),
             messages=base_messages,
             temperature=self.temperature,
         )
-        plan_dict = _auto_fix_plan(plan_dict)
+        plan_dict, fixes = _auto_fix_plan(plan_dict, question, schema)    # pass schema
+        all_auto_fixes.extend(fixes)
         print(f"[DSL] LLM QueryPlan: {plan_dict}")
 
         _, errs = validate_query_plan_dict(plan_dict, self.schema_path)
-        lint_errs = semantic_lint(question, plan_dict)
+        lint_errs = semantic_lint(question, plan_dict, schema)   # <-- pass schema
 
-        if not errs and not lint_errs:
-            return plan_dict
+        while (errs or lint_errs) and retry_count < max_retries:
+            retry_count += 1
 
-        retries = 0
-        while (errs or lint_errs) and retries < max_retries:
-            retries += 1
+            # Targeted retry: schema errors and lint errors get separate sections
+            # so the LLM knows exactly what type of fix is needed.
+            feedback_parts = ["The previous JSON did NOT pass checks. Fix and output a corrected QueryPlan.\n"]
 
-            feedback_parts = []
             if errs:
                 feedback_parts.append(
-                    "Validation errors:\n" + _format_errors(errs)
+                    "STRUCTURAL ERRORS (fix the JSON shape/field references):\n"
+                    + _format_errors(errs)
                 )
             if lint_errs:
                 feedback_parts.append(
-                    "Semantic lint warnings (plan does not match question intent):\n"
+                    "SEMANTIC ERRORS (plan does not match question intent — fix the logic):\n"
                     + "\n".join(f"- {e}" for e in lint_errs)
                 )
 
-            feedback = (
-                "The previous JSON did NOT pass validation.\n"
-                "Fix the JSON and output a corrected QueryPlan.\n\n"
-                + "\n\n".join(feedback_parts)
-            )
-            messages = base_messages + [{"role": "system", "content": feedback}]
+            messages = base_messages + [{"role": "system", "content": "\n\n".join(feedback_parts)}]
 
             plan_dict = self.llm.generate_json(
                 json_schema=queryplan_json_schema(),
                 messages=messages,
                 temperature=self.temperature,
             )
-            plan_dict = _auto_fix_plan(plan_dict)
-            print(f"[DSL] LLM QueryPlan (retry {retries}): {plan_dict}")
+            plan_dict, fixes = _auto_fix_plan(plan_dict, question, schema)    # pass schema
+            all_auto_fixes.extend(fixes)
+            print(f"[DSL] LLM QueryPlan (retry {retry_count}): {plan_dict}")
 
             _, errs = validate_query_plan_dict(plan_dict, self.schema_path)
-            lint_errs = semantic_lint(question, plan_dict)
+            lint_errs = semantic_lint(question, plan_dict, schema)   # <-- pass schema
+
+        # Attach explainability metadata
+        plan_dict["meta"] = {
+            "plan_hash": _plan_hash({k: v for k, v in plan_dict.items() if k != "meta"}),
+            "retry_count": retry_count,
+            "auto_fixes_applied": all_auto_fixes,
+            "validation_errors": [{"path": e.path, "message": e.message} for e in errs],
+            "lint_errors": lint_errs,
+        }
 
         return plan_dict

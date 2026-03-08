@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import yaml
 from sqlalchemy.engine import Engine
@@ -9,6 +9,9 @@ from sqlalchemy.engine import Engine
 from ..compiler import Compiler
 from ..executor import Executor
 from ..exceptions import QueryPlanError, DatabaseExecutionError, SchemaError
+from ..join_planner import auto_inject_joins
+from ..schema_validator import validate_schema
+from ..validation import validate_query_plan_dict
 
 
 def _resolve_relative_dates(plan: Any) -> Any:
@@ -49,12 +52,60 @@ def _resolve_relative_dates(plan: Any) -> Any:
     return plan
 
 
+def load_and_validate_schema(schema_path: str) -> Dict[str, Any]:
+    """
+    Load schema.yaml and run load-time validation.
+    Prints any non-fatal warnings. Raises SchemaError on fatal issues.
+    """
+    try:
+        with open(schema_path, "r") as f:
+            schema = yaml.safe_load(f) or {}
+    except Exception as e:
+        raise SchemaError(f"Failed to load schema from '{schema_path}': {e}") from e
+
+    warnings = validate_schema(schema)
+    for w in warnings:
+        print(f"[QCE schema] {w}")
+
+    return schema
+
+
+def validate_query_plan(
+    query_plan: Dict[str, Any],
+    schema_path: str,
+) -> List[str]:
+    """
+    Validate a QueryPlan without executing it.
+
+    Returns a list of error strings. Empty list = valid.
+    Does NOT require a database connection.
+
+    Args:
+        query_plan: The QueryPlan dict to validate.
+        schema_path: Path to schema.yaml.
+
+    Example:
+        errors = validate_query_plan(plan, "config/schema.yaml")
+        if errors:
+            print("Plan is invalid:", errors)
+    """
+    schema = load_and_validate_schema(schema_path)
+
+    # Strip meta before validation
+    clean_plan = {k: v for k, v in query_plan.items() if k != "meta"}
+    clean_plan = _resolve_relative_dates(clean_plan)
+
+    _, errors = validate_query_plan_dict(clean_plan, schema_path)
+    return [f"{e.path}: {e.message}" for e in errors]
+
+
 def execute_query_plan(
     *,
     engine: Engine,
     schema_path: str,
     query_plan: Dict[str, Any],
     raise_on_error: bool = False,
+    statement_timeout_ms: int = 30_000,
 ) -> Dict[str, Any]:
     """
     Compile and execute a QueryPlan.
@@ -63,27 +114,29 @@ def execute_query_plan(
         engine: SQLAlchemy engine.
         schema_path: Path to schema.yaml.
         query_plan: The QueryPlan dict (from LLM or hand-written).
-        raise_on_error: If True, raises QueryPlanError / DatabaseExecutionError
-                        instead of returning {"error": ...}. Default False for
-                        backward compatibility.
+        raise_on_error: If True, raises typed exceptions instead of returning
+                        {"error": ...}. Default False for backward compatibility.
+        statement_timeout_ms: Per-query statement timeout in milliseconds.
+                              Default 30000 (30 seconds).
 
     Returns:
-        Dict with keys: rows, row_count, columns, sql, params
+        Dict with keys: rows, row_count, columns, sql, params, meta (if present)
         On failure (raise_on_error=False): {"error": {"message": ...}}
     """
     try:
-        try:
-            with open(schema_path, "r") as f:
-                schema = yaml.safe_load(f) or {}
-        except Exception as e:
-            raise SchemaError(f"Failed to load schema from '{schema_path}': {e}") from e
+        schema = load_and_validate_schema(schema_path)
 
-        resolved_plan = _resolve_relative_dates(query_plan)
+        # Strip meta early — before any processing
+        meta = query_plan.get("meta")
+        clean_plan = {k: v for k, v in query_plan.items() if k != "meta"}
+
+        resolved_plan = _resolve_relative_dates(clean_plan)
+        resolved_plan = auto_inject_joins(resolved_plan, schema)
 
         compiler = Compiler(schema)
         sql, params = compiler.compile(resolved_plan)
 
-        executor = Executor(engine)
+        executor = Executor(engine, statement_timeout_ms=statement_timeout_ms)
         result = executor.execute(sql, params)
 
         if "error" in result:
@@ -94,12 +147,16 @@ def execute_query_plan(
 
         result["sql"] = sql
         result["params"] = params
+
+        # Forward meta from planner if originally present
+        if meta is not None:
+            result["meta"] = meta
+
         return result
 
     except (QueryPlanError, DatabaseExecutionError, SchemaError):
         if raise_on_error:
             raise
-        # Backward-compatible: return error dict
         import traceback
         return {"error": {"message": traceback.format_exc(limit=3)}}
     except Exception as e:

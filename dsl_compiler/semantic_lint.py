@@ -11,7 +11,7 @@ waste one retry but don't break anything.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -44,13 +44,18 @@ def _order_by(plan: Dict[str, Any]) -> List[Any]:
 # Public API
 # ---------------------------------------------------------------------------
 
-def semantic_lint(question: str, plan: Dict[str, Any]) -> List[str]:
+def semantic_lint(
+    question: str,
+    plan: Dict[str, Any],
+    schema: Optional[Dict[str, Any]] = None,
+) -> List[str]:
     """
     Run all semantic lint checks.
 
     Args:
         question: The raw user question string.
         plan:     The resolved QueryPlan dict (after _auto_fix_plan).
+        schema:   Parsed schema dict (optional). When provided, enables grain checks.
 
     Returns:
         List of lint error strings (empty = no issues found).
@@ -62,6 +67,9 @@ def semantic_lint(question: str, plan: Dict[str, Any]) -> List[str]:
     _check_grouping(q, plan, errors)
     _check_top_n(q, plan, errors)
     _check_two_step_aggregation(q, plan, errors)
+
+    if schema is not None:
+        _check_grain(q, plan, schema, errors)
 
     return errors
 
@@ -204,6 +212,110 @@ def _check_two_step_aggregation(q: str, plan: Dict[str, Any], errors: List[str])
             f"but plan has no rollup. "
             f"Use a two-step plan: inner query groups and computes per-group metric, "
             f"outer rollup computes the aggregate over those grouped values."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Rule 5: Grain — count metrics should use primary_id when counting entities
+# ---------------------------------------------------------------------------
+
+_COUNT_QUESTION_PATTERNS = [
+    r"\bhow many\b",
+    r"\bcount of\b",
+    r"\bnumber of\b",
+    r"\btotal\s+\w+\b",
+]
+
+def _check_grain(q: str, plan: Dict[str, Any], schema: Dict[str, Any], errors: List[str]) -> None:
+    """
+    If the question asks "how many X" and the dataset has a primary_id declared,
+    ensure that count/count_distinct metrics use the primary_id field, not another field.
+    """
+    if not any(_has(p, q) for p in _COUNT_QUESTION_PATTERNS):
+        return
+
+    # If the user explicitly says "distinct X", they are intentionally counting
+    # a dimension — not the dataset's primary entity. Rule 1 (distinct check)
+    # already handles correctness for that case. Skip grain check.
+    if any(_has(p, q) for p in _DISTINCT_PATTERNS):
+        return
+
+    dataset = plan.get("dataset")
+    if not dataset:
+        return
+
+    # Build a lookup of primary_id by table name from the schema
+    primary_ids: Dict[str, str] = {}
+    for t in schema.get("tables", []):
+        pid = t.get("primary_id")
+        if pid:
+            primary_ids[t["name"]] = pid
+
+    primary_id = primary_ids.get(dataset)
+    if not primary_id:
+        return  # no grain declared for this table — skip
+
+    # Check legacy metrics
+    for m in _metrics(plan):
+        agg = (m.get("agg") or "").lower()
+        field = m.get("field", "*")
+        alias = m.get("alias", field)
+
+        if agg in {"count", "count_distinct"} and field not in {"*", primary_id}:
+            errors.append(
+                f"Lint: question implies counting {dataset} entities ('{_first_match(_COUNT_QUESTION_PATTERNS, q)}') "
+                f"but metric '{alias}' counts '{field}' — "
+                f"the declared primary identifier for '{dataset}' is '{primary_id}'. "
+                f"Use agg='count_distinct', field='{primary_id}' for an accurate count."
+            )
+
+    # Check advanced format select items for count/count_distinct func nodes
+    for item in (plan.get("select") or []):
+        if not isinstance(item, dict):
+            continue
+        expr = item.get("expr") or {}
+        alias = item.get("alias", "")
+        _check_grain_expr(expr, dataset, primary_id, alias, q, errors)
+
+
+def _check_grain_expr(
+    expr: Dict[str, Any],
+    dataset: str,
+    primary_id: str,
+    alias: str,
+    q: str,
+    errors: List[str],
+) -> None:
+    """Recursively check advanced format expression nodes for grain violations."""
+    if not isinstance(expr, dict):
+        return
+
+    fn = (expr.get("func") or "").lower()
+    if fn not in {"count", "count_distinct", "countdistinct"}:
+        return
+
+    args = expr.get("args") or []
+    if not args:
+        return  # count() with no args = count(*) — fine
+
+    # Extract the column reference from the first arg
+    first_arg = args[0] if args else {}
+    if not isinstance(first_arg, dict):
+        return
+
+    col_ref = first_arg.get("col", "")
+    if not col_ref:
+        return
+
+    # Strip table prefix if present (e.g. "work_orders.phase_id" -> "phase_id")
+    col_name = col_ref.split(".")[-1] if "." in col_ref else col_ref
+
+    if col_name not in {"*", primary_id}:
+        errors.append(
+            f"Lint: question implies counting {dataset} entities ('{_first_match(_COUNT_QUESTION_PATTERNS, q)}') "
+            f"but advanced select '{alias}' counts '{col_name}' — "
+            f"the declared primary identifier for '{dataset}' is '{primary_id}'. "
+            f"Use count_distinct('{primary_id}') for an accurate count."
         )
 
 

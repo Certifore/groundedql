@@ -1,44 +1,53 @@
-# DSL-to-SQL Compiler for LLMs
+# QCE — Query Compiler Engine
 
 Deterministic, schema-validated JSON → SQL for Postgres.  
-Instead of letting an LLM generate free-form SQL, the LLM outputs a **QueryPlan JSON** (DSL), and this library compiles it into parameterized SQL and executes it safely.
+Instead of letting an LLM generate free-form SQL, the LLM outputs a **QueryPlan JSON** (DSL), and QCE compiles it into parameterized SQL and executes it safely.
 
 > **Status:** Not published to PyPI yet. Install from source (see below).
 
 ---
 
-## Why This Exists
+## Why QCE Exists
 
 LLM-generated SQL is often:
 - **Inconsistent**: Same question → different SQL on every call.
 - **Unsafe**: Susceptible to injection and unauthorized schema traversal.
 - **Brittle**: Breaks when schema or column names change.
 
-This library fixes that by splitting the problem in two:
+QCE fixes that by splitting the problem in two:
 
 | Responsibility | Who does it |
 |---|---|
 | Extract intent + entities from natural language | LLM |
-| Generate deterministic, safe SQL | This library (compiler) |
+| Generate deterministic, safe SQL | QCE (compiler) |
 
-The LLM's only job is to produce a **QueryPlan JSON object**. The compiler handles everything else.
+The LLM's only job is to produce a **QueryPlan JSON object**. QCE handles everything else.
+
+**QCE works with any Postgres database and any domain** — e-commerce, finance, healthcare, logistics, SaaS analytics, facility management, or anything else. You define the schema mapping once in `schema.yaml` and QCE enforces it on every query.
 
 ---
 
 ## Features
 
 - ✅ **Deterministic Compilation**: Same JSON → same SQL, every time.
+- ✅ **Any Postgres Schema**: Works with any domain — e-commerce, finance, SaaS, logistics, etc.
 - ✅ **Schema Allowlist**: Only tables and columns defined in `schema.yaml` are accessible.
-- ✅ **Fully Parameterized**: All values use `bindparams` — no string concatenation.
-- ✅ **Auto-Fix Layer**: Scalar aggregate queries (`COUNT`, `AVG`, etc. with no dimensions) are automatically clamped to `limit=1`.
-- ✅ **Optional Retry Loop**: If the LLM produces an invalid QueryPlan, the planner sends validation errors back and retries once.
+- ✅ **Fully Parameterized**: All values use `bindparams` — no string concatenation, no SQL injection surface.
+- ✅ **Schema Load-Time Validation**: Catches misconfigured `schema.yaml` before any query runs.
+- ✅ **Statement Timeout**: Every query has a configurable timeout — no runaway queries.
+- ✅ **Standalone Plan Validation**: Validate a QueryPlan without a DB connection.
+- ✅ **Auto-Fix Layer**: Common LLM mistakes (wrong LIMIT on scalar aggregates, missing inner rollup limits) are fixed automatically.
+- ✅ **Optional Retry Loop**: Invalid plans are sent back to the LLM with structured error feedback.
 - ✅ **Advanced SQL Support**:
-  - **Rollups**: Multi-level aggregations (e.g., average of per-building counts) via subquery.
+  - **Rollups**: Multi-level aggregations via subquery (e.g. average of per-group counts).
   - **CTEs**: `WITH` clauses for multi-step logic.
   - **Set Operations**: `UNION`, `INTERSECT`, `EXCEPT`.
-  - **Expressions**: `CASE`, `CAST`, `COALESCE`, `EXISTS`, Window functions (`OVER`).
-- ✅ **LLM-Agnostic**: Works with OpenAI, LangChain, or any callable.
-- ✅ **Library-First**: Use `execute_query_plan` directly in any agent/router — no magic.
+  - **Expressions**: `CASE`, `CAST`, `COALESCE`, `EXISTS`, scalar subqueries, window functions (`OVER`).
+  - **Statistical Functions**: Any Postgres aggregate — `stddev`, `variance`, `corr`, `percentile_cont`, etc.
+- ✅ **Join-Path Planning**: Automatically injects joins when a plan references multiple tables.
+- ✅ **Semantic Lint**: Catches plans that compile correctly but answer the wrong question.
+- ✅ **LLM-Agnostic**: Works with OpenAI, LangChain, Google Gemini, or any callable.
+- ✅ **Library-First**: Drop `execute_query_plan` into any agent, router, or API — no framework lock-in.
 
 ---
 
@@ -116,43 +125,60 @@ pip install git+https://github.com/<user>/<repo>.git
 ### 1. `config/schema.yaml` — Logical → Physical Mapping
 
 Define the logical names your QueryPlan JSON uses and map them to the actual Postgres identifiers.
+**This is the only place you configure QCE for your specific database.**
 The compiler enforces this allowlist — no other tables or columns can be queried.
 
 ```yaml
+# Works for any Postgres schema — e-commerce, SaaS, finance, logistics, etc.
 tables:
-  - name: assets                       # logical name used in QueryPlan JSON
-    db_table: '"finalAssets"'          # physical Postgres table (quoted = case-sensitive)
+  - name: orders                       # logical name used in QueryPlan JSON
+    db_table: '"Orders"'               # physical Postgres table (quote = case-sensitive)
+    primary_id: order_id               # optional — enforces count_distinct on "how many" questions
+    description: Customer orders
     columns:
-      - name: asset_tag                # logical column name
-        db_column: asset_tag           # physical column name
+      - name: order_id
+        db_column: order_id
         type: varchar
-      - name: building_name
-        db_column: building_name
+      - name: customer_id
+        db_column: customer_id
+        type: varchar
+      - name: total_amount
+        db_column: total_amount
+        type: numeric
+      - name: created_at
+        db_column: created_at
+        type: timestamp
+
+  - name: customers
+    db_table: customers
+    primary_id: customer_id
+    columns:
+      - name: customer_id
+        db_column: customer_id
+        type: varchar
+      - name: region
+        db_column: region
         type: varchar
 
-  - name: work_orders
-    db_table: '"finalWorkOrder"'
-    columns:
-      - name: work_order_id
-        db_column: '"workOrderId"'     # quoted physical name
-        type: varchar
-      - name: building_id
-        db_column: '"buildingId"'
-        type: varchar
-
-# Optional: define how tables can be joined
 links:
-  - name: work_orders_to_assets_by_asset_tag
-    from_table: work_orders
-    to_table: assets
+  - name: orders_to_customers
+    from_table: orders
+    to_table: customers
     join_type: left
-    on:
-      - left: work_orders.asset_tag
+    "on":
+      - left: orders.customer_id
         op: "="
-        right: assets.asset_tag
+        right: customers.customer_id
 ```
 
-> **Important**: Your QueryPlan JSON must always use **logical names** (`work_orders.building_id`), never physical DB names (`"buildingId"`).
+> **`primary_id` is optional.** When declared, the semantic linter enforces that
+> "how many X" questions use `count_distinct(primary_id)` rather than counting
+> a non-identifying field. If omitted, the grain check is silently skipped.
+
+> **Important**: Always use **logical names** in QueryPlan JSON, never physical DB names.
+
+> **YAML gotcha**: The `on` key in links must be quoted (`"on":`) because `on` is a reserved
+> boolean keyword in YAML 1.1. QCE will raise a clear `SchemaError` if this is forgotten.
 
 ---
 
@@ -176,24 +202,81 @@ from dsl_compiler import execute_query_plan
 
 engine = create_engine("postgresql+psycopg2://user:pass@host:port/db?sslmode=require")
 
-plan = {
-    "version": "1.0",
-    "dataset": "assets",
-    "filters": [
-        {"field": "building_name", "op": "contains", "value": "CHEN"},
-        {"field": "keyword_of_asset", "op": "contains", "value": "FIRE EXTINGUISHER"}
-    ],
-    "limit": 20,
-    "offset": 0
-}
-
 result = execute_query_plan(
     engine=engine,
     schema_path="config/schema.yaml",
-    query_plan=plan
+    query_plan=plan,
+    statement_timeout_ms=30_000,   # optional, default 30s
 )
-# result keys: rows, row_count, columns, sql, params  (or "error")
 ```
+
+---
+
+### Validate a QueryPlan Without Executing
+
+```python
+from dsl_compiler import validate_query_plan
+
+errors = validate_query_plan(plan, "config/schema.yaml")
+if errors:
+    print("Invalid plan:", errors)
+else:
+    print("Plan is valid")
+```
+
+No database connection required. Use this before sending a plan to the LLM retry loop,
+or to pre-check hand-written plans.
+
+---
+
+### Validate schema.yaml at Load Time
+
+```python
+from dsl_compiler import load_and_validate_schema
+
+schema = load_and_validate_schema("config/schema.yaml")
+# Raises SchemaError immediately on fatal issues (missing db_table, unknown link tables, etc.)
+# Prints warnings for non-fatal issues (primary_id pointing to unknown column)
+```
+
+---
+
+## Statement Timeout
+
+Every query executed by QCE automatically sets a per-query Postgres statement timeout
+before running the SQL. This prevents runaway queries from blocking indefinitely.
+
+Default: **30 seconds**. Override per call:
+
+```python
+result = execute_query_plan(
+    engine=engine,
+    schema_path="config/schema.yaml",
+    query_plan=plan,
+    statement_timeout_ms=10_000,   # 10 seconds
+)
+```
+
+If the query exceeds the timeout, Postgres cancels it and QCE raises `DatabaseExecutionError`.
+
+---
+
+## Schema Validation
+
+QCE validates `schema.yaml` at load time on every call to `execute_query_plan` or
+`load_and_validate_schema`. Fatal errors raise `SchemaError` immediately. Non-fatal
+issues (like `primary_id` pointing to a non-existent column) print a warning and
+continue — the grain check is silently skipped for that table.
+
+| Issue | Severity | Behavior |
+|---|---|---|
+| Missing `tables` list | Fatal | Raises `SchemaError` |
+| Table missing `db_table` | Fatal | Raises `SchemaError` |
+| Table missing `columns` | Fatal | Raises `SchemaError` |
+| Column missing `db_column` | Fatal | Raises `SchemaError` |
+| `primary_id` references unknown column | Warning | Prints warning, grain check skipped |
+| Link `from_table`/`to_table` unknown | Fatal | Raises `SchemaError` |
+| Link missing `on` conditions | Fatal | Raises `SchemaError` |
 
 ---
 
@@ -310,13 +393,58 @@ When a query needs an aggregate *over* grouped results (e.g., "average work orde
 
 ## Auto-Fix Behaviour
 
-The planner applies deterministic fixes after the LLM responds:
+The planner applies deterministic fixes after the LLM responds and records every fix applied:
 
-| Condition | Fix applied |
-|---|---|
-| No dimensions, all metrics are aggregations, no rollup | `limit` forced to `1`, `offset` forced to `0` |
+| Condition | Fix applied | `meta.auto_fixes_applied` value |
+|---|---|---|
+| No dimensions, all metrics are aggregations, no rollup | `limit` forced to `1`, `offset` forced to `0` | `scalar_aggregate_limit_clamped_to_1` |
+| Dimensions present, rollup present, no top-N signal in question | `limit` removed from inner plan so all groups are included | `inner_rollup_limit_removed_for_full_aggregation` |
+| Advanced format plan references columns from multiple tables but no joins declared | Shortest join path injected automatically from `links` in `schema.yaml` | `joins_auto_injected_from_link_graph` |
 
-This prevents unnecessary `LIMIT 100` clauses on scalar queries like `COUNT(*)`.
+---
+
+## Join-Path Planning
+
+When an advanced format plan references columns from multiple tables but declares no explicit joins, the planner automatically resolves the shortest join path using the `links` graph from `schema.yaml` and injects it before compilation.
+
+**Example** — LLM generates this plan (no joins declared):
+
+```json
+{
+  "dataset": "work_orders",
+  "select": [
+    {"expr": {"col": "work_orders.work_order_id"}, "alias": "work_order_id"},
+    {"expr": {"col": "assets.keyword_of_asset"}, "alias": "keyword_of_asset"}
+  ],
+  "limit": 10, "offset": 0
+}
+```
+
+The planner detects that `assets` is referenced, finds the shortest path via the `work_orders_to_assets_by_asset_tag` link, and injects:
+
+```json
+"joins": [{"link": "work_orders_to_assets_by_asset_tag"}]
+```
+
+The `meta.auto_fixes_applied` field records `"joins_auto_injected_from_link_graph"`.
+
+**Using join planning directly:**
+
+```python
+from dsl_compiler import auto_inject_joins, build_link_graph, shortest_join_path
+import yaml
+
+with open("config/schema.yaml") as f:
+    schema = yaml.safe_load(f)
+
+# Find shortest path between two tables
+graph = build_link_graph(schema)
+path = shortest_join_path(graph, "work_orders", "assets")
+# [{"name": "work_orders_to_assets_by_asset_tag", "from_table": "work_orders", ...}]
+
+# Auto-inject joins into a plan
+fixed_plan = auto_inject_joins(plan, schema)
+```
 
 ---
 
@@ -331,7 +459,9 @@ In addition to JSON-schema and Pydantic validation, the planner runs a **semanti
 | **Distinct** | `distinct`, `unique`, `different` | Any metric counting a named field must use `count_distinct`, not `count` |
 | **Grouping** | `per X`, `by X`, `each X`, `for each`, `grouped by` | `dimensions` must be non-empty when metrics are present |
 | **Top-N** | `top N`, `most`, `least`, `highest`, `lowest`, `ranked` | `order_by` must be set and `limit` must be present |
-| **Two-step aggregation** | `average per`, `stddev per`, `median per`, `variance per`, `average number of X per` | `rollup` must be present |
+| **Two-step aggregation** | `average per`, `stddev per`, `median per`, `variance per` | `rollup` must be present |
+| **Grain (legacy)** | `how many`, `count of`, `number of`, `total X` | Legacy metrics must use `primary_id` from `schema.yaml` when declared |
+| **Grain (advanced)** | `how many`, `count of`, `number of`, `total X` | Advanced format `func: count/count_distinct` nodes must use `primary_id` |
 
 ### How it works
 
@@ -482,20 +612,13 @@ Output:
 
 ```
 [test] Connected: db=postgres, user=postgres
-[test] Mode=check  Tests=10  Schema=...
+[test] Mode=check  Tests=30  Schema=...
 
   [PASS] cte_top_buildings
-  [PASS] setop_union_assets_chen_beckman
-  [PASS] case_asset_category
-  [PASS] exists_any_chen_workorders
-  [PASS] window_row_number_recent_workorders
-  [PASS] count_all_assets
-  [PASS] count_distinct_buildings_with_work_orders
-  [PASS] avg_work_orders_per_building
-  [PASS] top_10_buildings_by_work_orders
-  [PASS] fire_extinguishers_chen
+  ...
+  [PASS] join_path_auto_inject_work_orders_to_assets
 
-[test] Results: 10 passed, 0 failed, 0 errors out of 10 tests
+[test] Results: 30 passed, 0 failed, 0 errors out of 30 tests
 ```
 
 ### Adding a New Test
@@ -555,33 +678,47 @@ The `sql` field is saved in the baseline for human review but is **not** part of
 | `case_asset_category` | `CASE` expression |
 | `exists_any_chen_workorders` | `EXISTS` subquery |
 | `window_row_number_recent_workorders` | Window function (`ROW_NUMBER OVER`) |
+| `lint_distinct_*` | Lint: distinct rule (fires + clean + count(*) no FP) |
+| `lint_grouping_*` | Lint: grouping rule (fires + clean + percent no FP) |
+| `lint_top_n_*` | Lint: top-N rule (fires on missing order_by, limit, clean) |
+| `lint_two_step_*` | Lint: two-step aggregation rule (fires + clean + stddev) |
+| `lint_grain_*` | Lint: grain rule legacy format (fires + clean) |
+| `lint_grain_advanced_format_*` | Lint: grain rule advanced format (fires + clean) |
+| `lint_meta_auto_fix_scalar` | Auto-fix: scalar aggregate limit clamped |
+| `lint_limit_policy_rollup_no_top_n` | Auto-fix: rollup inner limit removed |
+| `lint_targeted_retry_schema_error_fragment` | Lint: targeted retry grain fragment |
+| `join_path_auto_inject_work_orders_to_assets` | Join-path: auto-inject from link graph |
 
 ---
 
-## Troubleshooting
+## Who Is QCE For?
 
-| Issue | Fix |
+QCE is a general-purpose compiler. It is not tied to any industry or domain. If your system:
+
+- Has a Postgres database
+- Wants to let users (or LLMs) query it in natural language
+- Needs deterministic, safe, auditable SQL generation
+
+...then QCE is the right tool. The only customization required is writing `schema.yaml` for your database and `queryplan_spec.yaml` with domain-appropriate examples for the LLM.
+
+**Example domains where QCE applies directly:**
+
+| Domain | Example questions |
 |---|---|
-| `SyntaxError` or `unmatched ')'` on import | File corruption from a bad merge — rewrite the file cleanly |
-| `'str' object has no attribute 'content'` | LangChain model hit the deprecated `__call__` path — ensure `make_llm_client` routes it to `LangChainJSONAdapter` via `.invoke` |
-| Wrong port for Supabase/PgBouncer | Use the transaction pooler port (usually `6543`) with `sslmode=require` |
-| Physical table names not quoted | Wrap `CamelCase` names in double quotes in `schema.yaml`: `db_table: '"MyTable"'` |
-| `LIMIT 100` on a scalar aggregate | Handled automatically by `_auto_fix_plan` in `planner.py` |
-
----
-
-## Security Notes
-
-- The compiler only allows tables/columns defined in `schema.yaml` — unknown references raise `QueryPlanError`.
-- All user-supplied values go through SQLAlchemy `bindparams` — no string interpolation.
-- In production, connect with a **read-only database user**.
+| E-commerce | "What are the top 10 products by revenue this month?" |
+| SaaS analytics | "How many active users per plan tier?" |
+| Finance | "What is the average transaction value by region?" |
+| Healthcare | "How many patients were admitted per ward last week?" |
+| Logistics | "Which routes have the most delayed shipments?" |
+| Facility management | "How many open work orders per building?" |
+| HR | "What is the average tenure per department?" |
 
 ---
 
 ## Roadmap
 
 - [ ] Publish to PyPI
-- [ ] First-class `validate_query_plan` API (pre-execution, callable independently)
+- [x] First-class `validate_query_plan` API (pre-execution, callable independently)
 - [ ] DB introspection to auto-generate `schema.yaml`
 - [ ] Richer join inference (multi-hop links)
 - [ ] Correlated subqueries

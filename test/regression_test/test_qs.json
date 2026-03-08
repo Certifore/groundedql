@@ -471,5 +471,152 @@
         "limit": 100,
         "offset": 0
       }
+    },
+    {
+      "name": "lint_grain_fires_when_wrong_field_counted",
+      "question": "How many work orders are there in CHEN?",
+      "type": "lint",
+      "lint": {
+        "expect": "fires",
+        "fragment": "work_order_id"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "dimensions": [],
+        "metrics": [{"agg": "count_distinct", "field": "phase_id", "alias": "wo_count"}],
+        "filters": [{"field": "building_name", "op": "contains", "value": "CHEN"}],
+        "order_by": [],
+        "limit": 1,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_grain_clean_when_primary_id_used",
+      "question": "How many work orders are there in CHEN?",
+      "type": "lint",
+      "lint": {
+        "expect": "clean"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "dimensions": [],
+        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
+        "filters": [{"field": "building_name", "op": "contains", "value": "CHEN"}],
+        "order_by": [],
+        "limit": 1,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_meta_auto_fix_scalar",
+      "question": "How many assets are there?",
+      "type": "lint",
+      "lint": {
+        "expect": "clean"
+      },
+      "plan": {
+        "dataset": "assets",
+        "dimensions": [],
+        "metrics": [{"agg": "count", "field": "*", "alias": "total_assets"}],
+        "filters": [],
+        "order_by": [],
+        "limit": 1,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_limit_policy_rollup_no_top_n",
+      "question": "What is the average number of work orders per building?",
+      "type": "lint",
+      "lint": {
+        "expect": "fires",
+        "fragment": "rollup"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "dimensions": [{"field": "building_id", "alias": "building_id"}],
+        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
+        "filters": [],
+        "order_by": [],
+        "limit": 100,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_targeted_retry_schema_error_fragment",
+      "question": "How many work orders are there?",
+      "type": "lint",
+      "lint": {
+        "expect": "fires",
+        "fragment": "work_order_id"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "dimensions": [],
+        "metrics": [{"agg": "count_distinct", "field": "phase_id", "alias": "wo_count"}],
+        "filters": [],
+        "order_by": [],
+        "limit": 1,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_grain_advanced_format_fires",
+      "question": "How many work orders are in CHEN?",
+      "type": "lint",
+      "lint": {
+        "expect": "fires",
+        "fragment": "work_order_id"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "select": [
+          {
+            "expr": {"func": "count_distinct", "args": [{"col": "work_orders.phase_id"}]},
+            "alias": "wo_count"
+          }
+        ],
+        "where": {"cmp": {"left": {"col": "work_orders.building_name"}, "op": "contains", "right": "CHEN"}},
+        "limit": 1,
+        "offset": 0
+      }
+    },
+    {
+      "name": "lint_grain_advanced_format_clean",
+      "question": "How many work orders are in CHEN?",
+      "type": "lint",
+      "lint": {
+        "expect": "clean"
+      },
+      "plan": {
+        "dataset": "work_orders",
+        "select": [
+          {
+            "expr": {"func": "count_distinct", "args": [{"col": "work_orders.work_order_id"}]},
+            "alias": "wo_count"
+          }
+        ],
+        "where": {"cmp": {"left": {"col": "work_orders.building_name"}, "op": "contains", "right": "CHEN"}},
+        "limit": 1,
+        "offset": 0
+      }
+    },
+    {
+      "name": "join_path_auto_inject_work_orders_to_assets",
+      "question": "Show work orders with asset keyword for CHEN (auto join)",
+      "plan": {
+        "dataset": "work_orders",
+        "select": [
+          {"expr": {"col": "work_orders.work_order_id"}, "alias": "work_order_id"},
+          {"expr": {"col": "work_orders.building_name"}, "alias": "building_name"},
+          {"expr": {"col": "assets.keyword_of_asset"}, "alias": "keyword_of_asset"}
+        ],
+        "where": {
+          "cmp": {"left": {"col": "work_orders.building_name"}, "op": "contains", "right": "CHEN"}
+        },
+        "order_by": [{"by": "work_order_id", "dir": "asc"}],
+        "limit": 10,
+        "offset": 0
+      }
     }
   ]

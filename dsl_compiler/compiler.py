@@ -26,7 +26,7 @@ class QueryPlanError(Exception):
 
 def _require(cond: bool, code: str, message: str, path: str = "$", suggestion: Optional[str] = None):
     if not cond:
-        raise QueryPlanError(message, code=code, path=path, suggestion=suggestion)
+        raise QueryPlanError(code=code, message=message, path=path, suggestion=suggestion)
 
 
 # -----------------------------
@@ -201,6 +201,8 @@ class Compiler:
     # ---------- Public API ----------
     def compile(self, plan: dict) -> Tuple[str, Dict[str, Any]]:
         _require(isinstance(plan, dict), "INVALID_PLAN", "QueryPlan must be an object.", "$")
+        # Strip internal metadata before compilation
+        plan = {k: v for k, v in plan.items() if k != "meta"}
         self._param_counter = 0  # reset per compile for cleaner param names
         self._alias_counter = 0  # reset per compile
 
@@ -661,9 +663,15 @@ class Compiler:
 
         if link.from_table not in alias_map:
             alias_map[link.from_table] = self._sa_tables[link.from_table].alias(self._new_alias(link.from_table))
-        alias_map[link.to_table] = self._sa_tables[link.to_table].alias(self._new_alias(link.to_table))
 
-        right_tbl = alias_map[link.to_table]
+        to_alias_name = self._new_alias(link.to_table)
+        to_alias = self._sa_tables[link.to_table].alias(to_alias_name)
+
+        # Register under the logical table name so qualified refs like
+        # "assets.keyword_of_asset" resolve correctly.
+        alias_map[link.to_table] = to_alias
+
+        right_tbl = to_alias
 
         conds = []
         for i, on in enumerate(link.on):
