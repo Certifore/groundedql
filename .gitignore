@@ -33,3 +33,8 @@ Thumbs.db
 .idea/
 *.swp
 *~
+
+# Benchmark secrets and results
+benchmark/.env
+benchmark/results/*.json
+!benchmark/results/.gitkeep

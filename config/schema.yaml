@@ -2,292 +2,336 @@ version: 1
 dialect: postgres
 
 tables:
-  - name: assets
-    db_table: '"finalAssets"'
-    primary_id: asset_tag   # optional: the column that uniquely identifies one entity.
-                            # used by the semantic linter to enforce correct counting.
-    description: >
-      Stores information about assets.
-
+  - name: customers
+    db_table: customers
+    primary_id: customer_id
+    description: Stores customer information.
     columns:
-      - name: asset_tag
-        db_column: asset_tag
+      - name: customer_id
+        db_column: customer_id
         type: varchar
-        description: >
-          Unique tag or identifier assigned to the asset.
-          Example: 'ASSET-001234'
-
-      - name: asset_type
-        db_column: asset_type
+        description: Unique identifier for the customer.
+      - name: company_name
+        db_column: company_name
         type: varchar
-        description: >
-          Specific type of asset.
-          Example: 'SERIALIZED'
-
-      - name: description_of_asset
-        db_column: description_of_asset
+        description: Name of the customer company.
+      - name: contact_name
+        db_column: contact_name
         type: varchar
-        description: >
-          Brief description of the asset (may contain keywords).
-          Example: 'FIRE EXTINGUISHER, DRY CHEMICAL - ELEVATOR MECHANICAL ROOM'
-
-      - name: region_code
-        db_column: region_code
+        description: Name of the primary contact at the company.
+      - name: contact_title
+        db_column: contact_title
         type: varchar
-        description: >
-          Region code where the asset is located.
-          Example: '10'
-
-      - name: facility_id
-        db_column: facility_id
+        description: Job title of the contact person.
+      - name: address
+        db_column: address
         type: varchar
-        description: >
-          Facility ID for the asset.
-          Example: '11'
-
-      - name: building_name
-        db_column: building_name
+        description: Street address of the customer.
+      - name: city
+        db_column: city
         type: varchar
-        description: >
-          Name of the building where the asset can be found.
-          Example: 'CHEN NEUROSCIENCE RESEARCH BLDG'
-
-      - name: building_code
-        db_column: building_code
+        description: City where the customer is located.
+      - name: region
+        db_column: region
         type: varchar
-        description: >
-          Code of the building where the asset can be found.
-          Example: '99'
-
-      - name: date_purchased
-        db_column: date_purchased
-        type: timestamp
-        description: >
-          Date the asset was purchased.
-          Format: YYYY-MM-DDTHH:mm:ss
-
-      - name: date_last_modified
-        db_column: date_last_modified
-        type: timestamp
-        description: >
-          Date the asset details were last modified.
-          Format: YYYY-MM-DDTHH:mm:ss
-
-      - name: location_code
-        db_column: location_code
+        description: Region or state.
+      - name: postal_code
+        db_column: postal_code
         type: varchar
-        description: >
-          Location code for the asset.
-          Example: 'B158ME'
-
-      - name: location_id
-        db_column: location_id
+        description: Postal or ZIP code.
+      - name: country
+        db_column: country
         type: varchar
-        description: >
-          Location ID for the asset.
-          Example: '207'
-
-      - name: asset_group
-        db_column: asset_group
+        description: Country where the customer is located.
+      - name: phone
+        db_column: phone
         type: varchar
-        description: >
-          Group of assets this asset belongs to.
-
-      - name: tag_number
-        db_column: tag_number
+        description: Customer phone number.
+      - name: fax
+        db_column: fax
         type: varchar
-        description: >
-          Tag number of the asset.
-          Example: '9922'
+        description: Customer fax number.
 
-      - name: description_of_asset_in_detail
-        db_column: description_of_asset_in_detail
-        type: varchar
-        description: >
-          Detailed description of the asset.
-          Example: 'SIZE: 2.5", FOR SOUTH OF COMPUTER ROOM ONLY - NOT IN COMPUTER ROOM'
-
-      - name: keyword_of_asset
-        db_column: keyword_of_asset
-        type: varchar
-        description: >
-          Keyword(s) representing the asset type.
-          Example: 'FIRE EXTINGUISHER'
-
-      - name: location_of_asset_in_building
-        db_column: location_of_asset_in_building
-        type: varchar
-        description: >
-          Specific location of the asset within the building.
-          Example: 'RECEPTION'
-
-      - name: replacement_year
-        db_column: replacement_year
+  - name: orders
+    db_table: orders
+    primary_id: order_id
+    description: Stores customer orders.
+    columns:
+      - name: order_id
+        db_column: order_id
         type: integer
-        description: >
-          Year the asset is scheduled for maintenance or replacement.
-          Example: 2032
-
-      - name: asset_status
-        db_column: asset_status
+        description: Unique identifier for the order.
+      - name: customer_id
+        db_column: customer_id
         type: varchar
-        description: >
-          Maintenance status of the asset based on replacement_year.
-          Example: 'deferred' or 'not deferred'
+        description: Foreign key to customers.customer_id.
+      - name: employee_id
+        db_column: employee_id
+        type: integer
+        description: Foreign key to employees.employee_id.
+      - name: order_date
+        db_column: order_date
+        type: date
+        description: Date the order was placed.
+      - name: required_date
+        db_column: required_date
+        type: date
+        description: Date the order is required by.
+      - name: shipped_date
+        db_column: shipped_date
+        type: date
+        description: Date the order was shipped. Null if not yet shipped.
+      - name: ship_via
+        db_column: ship_via
+        type: integer
+        description: Foreign key to shippers.shipper_id.
+      - name: freight
+        db_column: freight
+        type: numeric
+        description: Freight cost for the order.
+      - name: ship_name
+        db_column: ship_name
+        type: varchar
+        description: Name of the recipient at the shipping address.
+      - name: ship_address
+        db_column: ship_address
+        type: varchar
+        description: Shipping street address.
+      - name: ship_city
+        db_column: ship_city
+        type: varchar
+        description: Shipping city.
+      - name: ship_region
+        db_column: ship_region
+        type: varchar
+        description: Shipping region or state.
+      - name: ship_postal_code
+        db_column: ship_postal_code
+        type: varchar
+        description: Shipping postal code.
+      - name: ship_country
+        db_column: ship_country
+        type: varchar
+        description: Shipping country.
 
-
-  - name: work_orders
-    db_table: '"finalWorkOrder"'
-    primary_id: work_order_id   # optional: work orders have multiple rows per work_order_id
-                                # (one per phase). declaring this ensures count_distinct is
-                                # enforced when counting work orders.
-    description: >
-      Stores work order phases related to assets.
-
+  - name: order_details
+    db_table: order_details
+    description: Line items within each order.
     columns:
-      - name: work_order_id
-        db_column: '"workOrderId"'
+      - name: order_id
+        db_column: order_id
+        type: integer
+        description: Foreign key to orders.order_id.
+      - name: product_id
+        db_column: product_id
+        type: integer
+        description: Foreign key to products.product_id.
+      - name: unit_price
+        db_column: unit_price
+        type: numeric
+        description: Price per unit at time of order.
+      - name: quantity
+        db_column: quantity
+        type: integer
+        description: Number of units ordered.
+      - name: discount
+        db_column: discount
+        type: numeric
+        description: Discount applied as a fraction. 0.05 means 5 percent discount.
+
+  - name: products
+    db_table: products
+    primary_id: product_id
+    description: Stores product catalog.
+    columns:
+      - name: product_id
+        db_column: product_id
+        type: integer
+        description: Unique identifier for the product.
+      - name: product_name
+        db_column: product_name
         type: varchar
-        description: >
-          Unique identifier for the work order. Work orders with the same ID are related
-          to the same problem but may represent different steps toward resolution.
-          Example: 'WO12345'
-
-      - name: phase_id
-        db_column: '"phaseId"'
+        description: Name of the product.
+      - name: supplier_id
+        db_column: supplier_id
+        type: integer
+        description: Foreign key to suppliers.supplier_id.
+      - name: category_id
+        db_column: category_id
+        type: integer
+        description: Foreign key to categories.category_id.
+      - name: quantity_per_unit
+        db_column: quantity_per_unit
         type: varchar
-        description: >
-          Identifier for the phase of a work order (stage in workflow).
-          Example: '1'
+        description: How the product is packaged.
+      - name: unit_price
+        db_column: unit_price
+        type: numeric
+        description: Current price per unit.
+      - name: units_in_stock
+        db_column: units_in_stock
+        type: integer
+        description: Number of units currently in stock.
+      - name: units_on_order
+        db_column: units_on_order
+        type: integer
+        description: Number of units currently on order.
+      - name: reorder_level
+        db_column: reorder_level
+        type: integer
+        description: Minimum stock level before reorder is triggered.
+      - name: discontinued
+        db_column: discontinued
+        type: integer
+        description: 1 if the product is discontinued, 0 if active.
 
-      - name: work_order_description
-        db_column: '"workOrderDescription"'
+  - name: categories
+    db_table: categories
+    primary_id: category_id
+    description: Product categories.
+    columns:
+      - name: category_id
+        db_column: category_id
+        type: integer
+        description: Unique identifier for the category.
+      - name: category_name
+        db_column: category_name
         type: varchar
-        description: >
-          Short description of the work order provided by the technician.
-          Example: 'Replaced broken window lock'
-
-      - name: shop_id
-        db_column: '"shopId"'
+        description: Name of the category.
+      - name: description
+        db_column: description
         type: varchar
-        description: >
-          Unique ID of the shop or department responsible for this phase.
-          Example: '100'
+        description: Description of the category.
 
-      - name: shop_name
-        db_column: '"shopName"'
+  - name: employees
+    db_table: employees
+    primary_id: employee_id
+    description: Stores employee information.
+    columns:
+      - name: employee_id
+        db_column: employee_id
+        type: integer
+        description: Unique identifier for the employee.
+      - name: last_name
+        db_column: last_name
         type: varchar
-        description: >
-          Full name of the shop or department.
-          Example: 'Fire alarm shop'
-
-      - name: status_code
-        db_column: '"statusCode"'
+        description: Employee last name.
+      - name: first_name
+        db_column: first_name
         type: varchar
-        description: >
-          Current status of the work order.
-          Example: 'CLOSED', 'COMPLETE', 'CANCELLED', 'SCHEDULED'
-
-      - name: priority_code
-        db_column: '"priorityCode"'
+        description: Employee first name.
+      - name: title
+        db_column: title
         type: varchar
-        description: >
-          Priority level assigned to the work order.
-          Example: '1-EMERGENCY', '2-URGENT', '3-CALENDARED', '4-ROUTINE'
-
-      - name: order_type
-        db_column: '"orderType"'
+        description: Job title.
+      - name: country
+        db_column: country
         type: varchar
-        description: >
-          General type of work order.
-          Example: 'PLANNED', 'HOUSING', 'SUPPORT', 'UNPLANNED'
-
-      - name: order_category
-        db_column: '"orderCategory"'
+        description: Country where the employee is based.
+      - name: city
+        db_column: city
         type: varchar
-        description: >
-          Specific category within the order type.
-          Example: 'PREVENTIVE', 'ROUTINE'
+        description: City where the employee is based.
+      - name: hire_date
+        db_column: hire_date
+        type: date
+        description: Date the employee was hired.
+      - name: reports_to
+        db_column: reports_to
+        type: integer
+        description: employee_id of the manager this employee reports to.
 
-      - name: edit_date
-        db_column: '"editDate"'
-        type: timestamp
-        description: >
-          Date the work order was last modified.
-          Format: YYYY-MM-DDTHH:mm:ss
-
-      - name: entry_date
-        db_column: '"entryDate"'
-        type: timestamp
-        description: >
-          Date the work order was entered into the database.
-          Format: YYYY-MM-DDTHH:mm:ss
-
-      - name: long_desc
-        db_column: '"longDesc"'
+  - name: suppliers
+    db_table: suppliers
+    primary_id: supplier_id
+    description: Stores supplier information.
+    columns:
+      - name: supplier_id
+        db_column: supplier_id
+        type: integer
+        description: Unique identifier for the supplier.
+      - name: company_name
+        db_column: company_name
         type: varchar
-        description: >
-          Detailed description associated with the work order phase.
-
-      - name: asset_tag
-        db_column: '"assetTag"'
+        description: Supplier company name.
+      - name: country
+        db_column: country
         type: varchar
-        description: >
-          Asset tag or identifier referenced by the work order.
-          Example: 'ASSET-001234'
-
-      - name: floor_id
-        db_column: '"floorId"'
+        description: Country where the supplier is located.
+      - name: city
+        db_column: city
         type: varchar
-        description: >
-          Floor number where the work occurred.
-          Example: '3'
+        description: City where the supplier is located.
 
-      - name: room_number
-        db_column: '"roomNumber"'
+  - name: shippers
+    db_table: shippers
+    primary_id: shipper_id
+    description: Shipping companies used to ship orders.
+    columns:
+      - name: shipper_id
+        db_column: shipper_id
+        type: integer
+        description: Unique identifier for the shipper.
+      - name: company_name
+        db_column: company_name
         type: varchar
-        description: >
-          Room number where the work order took place.
-          Example: 'B123'
-
-      - name: building_id
-        db_column: '"buildingId"'
+        description: Name of the shipping company.
+      - name: phone
+        db_column: phone
         type: varchar
-        description: >
-          Building identifier where the work occurred.
-          Example: '310'
+        description: Shipper phone number.
 
-      - name: building_name
-        db_column: '"buildingName"'
-        type: varchar
-        description: >
-          Full name of the building.
-          Example: 'Beckman institute'
-
-      - name: worker_id
-        db_column: '"workerId"'
-        type: varchar
-        description: >
-          Unique ID of the worker responsible for this phase.
-          Example: '2215629'
-
-      - name: worker_name
-        db_column: '"workerName"'
-        type: varchar
-        description: >
-          Full name of the worker responsible for this phase.
-          Example: 'John Smith'
-
-
-# Soft link used by the compiler for deterministic joins (NOT enforced by DB).
-# Keep join_type: left because many work_orders.asset_tag values are missing in assets.asset_tag.
 links:
-  - name: work_orders_to_assets_by_asset_tag
-    from_table: work_orders
-    to_table: assets
+  - name: orders_to_customers
+    from_table: orders
+    to_table: customers
     join_type: left
-    optional: true
     "on":
-      - left: work_orders.asset_tag
+      - left: orders.customer_id
         op: "="
-        right: assets.asset_tag
+        right: customers.customer_id
+
+  - name: order_details_to_orders
+    from_table: order_details
+    to_table: orders
+    join_type: left
+    "on":
+      - left: order_details.order_id
+        op: "="
+        right: orders.order_id
+
+  - name: order_details_to_products
+    from_table: order_details
+    to_table: products
+    join_type: left
+    "on":
+      - left: order_details.product_id
+        op: "="
+        right: products.product_id
+
+  - name: products_to_categories
+    from_table: products
+    to_table: categories
+    join_type: left
+    "on":
+      - left: products.category_id
+        op: "="
+        right: categories.category_id
+
+  - name: orders_to_employees
+    from_table: orders
+    to_table: employees
+    join_type: left
+    "on":
+      - left: orders.employee_id
+        op: "="
+        right: employees.employee_id
+
+  - name: products_to_suppliers
+    from_table: products
+    to_table: suppliers
+    join_type: left
+    "on":
+      - left: products.supplier_id
+        op: "="
+        right: suppliers.supplier_id

@@ -5,6 +5,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 import yaml
+from pathlib import Path
 
 from .queryplan_models import queryplan_json_schema
 from .validation import validate_query_plan_dict, ValidationErrorItem
@@ -12,6 +13,7 @@ from .llm_adapters import make_llm_client
 from .api.api import _resolve_relative_dates
 from .semantic_lint import semantic_lint
 from .join_planner import auto_inject_joins
+from .spec_builder import build_minimal_queryplan_spec
 
 
 SCALAR_AGGS = {"count", "count_distinct", "sum", "avg", "min", "max"}
@@ -124,16 +126,24 @@ class QueryPlanPlanner:
     def __init__(
         self,
         *,
-        llm,
+        llm: Any,
         schema_path: str,
-        spec_path: str,
+        spec_path: str | None = None,
+        spec_dict: dict | None = None,
         temperature: float = 0.0,
         model: Optional[str] = None,
     ):
         self.llm = make_llm_client(llm, model=model)
         self.schema_path = schema_path
-        self.spec_path = spec_path
         self.temperature = temperature
+
+        if spec_dict is not None:
+            self.spec = spec_dict
+        elif spec_path is not None:
+            self.spec = yaml.safe_load(Path(spec_path).read_text())
+        else:
+            # Fallback: auto-generate a minimal spec from the schema
+            self.spec = build_minimal_queryplan_spec(schema_path)
 
     def _read_text(self, path: str) -> str:
         with open(path, "r") as f:
@@ -145,8 +155,8 @@ class QueryPlanPlanner:
 
     def plan(self, question: str) -> Dict[str, Any]:
         schema_text = self._read_text(self.schema_path)
-        spec_text = self._read_text(self.spec_path)
-        schema = self._read_schema()    # needed for auto_inject_joins
+        spec_text = yaml.dump(self.spec)
+        schema = self._read_schema()
 
         messages = build_planner_messages(
             question=question,
@@ -164,12 +174,8 @@ class QueryPlanPlanner:
         return plan_dict
 
     def plan_with_retry(self, question: str, max_retries: int = 1) -> Dict[str, Any]:
-        """
-        Generate a valid QueryPlan with targeted retry feedback.
-        Returns the plan dict augmented with a 'meta' key.
-        """
         schema_text = self._read_text(self.schema_path)
-        spec_text = self._read_text(self.spec_path)
+        spec_text = yaml.dump(self.spec)
         schema = self._read_schema()
 
         base_messages = build_planner_messages(
@@ -181,18 +187,17 @@ class QueryPlanPlanner:
         all_auto_fixes: list[str] = []
         retry_count = 0
 
-        # attempt 1
         plan_dict = self.llm.generate_json(
             json_schema=queryplan_json_schema(),
             messages=base_messages,
             temperature=self.temperature,
         )
-        plan_dict, fixes = _auto_fix_plan(plan_dict, question, schema)    # pass schema
+        plan_dict, fixes = _auto_fix_plan(plan_dict, question, schema)
         all_auto_fixes.extend(fixes)
         print(f"[DSL] LLM QueryPlan: {plan_dict}")
 
         _, errs = validate_query_plan_dict(plan_dict, self.schema_path)
-        lint_errs = semantic_lint(question, plan_dict, schema)   # <-- pass schema
+        lint_errs = semantic_lint(question, plan_dict, schema)
 
         while (errs or lint_errs) and retry_count < max_retries:
             retry_count += 1

@@ -1,622 +1,473 @@
 [
-    {
-      "name": "cte_top_buildings",
-      "question": "Top 5 buildings by distinct work orders (CTE)",
-      "plan": {
-        "with": [
-          {
-            "name": "per_building",
-            "plan": {
-              "version": "1.0",
-              "dataset": "work_orders",
-              "dimensions": [
-                { "field": "building_id", "alias": "building_id" }
-              ],
-              "metrics": [
-                { "agg": "count_distinct", "field": "work_order_id", "alias": "work_orders" }
-              ],
-              "filters": [
-                { "field": "building_id", "op": "is_not_null", "value": null }
-              ],
-              "limit": 1000,
-              "offset": 0
-            }
-          }
-        ],
-        "dataset": "per_building",
-        "select": [
-          { "expr": { "col": "per_building.building_id" }, "alias": "building_id" },
-          { "expr": { "col": "per_building.work_orders" }, "alias": "work_orders" }
-        ],
-        "order_by": [
-          { "by": "work_orders", "dir": "desc" }
-        ],
-        "limit": 5,
-        "offset": 0
-      }
-    },
-  
-    {
-      "name": "setop_union_assets_chen_beckman",
-      "question": "Union assets in CHEN and BECKMAN (set_op UNION ALL)",
-      "plan": {
-        "set_op": {
-          "op": "union_all",
-          "left": {
-            "dataset": "assets",
-            "select": [
-              { "expr": { "col": "assets.asset_tag" }, "alias": "asset_tag" },
-              { "expr": { "col": "assets.building_name" }, "alias": "building_name" }
-            ],
-            "where": {
-              "cmp": { "left": { "col": "assets.building_name" }, "op": "contains", "right": "CHEN" }
-            },
-            "limit": 50,
-            "offset": 0
-          },
-          "right": {
-            "dataset": "assets",
-            "select": [
-              { "expr": { "col": "assets.asset_tag" }, "alias": "asset_tag" },
-              { "expr": { "col": "assets.building_name" }, "alias": "building_name" }
-            ],
-            "where": {
-              "cmp": { "left": { "col": "assets.building_name" }, "op": "contains", "right": "BECKMAN" }
-            },
-            "limit": 50,
-            "offset": 0
-          }
-        },
-        "order_by": [
-          { "by": "building_name", "dir": "asc" },
-          { "by": "asset_tag", "dir": "asc" }
-        ],
-        "limit": 20,
-        "offset": 0
-      }
-    },
-  
-    {
-      "name": "case_asset_category",
-      "question": "Classify assets as fire extinguisher vs other (CASE)",
-      "plan": {
-        "dataset": "assets",
-        "select": [
-          { "expr": { "col": "assets.asset_tag" }, "alias": "asset_tag" },
-          { "expr": { "col": "assets.keyword_of_asset" }, "alias": "keyword_of_asset" },
-          {
-            "expr": {
-              "case": {
-                "whens": [
-                  {
-                    "when": {
-                      "cmp": {
-                        "left": { "col": "assets.keyword_of_asset" },
-                        "op": "contains",
-                        "right": "FIRE EXTINGUISHER"
-                      }
-                    },
-                    "then": { "lit": "fire_extinguisher" }
-                  }
-                ],
-                "else": { "lit": "other" }
-              }
-            },
-            "alias": "asset_category"
-          }
-        ],
-        "where": {
-          "cmp": { "left": { "col": "assets.building_name" }, "op": "contains", "right": "CHEN" }
-        },
-        "order_by": [
-          { "by": { "col": "assets.asset_tag" }, "dir": "asc" }
-        ],
-        "limit": 20,
-        "offset": 0
-      }
-    },
-  
-    {
-      "name": "exists_any_chen_workorders",
-      "question": "Return 10 assets in CHEN only if there exists ANY CHEN work order (EXISTS)",
-      "plan": {
-        "dataset": "assets",
-        "select": [
-          { "expr": { "col": "assets.asset_tag" }, "alias": "asset_tag" },
-          { "expr": { "col": "assets.building_name" }, "alias": "building_name" }
-        ],
-        "where": {
-          "and": [
-            {
-              "cmp": { "left": { "col": "assets.building_name" }, "op": "contains", "right": "CHEN" }
-            },
-            {
-              "exists": {
-                "plan": {
-                  "dataset": "work_orders",
-                  "where": {
-                    "cmp": { "left": { "col": "work_orders.building_name" }, "op": "contains", "right": "CHEN" }
-                  },
-                  "limit": 1,
-                  "offset": 0
-                }
-              }
-            }
-          ]
-        },
-        "limit": 10,
-        "offset": 0
-      }
-    },
-  
-    {
-      "name": "window_row_number_recent_workorders",
-      "question": "Show recent work orders in CHEN with row_number() over(partition by building_id order by entry_date desc) (WINDOW)",
-      "plan": {
-        "dataset": "work_orders",
-        "select": [
-          { "expr": { "col": "work_orders.work_order_id" }, "alias": "work_order_id" },
-          { "expr": { "col": "work_orders.building_id" }, "alias": "building_id" },
-          { "expr": { "col": "work_orders.entry_date" }, "alias": "entry_date" },
-          {
-            "expr": {
-              "over": {
-                "expr": { "func": "row_number", "args": [] },
-                "partition_by": [ { "col": "work_orders.building_id" } ],
-                "order_by": [
-                  { "expr": { "col": "work_orders.entry_date" }, "dir": "desc" }
-                ]
-              }
-            },
-            "alias": "rn"
-          }
-        ],
-        "where": {
-          "cmp": { "left": { "col": "work_orders.building_name" }, "op": "contains", "right": "CHEN" }
-        },
-        "order_by": [
-          { "by": { "col": "work_orders.entry_date" }, "dir": "desc" }
-        ],
-        "limit": 20,
-        "offset": 0
-      }
-    },
-    {
-      "name": "count_all_assets",
-      "question": "How many assets are there?",
-      "plan": {
-        "version": "1.0",
-        "dataset": "assets",
-        "dimensions": [],
-        "metrics": [{"agg": "count", "field": "*", "alias": "total_assets"}],
-        "filters": [],
-        "order_by": [],
+  {
+    "name": "count_all_customers",
+    "question": "How many customers are there in total?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "customers",
+      "dimensions": [],
+      "metrics": [{"agg": "count_distinct", "field": "customer_id", "alias": "total_customers"}],
+      "filters": [],
+      "order_by": [],
+      "limit": 1,
+      "offset": 0
+    }
+  },
+  {
+    "name": "count_all_orders",
+    "question": "How many orders are there in total?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [],
+      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "total_orders"}],
+      "filters": [],
+      "order_by": [],
+      "limit": 1,
+      "offset": 0
+    }
+  },
+  {
+    "name": "count_all_products",
+    "question": "How many products are there?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "products",
+      "dimensions": [],
+      "metrics": [{"agg": "count_distinct", "field": "product_id", "alias": "total_products"}],
+      "filters": [],
+      "order_by": [],
+      "limit": 1,
+      "offset": 0
+    }
+  },
+  {
+    "name": "orders_by_country",
+    "question": "How many orders per shipping country?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [{"field": "ship_country", "alias": "ship_country"}],
+      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
+      "filters": [{"field": "ship_country", "op": "is_not_null", "value": null}],
+      "order_by": [{"by": "order_count", "dir": "desc"}],
+      "limit": 100,
+      "offset": 0
+    }
+  },
+  {
+    "name": "top_10_customers_by_orders",
+    "question": "Top 10 customers by number of orders",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [{"field": "customer_id", "alias": "customer_id"}],
+      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
+      "filters": [],
+      "order_by": [{"by": "order_count", "dir": "desc"}],
+      "limit": 10,
+      "offset": 0
+    }
+  },
+  {
+    "name": "products_in_beverages",
+    "question": "Show me all products in the Beverages category",
+    "plan": {
+      "version": "1.0",
+      "dataset": "products",
+      "dimensions": [],
+      "metrics": [],
+      "filters": [{"field": "category_id", "op": "=", "value": 1}],
+      "order_by": [],
+      "limit": 100,
+      "offset": 0
+    }
+  },
+  {
+    "name": "discontinued_products",
+    "question": "How many discontinued products are there?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "products",
+      "dimensions": [],
+      "metrics": [{"agg": "count_distinct", "field": "product_id", "alias": "discontinued_count"}],
+      "filters": [{"field": "discontinued", "op": "=", "value": 1}],
+      "order_by": [],
+      "limit": 1,
+      "offset": 0
+    }
+  },
+  {
+    "name": "avg_orders_per_customer",
+    "question": "What is the average number of orders per customer?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [{"field": "customer_id", "alias": "customer_id"}],
+      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "orders_per_customer"}],
+      "filters": [{"field": "customer_id", "op": "is_not_null", "value": null}],
+      "order_by": [],
+      "offset": 0,
+      "rollup": {
+        "metrics": [{"agg": "avg", "field": "orders_per_customer", "alias": "avg_orders_per_customer"}],
         "limit": 1,
-        "offset": 0
-      }
-    },
-    {
-      "name": "count_distinct_buildings_with_work_orders",
-      "question": "How many distinct buildings have work orders?",
-      "plan": {
-        "version": "1.0",
-        "dataset": "work_orders",
-        "dimensions": [],
-        "metrics": [{"agg": "count_distinct", "field": "building_id", "alias": "distinct_buildings"}],
-        "filters": [],
-        "order_by": [],
-        "limit": 1,
-        "offset": 0
-      }
-    },
-    {
-      "name": "avg_work_orders_per_building",
-      "question": "What is the average number of work orders per building across campus?",
-      "plan": {
-        "version": "1.0",
-        "dataset": "work_orders",
-        "dimensions": [{"field": "building_id", "alias": "building_id"}],
-        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
-        "filters": [{"field": "building_id", "op": "is_not_null", "value": null}],
-        "order_by": [],
-        "offset": 0,
-        "rollup": {
-          "metrics": [{"agg": "avg", "field": "wo_count", "alias": "avg_wo_per_building"}],
-          "limit": 1,
-          "offset": 0
-        }
-      }
-    },
-    {
-      "name": "top_10_buildings_by_work_orders",
-      "question": "Which 10 buildings have the most work orders?",
-      "plan": {
-        "version": "1.0",
-        "dataset": "work_orders",
-        "dimensions": [{"field": "building_name", "alias": "building_name"}],
-        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
-        "filters": [{"field": "building_name", "op": "is_not_null", "value": null}],
-        "order_by": [{"by": "wo_count", "dir": "desc"}],
-        "limit": 10,
-        "offset": 0
-      }
-    },
-    {
-      "name": "fire_extinguishers_chen",
-      "question": "Show me all fire extinguishers in the Chen building.",
-      "plan": {
-        "version": "1.0",
-        "dataset": "assets",
-        "dimensions": [],
-        "metrics": [],
-        "filters": [
-          {"field": "building_name", "op": "contains", "value": "CHEN"},
-          {"field": "keyword_of_asset", "op": "contains", "value": "FIRE EXTINGUISHER"}
-        ],
-        "order_by": [],
-        "limit": 100,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_distinct_fires_when_count_used",
-      "question": "How many distinct buildings have work orders?",
-      "type": "lint",
-      "lint": {
-        "expect": "fires",
-        "fragment": "count_distinct"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "dimensions": [],
-        "metrics": [{"agg": "count", "field": "building_id", "alias": "bc"}],
-        "filters": [],
-        "order_by": [],
-        "limit": 1,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_distinct_clean_when_count_distinct_used",
-      "question": "How many distinct buildings have work orders?",
-      "type": "lint",
-      "lint": {
-        "expect": "clean"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "dimensions": [],
-        "metrics": [{"agg": "count_distinct", "field": "building_id", "alias": "bc"}],
-        "filters": [],
-        "order_by": [],
-        "limit": 1,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_distinct_no_fire_for_count_star",
-      "question": "How many unique records are there?",
-      "type": "lint",
-      "lint": {
-        "expect": "clean"
-      },
-      "plan": {
-        "dataset": "assets",
-        "dimensions": [],
-        "metrics": [{"agg": "count", "field": "*", "alias": "total"}],
-        "filters": [],
-        "order_by": [],
-        "limit": 1,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_grouping_fires_when_no_dimensions",
-      "question": "How many work orders per building?",
-      "type": "lint",
-      "lint": {
-        "expect": "fires",
-        "fragment": "dimensions"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "dimensions": [],
-        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
-        "filters": [],
-        "order_by": [],
-        "limit": 100,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_grouping_clean_when_dimensions_present",
-      "question": "How many work orders per building?",
-      "type": "lint",
-      "lint": {
-        "expect": "clean"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "dimensions": [{"field": "building_id", "alias": "building_id"}],
-        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
-        "filters": [],
-        "order_by": [],
-        "limit": 100,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_grouping_no_fire_for_percent",
-      "question": "What percent of assets are fire extinguishers?",
-      "type": "lint",
-      "lint": {
-        "expect": "clean"
-      },
-      "plan": {
-        "dataset": "assets",
-        "dimensions": [],
-        "metrics": [{"agg": "count", "field": "*", "alias": "total"}],
-        "filters": [],
-        "order_by": [],
-        "limit": 1,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_top_n_fires_when_no_order_by",
-      "question": "Which top 10 buildings have the most work orders?",
-      "type": "lint",
-      "lint": {
-        "expect": "fires",
-        "fragment": "order_by"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "dimensions": [{"field": "building_name", "alias": "building_name"}],
-        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
-        "filters": [],
-        "order_by": [],
-        "limit": 10,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_top_n_fires_when_no_limit",
-      "question": "Which buildings have the most work orders?",
-      "type": "lint",
-      "lint": {
-        "expect": "fires",
-        "fragment": "limit"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "dimensions": [{"field": "building_name", "alias": "building_name"}],
-        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
-        "filters": [],
-        "order_by": [{"by": "wo_count", "dir": "desc"}],
-        "limit": null,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_top_n_clean_when_order_and_limit_present",
-      "question": "Which top 10 buildings have the most work orders?",
-      "type": "lint",
-      "lint": {
-        "expect": "clean"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "dimensions": [{"field": "building_name", "alias": "building_name"}],
-        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
-        "filters": [],
-        "order_by": [{"by": "wo_count", "dir": "desc"}],
-        "limit": 10,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_two_step_fires_when_no_rollup",
-      "question": "What is the average number of work orders per building?",
-      "type": "lint",
-      "lint": {
-        "expect": "fires",
-        "fragment": "rollup"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "dimensions": [{"field": "building_id", "alias": "building_id"}],
-        "metrics": [{"agg": "avg", "field": "work_order_id", "alias": "avg_wo"}],
-        "filters": [],
-        "order_by": [],
-        "limit": 1,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_two_step_clean_when_rollup_present",
-      "question": "What is the average number of work orders per building?",
-      "type": "lint",
-      "lint": {
-        "expect": "clean"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "dimensions": [{"field": "building_id", "alias": "building_id"}],
-        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
-        "filters": [],
-        "order_by": [],
-        "offset": 0,
-        "rollup": {
-          "metrics": [{"agg": "avg", "field": "wo_count", "alias": "avg_wo_per_building"}],
-          "limit": 1,
-          "offset": 0
-        }
-      }
-    },
-    {
-      "name": "lint_stddev_per_fires_when_no_rollup",
-      "question": "What is the standard deviation of work orders per building?",
-      "type": "lint",
-      "lint": {
-        "expect": "fires",
-        "fragment": "rollup"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "dimensions": [{"field": "building_id", "alias": "building_id"}],
-        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
-        "filters": [],
-        "order_by": [],
-        "limit": 100,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_grain_fires_when_wrong_field_counted",
-      "question": "How many work orders are there in CHEN?",
-      "type": "lint",
-      "lint": {
-        "expect": "fires",
-        "fragment": "work_order_id"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "dimensions": [],
-        "metrics": [{"agg": "count_distinct", "field": "phase_id", "alias": "wo_count"}],
-        "filters": [{"field": "building_name", "op": "contains", "value": "CHEN"}],
-        "order_by": [],
-        "limit": 1,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_grain_clean_when_primary_id_used",
-      "question": "How many work orders are there in CHEN?",
-      "type": "lint",
-      "lint": {
-        "expect": "clean"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "dimensions": [],
-        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
-        "filters": [{"field": "building_name", "op": "contains", "value": "CHEN"}],
-        "order_by": [],
-        "limit": 1,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_meta_auto_fix_scalar",
-      "question": "How many assets are there?",
-      "type": "lint",
-      "lint": {
-        "expect": "clean"
-      },
-      "plan": {
-        "dataset": "assets",
-        "dimensions": [],
-        "metrics": [{"agg": "count", "field": "*", "alias": "total_assets"}],
-        "filters": [],
-        "order_by": [],
-        "limit": 1,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_limit_policy_rollup_no_top_n",
-      "question": "What is the average number of work orders per building?",
-      "type": "lint",
-      "lint": {
-        "expect": "fires",
-        "fragment": "rollup"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "dimensions": [{"field": "building_id", "alias": "building_id"}],
-        "metrics": [{"agg": "count_distinct", "field": "work_order_id", "alias": "wo_count"}],
-        "filters": [],
-        "order_by": [],
-        "limit": 100,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_targeted_retry_schema_error_fragment",
-      "question": "How many work orders are there?",
-      "type": "lint",
-      "lint": {
-        "expect": "fires",
-        "fragment": "work_order_id"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "dimensions": [],
-        "metrics": [{"agg": "count_distinct", "field": "phase_id", "alias": "wo_count"}],
-        "filters": [],
-        "order_by": [],
-        "limit": 1,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_grain_advanced_format_fires",
-      "question": "How many work orders are in CHEN?",
-      "type": "lint",
-      "lint": {
-        "expect": "fires",
-        "fragment": "work_order_id"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "select": [
-          {
-            "expr": {"func": "count_distinct", "args": [{"col": "work_orders.phase_id"}]},
-            "alias": "wo_count"
-          }
-        ],
-        "where": {"cmp": {"left": {"col": "work_orders.building_name"}, "op": "contains", "right": "CHEN"}},
-        "limit": 1,
-        "offset": 0
-      }
-    },
-    {
-      "name": "lint_grain_advanced_format_clean",
-      "question": "How many work orders are in CHEN?",
-      "type": "lint",
-      "lint": {
-        "expect": "clean"
-      },
-      "plan": {
-        "dataset": "work_orders",
-        "select": [
-          {
-            "expr": {"func": "count_distinct", "args": [{"col": "work_orders.work_order_id"}]},
-            "alias": "wo_count"
-          }
-        ],
-        "where": {"cmp": {"left": {"col": "work_orders.building_name"}, "op": "contains", "right": "CHEN"}},
-        "limit": 1,
-        "offset": 0
-      }
-    },
-    {
-      "name": "join_path_auto_inject_work_orders_to_assets",
-      "question": "Show work orders with asset keyword for CHEN (auto join)",
-      "plan": {
-        "dataset": "work_orders",
-        "select": [
-          {"expr": {"col": "work_orders.work_order_id"}, "alias": "work_order_id"},
-          {"expr": {"col": "work_orders.building_name"}, "alias": "building_name"},
-          {"expr": {"col": "assets.keyword_of_asset"}, "alias": "keyword_of_asset"}
-        ],
-        "where": {
-          "cmp": {"left": {"col": "work_orders.building_name"}, "op": "contains", "right": "CHEN"}
-        },
-        "order_by": [{"by": "work_order_id", "dir": "asc"}],
-        "limit": 10,
         "offset": 0
       }
     }
-  ]
+  },
+  {
+    "name": "total_freight_cost",
+    "question": "What is the total freight cost across all orders?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [],
+      "metrics": [{"agg": "sum", "field": "freight", "alias": "total_freight"}],
+      "filters": [],
+      "order_by": [],
+      "limit": 1,
+      "offset": 0
+    }
+  },
+  {
+    "name": "products_by_category",
+    "question": "How many products per category?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "products",
+      "dimensions": [{"field": "category_id", "alias": "category_id"}],
+      "metrics": [{"agg": "count_distinct", "field": "product_id", "alias": "product_count"}],
+      "filters": [],
+      "order_by": [{"by": "product_count", "dir": "desc"}],
+      "limit": 100,
+      "offset": 0
+    }
+  },
+  {
+    "name": "cte_top_customers",
+    "question": "Using a CTE, find the top 5 customers by order count",
+    "plan": {
+      "with": [
+        {
+          "name": "customer_order_counts",
+          "plan": {
+            "dataset": "orders",
+            "select": [
+              {"expr": {"col": "orders.customer_id"}, "alias": "customer_id"},
+              {"expr": {"func": "count_distinct", "args": [{"col": "orders.order_id"}]}, "alias": "order_count"}
+            ],
+            "group_by": [{"col": "orders.customer_id"}],
+            "limit": 1000,
+            "offset": 0
+          }
+        }
+      ],
+      "dataset": "customer_order_counts",
+      "select": [
+        {"expr": {"col": "customer_order_counts.customer_id"}, "alias": "customer_id"},
+        {"expr": {"col": "customer_order_counts.order_count"}, "alias": "order_count"}
+      ],
+      "order_by": [{"by": "order_count", "dir": "desc"}],
+      "limit": 5,
+      "offset": 0
+    }
+  },
+  {
+    "name": "setop_union_customers_germany_france",
+    "question": "Show customers from Germany or France",
+    "plan": {
+      "set_op": {
+        "op": "union_all",
+        "left": {
+          "dataset": "customers",
+          "select": [
+            {"expr": {"col": "customers.customer_id"}, "alias": "customer_id"},
+            {"expr": {"col": "customers.company_name"}, "alias": "company_name"},
+            {"expr": {"col": "customers.country"}, "alias": "country"}
+          ],
+          "where": {"cmp": {"left": {"col": "customers.country"}, "op": "=", "right": "Germany"}},
+          "limit": 100,
+          "offset": 0
+        },
+        "right": {
+          "dataset": "customers",
+          "select": [
+            {"expr": {"col": "customers.customer_id"}, "alias": "customer_id"},
+            {"expr": {"col": "customers.company_name"}, "alias": "company_name"},
+            {"expr": {"col": "customers.country"}, "alias": "country"}
+          ],
+          "where": {"cmp": {"left": {"col": "customers.country"}, "op": "=", "right": "France"}},
+          "limit": 100,
+          "offset": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "case_product_price_tier",
+    "question": "Categorise products as cheap, mid, or expensive by unit price",
+    "plan": {
+      "dataset": "products",
+      "select": [
+        {"expr": {"col": "products.product_name"}, "alias": "product_name"},
+        {"expr": {"col": "products.unit_price"}, "alias": "unit_price"},
+        {
+          "expr": {
+            "case": {
+              "whens": [
+                {"when": {"cmp": {"left": {"col": "products.unit_price"}, "op": "<", "right": 20}}, "then": {"lit": "cheap"}},
+                {"when": {"cmp": {"left": {"col": "products.unit_price"}, "op": "<", "right": 50}}, "then": {"lit": "mid"}}
+              ],
+              "else": {"lit": "expensive"}
+            }
+          },
+          "alias": "price_tier"
+        }
+      ],
+      "order_by": [{"by": "unit_price", "dir": "asc"}],
+      "limit": 100,
+      "offset": 0
+    }
+  },
+  {
+    "name": "exists_customers_with_orders",
+    "question": "Show customers who have placed at least one order",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [
+        {"field": "customer_id", "alias": "customer_id"}
+      ],
+      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
+      "filters": [{"field": "customer_id", "op": "is_not_null", "value": null}],
+      "order_by": [{"by": "order_count", "dir": "desc"}],
+      "limit": 100,
+      "offset": 0
+    }
+  },
+  {
+    "name": "window_row_number_orders_by_freight",
+    "question": "Rank orders by freight cost descending",
+    "plan": {
+      "dataset": "orders",
+      "select": [
+        {"expr": {"col": "orders.order_id"}, "alias": "order_id"},
+        {"expr": {"col": "orders.freight"}, "alias": "freight"},
+        {
+          "expr": {
+            "over": {
+              "expr": {"func": "row_number", "args": []},
+              "order_by": [{"expr": {"col": "orders.freight"}, "dir": "desc"}]
+            }
+          },
+          "alias": "freight_rank"
+        }
+      ],
+      "order_by": [{"by": "freight_rank", "dir": "asc"}],
+      "limit": 10,
+      "offset": 0
+    }
+  },
+  {
+    "name": "lint_distinct_fires",
+    "question": "How many distinct countries do customers come from?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "customers",
+      "dimensions": [],
+      "metrics": [{"agg": "count", "field": "country", "alias": "country_count"}],
+      "filters": [],
+      "order_by": [],
+      "limit": 1,
+      "offset": 0
+    },
+    "expect_lint_errors": true
+  },
+  {
+    "name": "lint_distinct_clean",
+    "question": "How many distinct countries do customers come from?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "customers",
+      "dimensions": [],
+      "metrics": [{"agg": "count_distinct", "field": "country", "alias": "country_count"}],
+      "filters": [],
+      "order_by": [],
+      "limit": 1,
+      "offset": 0
+    },
+    "expect_lint_errors": false
+  },
+  {
+    "name": "lint_grouping_fires",
+    "question": "How many orders per customer?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [],
+      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
+      "filters": [],
+      "order_by": [],
+      "limit": 1,
+      "offset": 0
+    },
+    "expect_lint_errors": true
+  },
+  {
+    "name": "lint_grouping_clean",
+    "question": "How many orders per customer?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [{"field": "customer_id", "alias": "customer_id"}],
+      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
+      "filters": [],
+      "order_by": [],
+      "limit": 100,
+      "offset": 0
+    },
+    "expect_lint_errors": false
+  },
+  {
+    "name": "lint_top_n_fires_missing_order",
+    "question": "Top 5 products by unit price",
+    "plan": {
+      "version": "1.0",
+      "dataset": "products",
+      "dimensions": [{"field": "product_name", "alias": "product_name"}],
+      "metrics": [{"agg": "avg", "field": "unit_price", "alias": "avg_price"}],
+      "filters": [],
+      "order_by": [],
+      "limit": 5,
+      "offset": 0
+    },
+    "expect_lint_errors": true
+  },
+  {
+    "name": "lint_top_n_clean",
+    "question": "Top 5 products by unit price",
+    "plan": {
+      "version": "1.0",
+      "dataset": "products",
+      "dimensions": [{"field": "product_name", "alias": "product_name"}],
+      "metrics": [{"agg": "avg", "field": "unit_price", "alias": "avg_price"}],
+      "filters": [],
+      "order_by": [{"by": "avg_price", "dir": "desc"}],
+      "limit": 5,
+      "offset": 0
+    },
+    "expect_lint_errors": false
+  },
+  {
+    "name": "lint_two_step_fires",
+    "question": "What is the average number of orders per customer?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [{"field": "customer_id", "alias": "customer_id"}],
+      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
+      "filters": [],
+      "order_by": [],
+      "limit": 100,
+      "offset": 0
+    },
+    "expect_lint_errors": true
+  },
+  {
+    "name": "lint_two_step_clean",
+    "question": "What is the average number of orders per customer?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [{"field": "customer_id", "alias": "customer_id"}],
+      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
+      "filters": [{"field": "customer_id", "op": "is_not_null", "value": null}],
+      "order_by": [],
+      "offset": 0,
+      "rollup": {
+        "metrics": [{"agg": "avg", "field": "order_count", "alias": "avg_orders_per_customer"}],
+        "limit": 1,
+        "offset": 0
+      }
+    },
+    "expect_lint_errors": false
+  },
+  {
+    "name": "lint_grain_fires",
+    "question": "How many customers are there?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "customers",
+      "dimensions": [],
+      "metrics": [{"agg": "count", "field": "country", "alias": "customer_count"}],
+      "filters": [],
+      "order_by": [],
+      "limit": 1,
+      "offset": 0
+    },
+    "expect_lint_errors": true
+  },
+  {
+    "name": "lint_grain_clean",
+    "question": "How many customers are there?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "customers",
+      "dimensions": [],
+      "metrics": [{"agg": "count_distinct", "field": "customer_id", "alias": "customer_count"}],
+      "filters": [],
+      "order_by": [],
+      "limit": 1,
+      "offset": 0
+    },
+    "expect_lint_errors": false
+  },
+  {
+    "name": "lint_meta_auto_fix_scalar",
+    "question": "How many total orders are there?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [],
+      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "total_orders"}],
+      "filters": [],
+      "order_by": [],
+      "limit": 500,
+      "offset": 0
+    },
+    "expect_auto_fix": "scalar_aggregate_limit_clamped_to_1"
+  },
+  {
+    "name": "lint_limit_policy_rollup_no_top_n",
+    "question": "What is the average number of orders per customer?",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [{"field": "customer_id", "alias": "customer_id"}],
+      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
+      "filters": [{"field": "customer_id", "op": "is_not_null", "value": null}],
+      "order_by": [],
+      "limit": 100,
+      "offset": 0,
+      "rollup": {
+        "metrics": [{"agg": "avg", "field": "order_count", "alias": "avg_orders_per_customer"}],
+        "limit": 1,
+        "offset": 0
+      }
+    },
+    "expect_auto_fix": "inner_rollup_limit_removed_for_full_aggregation"
+  },
+  {
+    "name": "join_path_auto_inject_orders_to_customers",
+    "question": "Show orders with customer company names",
+    "plan": {
+      "dataset": "orders",
+      "select": [
+        {"expr": {"col": "orders.order_id"}, "alias": "order_id"},
+        {"expr": {"col": "customers.company_name"}, "alias": "company_name"}
+      ],
+      "limit": 10,
+      "offset": 0
+    }
+  }
+]
