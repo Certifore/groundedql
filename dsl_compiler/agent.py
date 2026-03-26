@@ -6,7 +6,7 @@ from sqlalchemy.engine import Engine
 
 from .planner import QueryPlanPlanner
 from .validation import validate_query_plan_dict
-from .api.api import execute_query_plan  # adjust import if your path differs
+from .api.api import execute_query_plan 
 from .llm_adapters import make_llm_client
 
 

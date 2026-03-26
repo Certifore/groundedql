@@ -107,7 +107,6 @@ class Compiler:
       - link-based joins (optional)
       - legacy plans (dimensions/metrics/filters) lowered to select/where/group_by
       - rollup: outer aggregation over grouped inner query
-      - NEW: CTEs, set ops, CASE, CAST, EXISTS, scalar subquery, window functions
     """
 
     def __init__(
@@ -341,7 +340,6 @@ class Compiler:
 
         base = source.alias(from_alias)
 
-        # IMPORTANT: keep alias_map key as the logical dataset name so refs like "per_building.building_id" still work
         alias_map = {dataset: base}
         from_clause = base
 

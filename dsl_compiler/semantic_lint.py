@@ -14,9 +14,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 def _q(question: str) -> str:
     """Lowercase + normalise whitespace for matching."""
@@ -40,9 +38,7 @@ def _order_by(plan: Dict[str, Any]) -> List[Any]:
     return plan.get("order_by") or []
 
 
-# ---------------------------------------------------------------------------
 # Public API
-# ---------------------------------------------------------------------------
 
 def semantic_lint(
     question: str,
