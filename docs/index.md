@@ -2,7 +2,7 @@
 
 <div class="qce-hero" markdown>
 
-<div class="qce-hero__eyebrow">⚡ Query Compiler Engine</div>
+<div class="qce-hero__eyebrow">Query Compiler Engine</div>
 
 <h1 class="qce-hero__title">LLM-powered queries.<br>Deterministic SQL. Zero trust.</h1>
 
@@ -38,11 +38,11 @@ Every production AI data feature eventually hits the same three walls:
 
 |  | Raw LLM SQL | **QCE** |
 |---|:---:|:---:|
-| SQL injection via prompt | <span class="cross">✗ Never safe</span> | <span class="check">✓ Bind params always</span> |
-| Hallucinated table names | <span class="cross">✗ Silent wrong answer</span> | <span class="check">✓ Hard error, allowlist enforced</span> |
-| Non-deterministic output | <span class="cross">✗ Varies per call</span> | <span class="check">✓ Same plan → same SQL</span> |
-| LLM picks JOIN strategy | <span class="cross">✗ Unpredictable</span> | <span class="check">✓ BFS shortest path, always</span> |
-| Needs DB introspection | <span class="cross">✗ Exposes full schema</span> | <span class="check">✓ LLM sees logical names only</span> |
+| SQL injection via prompt | <span class="cross">No: never safe</span> | <span class="check">Yes: bind params always</span> |
+| Hallucinated table names | <span class="cross">No: silent wrong answer risk</span> | <span class="check">Yes: hard error, allowlist enforced</span> |
+| Non-deterministic output | <span class="cross">No: varies per call</span> | <span class="check">Yes: same plan -> same SQL</span> |
+| LLM picks JOIN strategy | <span class="cross">No: unpredictable</span> | <span class="check">Yes: BFS shortest path, always</span> |
+| Needs DB introspection | <span class="cross">No: exposes full schema</span> | <span class="check">Yes: LLM sees logical names only</span> |
 
 </div>
 
@@ -150,7 +150,7 @@ plan and produces correct, safe, parameterized SQL every time.
         for e in errors:
             print(e)   # "$.filters[0].field: unknown column 'revenue' on table 'orders'"
     else:
-        print("✓ Plan is valid")
+        print("Plan is valid")
     ```
 
 ---
@@ -159,32 +159,32 @@ plan and produces correct, safe, parameterized SQL every time.
 
 <div class="qce-features" markdown>
 <div class="qce-feature" markdown>
-<div class="qce-feature__icon">🔒</div>
+<div class="qce-feature__icon">Security</div>
 <p class="qce-feature__title">Injection-Proof by Design</p>
 <p class="qce-feature__desc">Every filter value becomes a named bind parameter. There is no code path that interpolates user input into SQL text — ever.</p>
 </div>
 <div class="qce-feature" markdown>
-<div class="qce-feature__icon">📋</div>
+<div class="qce-feature__icon">Schema</div>
 <p class="qce-feature__title">Schema Allowlist Enforcement</p>
 <p class="qce-feature__desc">Only tables and columns declared in <code>schema.yaml</code> are reachable. Unknown names raise a hard <code>QueryPlanError</code> — no silent degradation.</p>
 </div>
 <div class="qce-feature" markdown>
-<div class="qce-feature__icon">⚙️</div>
+<div class="qce-feature__icon">Determinism</div>
 <p class="qce-feature__title">Deterministic Output</p>
 <p class="qce-feature__desc">The compiler is a pure function. Same <code>QueryPlan</code> → same SQL every time. Cache by plan hash, regression-test against a corpus.</p>
 </div>
 <div class="qce-feature" markdown>
-<div class="qce-feature__icon">🔗</div>
+<div class="qce-feature__icon">Joins</div>
 <p class="qce-feature__title">Auto Join Injection</p>
 <p class="qce-feature__desc">Reference columns from multiple tables. QCE runs BFS over your schema's link graph and injects the shortest join path automatically.</p>
 </div>
 <div class="qce-feature" markdown>
-<div class="qce-feature__icon">🔄</div>
+<div class="qce-feature__icon">Retries</div>
 <p class="qce-feature__title">LLM Retry Loop</p>
 <p class="qce-feature__desc">Validation errors are structured and fed back to the LLM as focused correction prompts — not stack traces. Models self-correct reliably.</p>
 </div>
 <div class="qce-feature" markdown>
-<div class="qce-feature__icon">🌐</div>
+<div class="qce-feature__icon">LLM</div>
 <p class="qce-feature__title">LLM-Agnostic</p>
 <p class="qce-feature__desc">One factory function — <code>make_llm_client()</code> — adapts OpenAI, LangChain, Gemini, Groq, Ollama, or any callable automatically.</p>
 </div>

@@ -91,8 +91,9 @@ links:
     to_table: customers                # (required) logical table name — must exist in tables
     join_type: left                    # (optional) "left" (default) or "inner"
     "on":                              # (required) must be quoted! see warning below
-      - from_col: customer_id          # logical column from `from_table`
-        to_col: customer_id            # logical column from `to_table`
+      - left: orders.customer_id       # logical qualified column from `from_table`
+        op: "="                        # currently only "=" is supported
+        right: customers.customer_id   # logical qualified column from `to_table`
     optional: true                     # (optional) default true — whether the join is LEFT or INNER
 ```
 
@@ -100,17 +101,17 @@ links:
     `on` is a YAML 1.1 reserved word that parses as boolean `true`. Always write `"on":` (with double quotes). QCE's schema validator will raise a `SchemaError` with a helpful message if it detects this issue.
 
     ```yaml
-    # ❌ WRONG — parsed as boolean true
+    # WRONG — parsed as boolean true
     links:
       - name: orders_to_customers
         on:
-          - from_col: customer_id
+          - left: orders.customer_id
 
-    # ✅ CORRECT
+    # CORRECT
     links:
       - name: orders_to_customers
         "on":
-          - from_col: customer_id
+          - left: orders.customer_id
     ```
 
 ### Multi-Column Joins
@@ -124,8 +125,9 @@ links:
     to_table: orders
     join_type: inner
     "on":
-      - from_col: order_id
-        to_col: order_id
+      - left: order_details.order_id
+        op: "="
+        right: orders.order_id
 ```
 
 ### Bidirectional Traversal
@@ -178,16 +180,18 @@ links:
     to_table: customers
     join_type: left
     "on":
-      - from_col: customer_id
-        to_col: customer_id
+      - left: orders.customer_id
+        op: "="
+        right: customers.customer_id
 
   - name: order_details_to_orders
     from_table: order_details
     to_table: orders
     join_type: left
     "on":
-      - from_col: order_id
-        to_col: order_id
+      - left: order_details.order_id
+        op: "="
+        right: orders.order_id
 ```
 
 ---
@@ -196,7 +200,7 @@ links:
 
 When `execute_query_plan` or `load_and_validate_schema` is called, QCE validates the schema file and:
 
-- **Raises `SchemaError`** for fatal problems (missing required fields, unknown link tables, `"on"` parsed as boolean)
+- **Raises `SchemaError`** for fatal problems (missing required fields, unknown link tables, invalid `join_type`, `"on"` parsed as boolean)
 - **Prints warnings** for non-fatal issues (e.g. `primary_id` declared but not in the columns list)
 
 You can run schema validation standalone:

@@ -69,8 +69,11 @@ A QueryPlan is a JSON/dict document that describes *what data to fetch*. The LLM
 
 | Operator | SQL equivalent | `value` |
 |---|---|---|
-| `in` | `col IN (:p0, :p1, ...)` | array |
-| `not_in` | `col NOT IN (...)` | array |
+| `in` | `col IN (:p0, :p1, ...)` | non-empty array |
+| `not_in` | `col NOT IN (...)` | non-empty array |
+
+!!! warning "Empty IN lists are rejected"
+    `in` / `not_in` values must be non-empty arrays. Empty lists now fail early with `QueryPlanError` instead of generating invalid SQL behavior.
 
 #### Text
 
@@ -93,9 +96,16 @@ A QueryPlan is a JSON/dict document that describes *what data to fetch*. The LLM
 
 #### Range
 
-| Operator | SQL equivalent | `value` |
-|---|---|---|
-| `between` | `col BETWEEN :p0 AND :p1` | `[low, high]` array |
+`between` is not currently supported by the compiler. Use two comparisons with `and`:
+
+```json
+{
+  "and": [
+    {"cmp": {"left": {"col": "order_date"}, "op": ">=", "right": "2026-01-01"}},
+    {"cmp": {"left": {"col": "order_date"}, "op": "<=", "right": "2026-01-31"}}
+  ]
+}
+```
 
 ### Relative Dates
 
@@ -241,6 +251,27 @@ When a plan joins multiple tables, column references must be qualified to avoid 
 Use the logical table name, not the physical `db_table` name.
 
 If an unqualified column exists in multiple joined tables, the compiler raises `AmbiguousColumnError`.
+
+### Explicit Joins and `as`
+
+When using advanced plans with explicit `joins`, you can join the same dataset more than once only if you provide `as` aliases:
+
+```json
+{
+  "dataset": "orders",
+  "joins": [
+    {
+      "dataset": "orders",
+      "as": "o2",
+      "type": "inner",
+      "on": {"cmp": {"left": {"col": "orders.order_id"}, "op": "=", "right": {"col": "o2.order_id"}}}
+    }
+  ],
+  "select": [{"expr": {"col": "orders.order_id"}, "alias": "order_id"}]
+}
+```
+
+Duplicate explicit joins without a unique `as` alias are rejected with `QueryPlanError`.
 
 ---
 

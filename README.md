@@ -49,6 +49,15 @@ The LLM's only job is to produce a **QueryPlan JSON object**. QCE handles everyt
 - ✅ **LLM-Agnostic**: Works with OpenAI, Anthropic, Google Gemini, self-hosted models, or any callable.
 - ✅ **Library-First**: Drop `execute_query_plan` into any agent, router, or API — no framework lock-in.
 
+### Recent Compiler Hardening
+
+- Unified exception handling: `Compiler` and `execute_query_plan` now use the same public `QueryPlanError` type.
+- Explicit join hardening: repeated/self joins require `join.as` aliases; duplicate aliases are rejected early.
+- Set-operation safety: `UNION` / `INTERSECT` / `EXCEPT` branches are checked for matching select-column counts.
+- Membership safety: empty `in` / `not_in` lists are rejected at compile time.
+- Schema-link validation: invalid link `join_type` values now raise `SchemaError` (`left` / `inner` only).
+- Type mapping coverage: added support for more cast/schema hints (`smallint`, `bigint`, `time`, `interval`, `uuid`, `json/jsonb`, `text`).
+
 ---
 
 ## Repository Layout

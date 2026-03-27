@@ -65,13 +65,13 @@ except qce.SchemaError as e:
     YAML parses `on` as boolean `true` unless quoted. Always quote it:
 
     ```yaml
-    # ❌ "on" parsed as boolean true — causes SchemaError
+    # "on" parsed as boolean true — causes SchemaError
     links:
       - name: orders_to_customers
         on:
           - from_col: customer_id
 
-    # ✅ correct
+    # correct
     links:
       - name: orders_to_customers
         "on":
@@ -83,6 +83,8 @@ except qce.SchemaError as e:
 ## `QueryPlanError`
 
 Raised when a QueryPlan is structurally or semantically invalid. This is the most common exception during development.
+
+`execute_query_plan` and the low-level `Compiler` now raise the same public `dsl_compiler.exceptions.QueryPlanError` class, so application code can catch one type consistently.
 
 **Constructor:**
 

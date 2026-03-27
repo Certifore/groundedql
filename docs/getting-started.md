@@ -203,7 +203,7 @@ if errors:
         print(e)
     # "$.filters[0].field: unknown column 'revenue' on table 'orders'"
 else:
-    print("✓ Plan is valid")
+    print("Plan is valid")
 ```
 
 ---
