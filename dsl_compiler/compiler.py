@@ -2,31 +2,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 import re
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-
-# -----------------------------
-# Typed errors (great for LLM repair loops)
-# -----------------------------
-class QueryPlanError(Exception):
-    def __init__(self, code: str, message: str, path: str = "$", suggestion: Optional[str] = None):
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.path = path
-        self.suggestion = suggestion
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"code": self.code, "message": self.message, "path": self.path, "suggestion": self.suggestion}
+from .exceptions import AmbiguousColumnError, QueryPlanError, SchemaError
 
 
 def _require(cond: bool, code: str, message: str, path: str = "$", suggestion: Optional[str] = None):
     if not cond:
-        raise QueryPlanError(code=code, message=message, path=path, suggestion=suggestion)
+        raise QueryPlanError(message, code=code, path=path, suggestion=suggestion)
 
 
 # -----------------------------
@@ -72,15 +59,28 @@ def _needs_quoting(ident: str) -> bool:
     return not re.fullmatch(r"[a-z_][a-z0-9_]*", ident or "")
 
 
-def _split_ref(ref: str, default_table: str) -> Tuple[str, str]:
-    if "." in ref:
-        t, c = ref.split(".", 1)
-        return t, c
-    return default_table, ref
+def _split_table_column(ref: str, default_table: str, known_tables: FrozenSet[str]) -> Tuple[str, str]:
+    """
+    Split col ref into (logical_table, column).
+    If ref contains multiple dots, prefer the longest prefix that matches a known logical table name
+    so refs like 'a.b.col' work when 'a.b' is a declared table name.
+    """
+    if "." not in ref:
+        return default_table, ref
+    parts = ref.split(".")
+    for n in range(len(parts) - 1, 0, -1):
+        tkey = ".".join(parts[:n])
+        if tkey in known_tables:
+            return tkey, ".".join(parts[n:])
+    return ref.split(".", 1)
 
 
 def _map_sa_type(t: str) -> sa.types.TypeEngine:
     tt = (t or "").lower()
+    if "smallint" in tt:
+        return sa.SmallInteger()
+    if "bigint" in tt:
+        return sa.BigInteger()
     if "int" in tt:
         return sa.Integer()
     if "bool" in tt:
@@ -89,11 +89,25 @@ def _map_sa_type(t: str) -> sa.types.TypeEngine:
         return sa.DateTime()
     if tt == "date":
         return sa.Date()
+    if tt == "time" or (tt.startswith("time") and "stamp" not in tt):
+        return sa.Time()
+    if "interval" in tt:
+        return sa.Interval()
     if "numeric" in tt or "decimal" in tt:
         return sa.Numeric()
-    if "float" in tt or "double" in tt:
+    if "float" in tt or "double" in tt or "real" in tt:
         return sa.Float()
+    if "json" in tt:
+        return postgresql.JSONB()
+    if "uuid" in tt:
+        return postgresql.UUID(as_uuid=True)
+    if tt == "text" or tt.endswith("text"):
+        return sa.Text()
     return sa.String()
+
+
+def _exported_column_count(stmt: sa.SelectBase) -> int:
+    return len(stmt.exported_columns)
 
 
 # -----------------------------
@@ -107,6 +121,9 @@ class Compiler:
       - link-based joins (optional)
       - legacy plans (dimensions/metrics/filters) lowered to select/where/group_by
       - rollup: outer aggregation over grouped inner query
+
+    Execution note: ``scalar_subquery`` is not checked for single-row cardinality here;
+    Postgres raises at runtime if the subquery returns more than one row.
     """
 
     def __init__(
@@ -144,15 +161,23 @@ class Compiler:
                 columns=cols,
             )
 
+        self._known_logical_tables: FrozenSet[str] = frozenset(self.tables.keys())
+
         self.links: Dict[str, LinkDef] = {}
-        for l in schema.get("links", []) or []:
+        for link_item in schema.get("links", []) or []:
+            jt = (link_item.get("join_type") or "left").lower()
+            if jt not in {"left", "inner"}:
+                raise SchemaError(
+                    f"link '{link_item.get('name')}': join_type must be 'left' or 'inner', "
+                    f"got {link_item.get('join_type')!r}."
+                )
             ld = LinkDef(
-                name=l["name"],
-                from_table=l["from_table"],
-                to_table=l["to_table"],
-                join_type=(l.get("join_type") or "left").lower(),
-                on=l.get("on", []),
-                optional=bool(l.get("optional", True)),
+                name=link_item["name"],
+                from_table=link_item["from_table"],
+                to_table=link_item["to_table"],
+                join_type=jt,
+                on=link_item.get("on", []),
+                optional=bool(link_item.get("optional", True)),
             )
             self.links[ld.name] = ld
 
@@ -299,6 +324,14 @@ class Compiler:
         left = self._build_selectable(left_plan, cte_map=cte_map, path=f"{p}.left", outer_alias_map=outer_alias_map)
         right = self._build_selectable(right_plan, cte_map=cte_map, path=f"{p}.right", outer_alias_map=outer_alias_map)
 
+        nl, nr = _exported_column_count(left), _exported_column_count(right)
+        _require(
+            nl == nr,
+            "INVALID_PLAN",
+            f"set_op branches must have the same number of select columns (left={nl}, right={nr}).",
+            p,
+        )
+
         if op == "union":
             comb = sa.union(left, right)
         elif op == "union_all":
@@ -407,11 +440,30 @@ class Compiler:
             on_expr = j.get("on")
             _require(on_expr is not None, "INVALID_PLAN", "join.on is required for explicit joins.", f"{p}.on")
 
-            if j_ds not in inner_alias_map:
-                j_source = self._resolve_relation(j_ds, cte_map, f"{p}.dataset")
-                inner_alias_map[j_ds] = j_source.alias(j_ds)
+            j_as = j.get("as")
+            if j_as is not None:
+                _require(
+                    isinstance(j_as, str) and _IDENT_RE.match(j_as),
+                    "INVALID_PLAN",
+                    "join.as must be a valid identifier when provided.",
+                    f"{p}.as",
+                )
+                logical = j_as
+            else:
+                logical = j_ds
 
-            right = inner_alias_map[j_ds]
+            _require(
+                logical not in inner_alias_map,
+                "INVALID_PLAN",
+                f"Join alias '{logical}' is already in the FROM clause. "
+                f"Use a different join.as when joining the same dataset again (e.g. self-join).",
+                p,
+                suggestion='Example: {"dataset": "orders", "as": "orders_2", "type": "inner", "on": ...}',
+            )
+
+            j_source = self._resolve_relation(j_ds, cte_map, f"{p}.dataset")
+            inner_alias_map[logical] = j_source.alias(self._new_alias(j_ds))
+            right = inner_alias_map[logical]
             cond = self._compile_bool_expr(
                 on_expr, inner_alias_map, dataset, cte_map=cte_map, path=f"{p}.on", outer_alias_map=outer_alias_map
             )
@@ -772,7 +824,7 @@ class Compiler:
         outer_alias_map: Optional[Dict[str, sa.FromClause]] = None,
     ) -> sa.ColumnElement:
         _require(isinstance(ref, str), "INVALID_PLAN", "Column ref must be string.", path)
-        t, c = _split_ref(ref, default_table)
+        t, c = _split_table_column(ref, default_table, self._known_logical_tables)
 
         def _resolve_column(alias_map: Dict[str, sa.FromClause], table_key: str) -> sa.ColumnElement:
             tbl = alias_map[table_key]
@@ -788,22 +840,30 @@ class Compiler:
         if "." not in ref:
             inner_matches = [tname for tname, tdef in self.tables.items() if tname in inner_alias_map and c in tdef.columns]
             if len(inner_matches) > 1:
-                raise QueryPlanError("AMBIGUOUS_COLUMN", f"Ambiguous column '{c}' in tables {inner_matches}.", path)
+                raise AmbiguousColumnError(c, inner_matches, path)
             if len(inner_matches) == 1:
                 return _resolve_column(inner_alias_map, inner_matches[0])
             if outer_alias_map:
                 outer_matches = [tname for tname, tdef in self.tables.items() if tname in outer_alias_map and c in tdef.columns]
                 if len(outer_matches) > 1:
-                    raise QueryPlanError("AMBIGUOUS_COLUMN", f"Ambiguous column '{c}' in tables {outer_matches}.", path)
+                    raise AmbiguousColumnError(c, outer_matches, path)
                 if len(outer_matches) == 1:
                     return _resolve_column(outer_alias_map, outer_matches[0])
-            raise QueryPlanError("UNKNOWN_COLUMN", f"Unknown unqualified column '{c}' for current scope.", path)
+            raise QueryPlanError(
+                f"Unknown unqualified column '{c}' for current scope.",
+                code="UNKNOWN_COLUMN",
+                path=path,
+            )
 
         if t in inner_alias_map:
             return _resolve_column(inner_alias_map, t)
         if outer_alias_map and t in outer_alias_map:
             return _resolve_column(outer_alias_map, t)
-        raise QueryPlanError("INVALID_PLAN", f"Table/alias '{t}' referenced but not in FROM/JOIN (or correlation scope).", path)
+        raise QueryPlanError(
+            f"Table/alias '{t}' referenced but not in FROM/JOIN (or correlation scope).",
+            code="INVALID_PLAN",
+            path=path,
+        )
 
     def _compile_expr(
         self,
@@ -895,11 +955,20 @@ class Compiler:
                 for i, a in enumerate(args)
             ]
 
-            if fn.lower() in {"count_distinct", "countdistinct"}:
+            fn_lower = fn.lower()
+            if fn_lower in {"count_distinct", "countdistinct"}:
                 _require(len(compiled_args) == 1, "INVALID_PLAN", "count_distinct requires exactly one arg.", path)
                 return sa.func.count(sa.distinct(compiled_args[0]))
 
-            return getattr(sa.func, fn)(*compiled_args)
+            # sqlalchemy.func resolves unknown names to a generic generator; arity errors surface as TypeError.
+            try:
+                return getattr(sa.func, fn_lower)(*compiled_args)
+            except TypeError as e:
+                raise QueryPlanError(
+                    f"Function '{fn}' does not accept the given arguments: {e}",
+                    code="INVALID_PLAN",
+                    path=f"{path}.func",
+                ) from e
 
         if "over" in expr:
             node = expr["over"]
@@ -949,7 +1018,7 @@ class Compiler:
                 out = out.op(op)(nxt)
             return out
 
-        raise QueryPlanError("INVALID_PLAN", "Unknown expression node.", path)
+        raise QueryPlanError("Unknown expression node.", code="INVALID_PLAN", path=path)
 
     def _compile_bool_expr(
         self,
@@ -1040,6 +1109,7 @@ class Compiler:
             if op in {"in", "not_in"}:
                 _require(not isinstance(right_node, dict), "INVALID_PLAN", "IN requires literal list.", f"{path}.cmp.right")
                 _require(isinstance(right_node, list), "INVALID_PLAN", "IN requires list value.", f"{path}.cmp.right")
+                _require(len(right_node) > 0, "INVALID_PLAN", "IN list must be non-empty.", f"{path}.cmp.right")
                 bp = sa.bindparam(self._new_param("in"), value=right_node, expanding=True)
                 expr = left.in_(bp)
                 return sa.not_(expr) if op == "not_in" else expr
@@ -1059,9 +1129,13 @@ class Compiler:
                 like_expr = left.ilike(bp)
                 return sa.not_(like_expr) if op == "not_contains" else like_expr
 
-            raise QueryPlanError("UNSUPPORTED_OPERATION", f"Unsupported comparison op '{op}'.", f"{path}.cmp.op")
+            raise QueryPlanError(
+                f"Unsupported comparison op '{op}'.",
+                code="UNSUPPORTED_OPERATION",
+                path=f"{path}.cmp.op",
+            )
 
-        raise QueryPlanError("INVALID_PLAN", "Unknown boolean node.", path)
+        raise QueryPlanError("Unknown boolean node.", code="INVALID_PLAN", path=path)
 
     # ---------- Rollup filter helper ----------
     def _compile_rollup_filter(self, subq: sa.Subquery, filt: Any, path: str) -> sa.ColumnElement:
@@ -1095,6 +1169,7 @@ class Compiler:
 
         if op in {"in", "not_in"}:
             _require(isinstance(value, list), "INVALID_PLAN", "IN ops require list value.", f"{path}.value")
+            _require(len(value) > 0, "INVALID_PLAN", "IN list must be non-empty.", f"{path}.value")
             bp = sa.bindparam(self._new_param("rin"), value=value, expanding=True)
             expr = col.in_(bp)
             return sa.not_(expr) if op == "not_in" else expr
@@ -1113,7 +1188,11 @@ class Compiler:
         if op == "<=":
             return col <= bp
 
-        raise QueryPlanError("UNSUPPORTED_OPERATION", f"Unsupported rollup filter op '{op}'.", f"{path}.op")
+        raise QueryPlanError(
+            f"Unsupported rollup filter op '{op}'.",
+            code="UNSUPPORTED_OPERATION",
+            path=f"{path}.op",
+        )
 
     # ---------- Subplan select enforcement ----------
     def _ensure_subplan_has_select(self, subplan: dict) -> dict:

@@ -378,6 +378,17 @@ boolean_nodes:
           offset: 0
 
 # -----------------------------------------------------------------------------
+# EXPLICIT JOINS (dataset + on; distinct from {"link": "..."} joins)
+# -----------------------------------------------------------------------------
+explicit_joins:
+  description: >
+    Each explicit join uses keys: dataset (logical table), type (left|inner), on (boolean).
+    Optional "as" is the logical alias for this joined occurrence (identifier).
+    The first join to a table binds columns as "dataset.column" by default.
+    Joining the same dataset again (including self-join from the base dataset) requires a
+    unique "as", and column refs must use that alias (e.g. o2.order_id).
+
+# -----------------------------------------------------------------------------
 # CORRELATED SUBQUERIES (EXISTS / NOT EXISTS / scalar_subquery)
 # -----------------------------------------------------------------------------
 correlated_subqueries:
@@ -395,6 +406,8 @@ correlated_subqueries:
     legacy dimensions/metrics/filters and advanced select, uses schema links
     with multi-hop BFS, and does not infer joins from inside exists or
     scalar_subquery bodies.
+    For scalar_subquery, Postgres requires the subquery to return at most one row;
+    the compiler does not verify that (ensure limit 1, uniqueness, or aggregation).
   example_correlated_exists:
     exists:
       plan:

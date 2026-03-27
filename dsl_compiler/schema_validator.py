@@ -102,6 +102,18 @@ def validate_schema(schema: Dict[str, Any]) -> List[str]:
                 f"{lloc} ('{lname}'): to_table='{to_table}' is not a known table name."
             )
 
+        jt_raw = link.get("join_type", "left")
+        if not isinstance(jt_raw, str) or not jt_raw:
+            raise SchemaError(
+                f"{lloc} ('{lname}'): 'join_type' must be a non-empty string "
+                f"('left' or 'inner'), got {jt_raw!r}."
+            )
+        jt = jt_raw.lower()
+        if jt not in {"left", "inner"}:
+            raise SchemaError(
+                f"{lloc} ('{lname}'): join_type must be 'left' or 'inner', got {jt_raw!r}."
+            )
+
         on = link.get("on")
         # Guard against YAML parsing `on:` as boolean True (YAML 1.1 reserved word).
         # Always quote `"on":` in schema.yaml to avoid this.

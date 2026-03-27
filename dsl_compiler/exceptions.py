@@ -41,6 +41,7 @@ class QueryPlanError(DSLCompilerError):
         validation_errors: Optional[List[Dict[str, Any]]] = None,
     ):
         super().__init__(message)
+        self.message = message
         self.code = code
         self.path = path
         self.suggestion = suggestion
