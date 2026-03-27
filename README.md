@@ -416,9 +416,9 @@ Regenerate whenever `schema.yaml` changes.
 - [x] Standalone `validate_query_plan` API
 - [x] Auto-generated domain spec (`spec_builder`)
 - [ ] DB Introspection Wizard (`qce init <db_url>`)
-- [ ] Correlated subqueries
-- [ ] Richer join inference (multi-hop links)
-- [ ] Plan canonicalization (full-pipeline determinism)
+- [x] Correlated subqueries
+- [x] Richer join inference (multi-hop links)
+- [x] Plan canonicalization (structural: stable `plan_hash` / join & filter order; NL→plan still depends on the LLM)
 
 ---
 

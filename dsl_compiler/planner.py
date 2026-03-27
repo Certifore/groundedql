@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from typing import Any, Dict, List, Optional
 
 import yaml
@@ -13,6 +11,7 @@ from .llm_adapters import make_llm_client
 from .api.api import _resolve_relative_dates
 from .semantic_lint import semantic_lint
 from .join_planner import auto_inject_joins
+from .plan_canonical import canonicalize_query_plan, plan_fingerprint
 from .spec_builder import build_minimal_queryplan_spec
 
 
@@ -85,12 +84,14 @@ def _auto_fix_plan(plan_dict: dict, question: str = "", schema: Optional[Dict[st
         if plan_dict is not original:
             fixes.append("joins_auto_injected_from_link_graph")
 
+    plan_dict = canonicalize_query_plan(plan_dict)
+    fixes.append("plan_canonicalized")
+
     return plan_dict, fixes
 
 
 def _plan_hash(plan_dict: dict) -> str:
-    serialized = json.dumps(plan_dict, sort_keys=True, default=str)
-    return hashlib.sha256(serialized.encode()).hexdigest()[:12]
+    return plan_fingerprint(plan_dict)[:12]
 
 
 def _format_errors(errors: List[ValidationErrorItem]) -> str:

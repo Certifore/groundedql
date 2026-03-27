@@ -11,9 +11,15 @@ Usage:
   python test/test_main.py              # run (default)
   python test/test_main.py update       # overwrite baseline
   python test/test_main.py check        # regression check (for CI)
+
+Test types in test_qs.json:
+  (default) db   — execute against Postgres
+  lint           — semantic_lint only (no DB)
+  canonical      — structural plan_fingerprint / canonicalize checks (no DB)
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import sys
@@ -26,6 +32,8 @@ from sqlalchemy.pool import NullPool
 import yaml
 
 from dsl_compiler import execute_query_plan
+from dsl_compiler.join_planner import auto_inject_joins
+from dsl_compiler.plan_canonical import canonicalize_query_plan, plan_fingerprint
 from dsl_compiler.semantic_lint import semantic_lint
 
 # ---------------------------------------------------------------------------
@@ -114,11 +122,91 @@ def _lint_clean(question: str, plan: dict) -> tuple[bool, str]:
     errors = semantic_lint(question, plan, _schema_for_lint)   # <-- pass schema
     return (not errors), (str(errors) if errors else "clean")
 
+
+def _fingerprint_after_pipeline(plan: dict) -> str:
+    """Match execute_query_plan: auto_inject_joins → canonicalize → fingerprint."""
+    p = copy.deepcopy(plan)
+    p = auto_inject_joins(p, _schema_for_lint)
+    p = canonicalize_query_plan(p)
+    return plan_fingerprint(p)
+
+
+def _run_canonical_test(test: dict) -> tuple[bool, str | None]:
+    """
+    canonical.kind:
+      pair      — plan_fingerprint(plan_a) == plan_fingerprint(plan_b)
+      order_by  — order_by clause order unchanged after canonicalize
+      idempotent — canonicalize twice equals once (JSON-stable)
+    """
+    spec = test.get("canonical") or {}
+    kind = spec.get("kind", "")
+
+    if kind == "pair":
+        pa = spec.get("plan_a")
+        pb = spec.get("plan_b")
+        if not isinstance(pa, dict) or not isinstance(pb, dict):
+            return False, "canonical.pair requires plan_a and plan_b objects"
+        fa = _fingerprint_after_pipeline(pa)
+        fb = _fingerprint_after_pipeline(pb)
+        if fa != fb:
+            return False, f"fingerprint mismatch: {fa} vs {fb}"
+        return True, None
+
+    if kind == "order_by":
+        pl = spec.get("plan")
+        if not isinstance(pl, dict):
+            return False, "canonical.order_by requires plan object"
+        want = pl.get("order_by") or []
+        if not isinstance(want, list) or len(want) < 2:
+            return False, "plan.order_by must be a list with at least 2 items"
+        c = canonicalize_query_plan(copy.deepcopy(auto_inject_joins(copy.deepcopy(pl), _schema_for_lint)))
+        got = c.get("order_by") or []
+        if len(got) != len(want):
+            return False, f"order_by length {len(got)} != {len(want)}"
+        for i, w in enumerate(want):
+            if (got[i].get("by") if isinstance(got[i], dict) else None) != (
+                w.get("by") if isinstance(w, dict) else None
+            ):
+                return False, f"order_by[{i}] by= mismatch after canonicalize"
+        return True, None
+
+    if kind == "idempotent":
+        pl = spec.get("plan")
+        if not isinstance(pl, dict):
+            return False, "canonical.idempotent requires plan object"
+        once = canonicalize_query_plan(copy.deepcopy(pl))
+        twice = canonicalize_query_plan(copy.deepcopy(once))
+        j1 = json.dumps(once, sort_keys=True, default=str)
+        j2 = json.dumps(twice, sort_keys=True, default=str)
+        if j1 != j2:
+            return False, "second canonicalize changed JSON"
+        return True, None
+
+    return False, f"unknown canonical.kind {kind!r}"
+
+
 for i, test in enumerate(suite):
     name = test.get("name", f"test_{i}")
     question = test.get("question", "")
     plan = test.get("plan")
-    test_type = test.get("type", "db")  # "db" or "lint"
+    test_type = test.get("type", "db")  # "db" | "lint" | "canonical"
+
+    if test_type == "canonical":
+        ok, err = _run_canonical_test(test)
+        result_entry = {
+            "name": name,
+            "question": question,
+            "type": "canonical",
+            "passed": ok,
+            "error": err,
+        }
+        results.append(result_entry)
+        status = "PASS" if ok else "FAIL"
+        print(f"  [{i+1}/{len(suite)}] {name}: [{status}]")
+        if not ok:
+            print(f"         {err}")
+            errors += 1
+        continue
 
     if test_type == "lint":
         lint_spec = test.get("lint", {})
@@ -200,7 +288,7 @@ print()
 # Mode: lint — only lint tests, no DB needed
 # ---------------------------------------------------------------------------
 if MODE == "lint":
-    print(f"\n[test] Lint-only results: {len(results)} tests, {errors} failure(s)")
+    print(f"\n[test] Lint + canonical (no DB): {len(results)} tests, {errors} failure(s)")
     sys.exit(0 if errors == 0 else 1)
 
 # ---------------------------------------------------------------------------
@@ -250,6 +338,22 @@ for entry in results:
             failed += 1
             regression_failures.append(name)
             print(f"  [STALE] {name} — baseline has no lint 'passed' field (legacy db row?).")
+            print("         Run: python test/test_main.py update")
+            continue
+        ok = entry["passed"] == base["passed"]
+        if ok:
+            passed += 1
+            print(f"  [PASS] {name}")
+        else:
+            failed += 1
+            regression_failures.append(name)
+            print(f"  [FAIL] {name}")
+            print(f"         passed baseline={base['passed']}  current={entry['passed']}")
+    elif entry.get("type") == "canonical":
+        if base.get("type") != "canonical" or "passed" not in base:
+            failed += 1
+            regression_failures.append(name)
+            print(f"  [STALE] {name} — baseline has no canonical 'passed' field.")
             print("         Run: python test/test_main.py update")
             continue
         ok = entry["passed"] == base["passed"]

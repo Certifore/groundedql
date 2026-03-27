@@ -2,17 +2,21 @@
 join_planner.py — Automatic join-path resolution.
 
 Builds a graph from the `links` section of schema.yaml and computes the
-shortest join path between two tables using BFS. The planner uses this to
-auto-inject join instructions into a QueryPlan when a query references
-columns from multiple tables but declares no explicit joins.
+shortest join path between the primary dataset and every other referenced
+logical table (BFS, multi-hop). Injects `{"link": "<name>"}` entries so the
+compiler can connect any referenced schema tables that are linked in schema.yaml.
 
-This is purely additive — if the plan already has joins, this is a no-op.
-If the plan only references one table, this is a no-op.
+Recurses into WITH (CTE) bodies and set_op left/right branches so each
+sub-plan gets its own inference. Does not recurse into exists / scalar_subquery
+(their outer joins are a separate concern).
+
+Returns a deep copy — never mutates the caller's plan dict.
 """
 from __future__ import annotations
 
+import copy
 from collections import deque
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 def build_link_graph(schema: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
@@ -78,92 +82,159 @@ def shortest_join_path(
     return None  # no path found
 
 
-# Keys that contain nested plans — do NOT scan these for join injection
+# Keys that contain nested plans — do NOT scan inside these for *this* plan's join targets
 _SUBPLAN_KEYS = {"exists", "not_exists", "scalar_subquery", "with", "set_op"}
 
 
-def _extract_referenced_tables(plan: Dict[str, Any], schema: Dict[str, Any]) -> List[str]:
-    """
-    Scan a plan's top-level select/where/group_by/order_by/having for qualified
-    column refs (e.g. "work_orders.building_id") and return the set of tables
-    referenced. Only returns tables in the schema.
+def _known_tables(schema: Dict[str, Any]) -> Set[str]:
+    return {t["name"] for t in schema.get("tables", []) if isinstance(t.get("name"), str)}
 
-    Deliberately does NOT recurse into subplan nodes (exists, scalar_subquery,
-    with, set_op) to avoid injecting joins for tables that are only referenced
-    inside a subquery scope.
+
+def _extract_referenced_tables(plan: Dict[str, Any], schema: Dict[str, Any]) -> Set[str]:
     """
-    known_tables = {t["name"] for t in schema.get("tables", [])}
-    found = set()
+    Qualified col refs (table.column) anywhere in this plan node except inside
+    exists / not_exists / scalar_subquery / with / set_op subtrees.
+    """
+    known_tables = _known_tables(schema)
+    found: Set[str] = set()
 
     def _scan(obj: Any, depth: int = 0) -> None:
         if isinstance(obj, dict):
-            # Stop recursing into subplan boundaries
             if depth > 0 and any(k in obj for k in _SUBPLAN_KEYS):
                 return
             if "col" in obj:
                 ref = obj["col"]
                 if isinstance(ref, str) and "." in ref:
-                    table = ref.split(".")[0]
+                    table = ref.split(".", 1)[0]
                     if table in known_tables:
                         found.add(table)
             for k, v in obj.items():
                 if k in _SUBPLAN_KEYS:
-                    continue  # skip subplan branches entirely
+                    continue
                 _scan(v, depth + 1)
         elif isinstance(obj, list):
             for item in obj:
                 _scan(item, depth)
 
     _scan(plan)
-    return list(found)
+    return found
 
 
-def auto_inject_joins(plan: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
+def _extract_legacy_table_refs(plan: Dict[str, Any], schema: Dict[str, Any]) -> Set[str]:
     """
-    If a plan references columns from multiple tables but has no explicit joins,
-    compute the shortest join paths from the primary dataset to each referenced
-    table and inject them as join instructions.
-
-    Returns the (possibly modified) plan. Never modifies in-place.
-    If no joins are needed or paths cannot be found, returns plan unchanged.
+    Legacy dimensions / metrics / filters: unqualified fields belong to plan.dataset;
+    qualified fields contribute their logical table.
     """
-    # Only applies to advanced format plans with a select list
-    if "select" not in plan or "set_op" in plan or "with" in plan:
-        return plan
+    known = _known_tables(schema)
+    ds = plan.get("dataset")
+    out: Set[str] = set()
+    if isinstance(ds, str) and ds in known:
+        out.add(ds)
 
-    # If joins are already declared, do nothing
+    def add_field(field: Any) -> None:
+        if not isinstance(field, str) or field == "*":
+            return
+        if "." in field:
+            t = field.split(".", 1)[0]
+            if t in known:
+                out.add(t)
+        elif isinstance(ds, str) and ds in known:
+            out.add(ds)
+
+    for d in plan.get("dimensions") or []:
+        if isinstance(d, dict):
+            add_field(d.get("field"))
+    for m in plan.get("metrics") or []:
+        if isinstance(m, dict):
+            add_field(m.get("field"))
+    for f in plan.get("filters") or []:
+        if isinstance(f, dict):
+            add_field(f.get("field"))
+    return out
+
+
+def _collect_tables_for_join_injection(plan: Dict[str, Any], schema: Dict[str, Any]) -> Set[str]:
+    return _extract_referenced_tables(plan, schema) | _extract_legacy_table_refs(plan, schema)
+
+
+def _eligible_for_link_inject(plan: Dict[str, Any]) -> bool:
+    if not isinstance(plan, dict):
+        return False
     if plan.get("joins"):
-        return plan
+        return False
+    if plan.get("set_op"):
+        return False
+    ds = plan.get("dataset")
+    if not isinstance(ds, str) or not ds:
+        return False
+    if plan.get("select"):
+        return True
+    if plan.get("dimensions") or plan.get("metrics") or plan.get("filters"):
+        return True
+    return False
 
-    primary_dataset = plan.get("dataset")
-    if not primary_dataset:
-        return plan
 
-    referenced = _extract_referenced_tables(plan, schema)
+def _inject_joins_on_node(plan: Dict[str, Any], schema: Dict[str, Any]) -> None:
+    """
+    Mutate plan in place: add joins list if inference succeeds.
+    """
+    if not _eligible_for_link_inject(plan):
+        return
 
-    # Tables to join: everything referenced except the primary dataset
+    primary_dataset = plan["dataset"]
+    referenced = _collect_tables_for_join_injection(plan, schema)
     tables_to_join = [t for t in referenced if t != primary_dataset]
     if not tables_to_join:
-        return plan
+        return
 
     graph = build_link_graph(schema)
-    injected_joins = []
+    injected_joins: List[Dict[str, str]] = []
 
     for target in tables_to_join:
         path = shortest_join_path(graph, primary_dataset, target)
         if path is None:
-            # No path found — leave plan unchanged and let compiler raise
             continue
-
         for link in path:
-            join_entry = {
-                "link": link["name"],
-            }
-            # Avoid duplicate joins
+            join_entry = {"link": link["name"]}
             if join_entry not in injected_joins:
                 injected_joins.append(join_entry)
 
-    if not injected_joins:
-        return plan
+    if injected_joins:
+        plan["joins"] = injected_joins
 
-    return {**plan, "joins": injected_joins}
+
+def _auto_inject_joins_recursive(plan: Any, schema: Dict[str, Any]) -> None:
+    """Walk plan tree (dict/list) and run inference on each selectable fragment."""
+    if isinstance(plan, dict):
+        for cte in plan.get("with") or []:
+            if isinstance(cte, dict) and isinstance(cte.get("plan"), dict):
+                _auto_inject_joins_recursive(cte["plan"], schema)
+
+        sop = plan.get("set_op")
+        if isinstance(sop, dict):
+            if isinstance(sop.get("left"), dict):
+                _auto_inject_joins_recursive(sop["left"], schema)
+            if isinstance(sop.get("right"), dict):
+                _auto_inject_joins_recursive(sop["right"], schema)
+
+        _inject_joins_on_node(plan, schema)
+    elif isinstance(plan, list):
+        for item in plan:
+            _auto_inject_joins_recursive(item, schema)
+
+
+def auto_inject_joins(plan: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Infer link-based joins for every selectable sub-plan (root, CTE bodies, set_op sides).
+
+    - Multi-hop: shortest BFS path from primary `dataset` to each other referenced table.
+    - Advanced (`select`) and legacy (`dimensions` / `metrics` / `filters`) shapes.
+    - Deep-copies the plan first; the original dict is never modified.
+
+    If the link graph has no path to a referenced table, that table is skipped
+    (compiler may still error later). exists/scalar_subquery bodies are not scanned
+    for outer join targets.
+    """
+    cloned = copy.deepcopy(plan)
+    _auto_inject_joins_recursive(cloned, schema)
+    return cloned

@@ -390,8 +390,11 @@ correlated_subqueries:
     and an outer scope, the inner binding wins for unqualified column names.
     If the outer SELECT correlates to a logical table that is not in the outer
     FROM clause, add explicit joins (or link joins) on the outer plan so that
-    table appears in scope; auto_inject_joins only scans top-level select/where
-    and does not infer joins from nested subplans.
+    table appears in scope. Join inference (auto_inject_joins) walks the full
+    plan tree for root, WITH (CTE) bodies, and set_op branches; it supports
+    legacy dimensions/metrics/filters and advanced select, uses schema links
+    with multi-hop BFS, and does not infer joins from inside exists or
+    scalar_subquery bodies.
   example_correlated_exists:
     exists:
       plan:

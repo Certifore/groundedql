@@ -10,6 +10,7 @@ from ..compiler import Compiler
 from ..executor import Executor
 from ..exceptions import QueryPlanError, DatabaseExecutionError, SchemaError
 from ..join_planner import auto_inject_joins
+from ..plan_canonical import canonicalize_query_plan
 from ..schema_validator import validate_schema
 from ..validation import validate_query_plan_dict
 
@@ -132,6 +133,7 @@ def execute_query_plan(
 
         resolved_plan = _resolve_relative_dates(clean_plan)
         resolved_plan = auto_inject_joins(resolved_plan, schema)
+        resolved_plan = canonicalize_query_plan(resolved_plan)
 
         compiler = Compiler(schema)
         sql, params = compiler.compile(resolved_plan)

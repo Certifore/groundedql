@@ -1155,6 +1155,29 @@
     }
   },
   {
+    "name": "legacy_auto_inject_order_details_to_categories_multihop",
+    "question": "Legacy plan: line items with category name (multi-hop link inference)",
+    "plan": {
+      "version": "1.0",
+      "dataset": "order_details",
+      "dimensions": [
+        {
+          "field": "order_details.order_id",
+          "alias": "order_id"
+        },
+        {
+          "field": "categories.category_name",
+          "alias": "category_name"
+        }
+      ],
+      "metrics": [],
+      "filters": [],
+      "order_by": [],
+      "limit": 15,
+      "offset": 0
+    }
+  },
+  {
     "name": "correlated_exists_orders_with_customers_join",
     "question": "Orders with correlated EXISTS to customers (explicit orders_to_customers join on outer query)",
     "plan": {
@@ -1202,6 +1225,146 @@
       },
       "limit": 10,
       "offset": 0
+    }
+  },
+  {
+    "name": "canonical_fingerprint_permuted_filters",
+    "question": "Same legacy plan with filters in different order must share plan_fingerprint",
+    "type": "canonical",
+    "canonical": {
+      "kind": "pair",
+      "plan_a": {
+        "version": "1.0",
+        "dataset": "orders",
+        "dimensions": [
+          {
+            "field": "orders.ship_country",
+            "alias": "c"
+          }
+        ],
+        "metrics": [
+          {
+            "agg": "count_distinct",
+            "field": "order_id",
+            "alias": "n"
+          }
+        ],
+        "filters": [
+          {
+            "field": "freight",
+            "op": ">",
+            "value": 10
+          },
+          {
+            "field": "ship_country",
+            "op": "contains",
+            "value": "U"
+          }
+        ],
+        "order_by": [
+          {
+            "by": "n",
+            "dir": "desc"
+          }
+        ],
+        "limit": 5,
+        "offset": 0
+      },
+      "plan_b": {
+        "version": "1.0",
+        "dataset": "orders",
+        "dimensions": [
+          {
+            "field": "orders.ship_country",
+            "alias": "c"
+          }
+        ],
+        "metrics": [
+          {
+            "agg": "count_distinct",
+            "field": "order_id",
+            "alias": "n"
+          }
+        ],
+        "filters": [
+          {
+            "field": "ship_country",
+            "op": "contains",
+            "value": "U"
+          },
+          {
+            "field": "freight",
+            "op": ">",
+            "value": 10
+          }
+        ],
+        "order_by": [
+          {
+            "by": "n",
+            "dir": "desc"
+          }
+        ],
+        "limit": 5,
+        "offset": 0
+      }
+    }
+  },
+  {
+    "name": "canonical_order_by_sequence_preserved",
+    "question": "canonicalize_query_plan must not reorder order_by entries",
+    "type": "canonical",
+    "canonical": {
+      "kind": "order_by",
+      "plan": {
+        "dataset": "orders",
+        "select": [
+          {
+            "expr": {
+              "col": "orders.order_id"
+            },
+            "alias": "a"
+          },
+          {
+            "expr": {
+              "col": "orders.freight"
+            },
+            "alias": "b"
+          }
+        ],
+        "order_by": [
+          {
+            "by": "b",
+            "dir": "asc"
+          },
+          {
+            "by": "a",
+            "dir": "desc"
+          }
+        ],
+        "limit": 3,
+        "offset": 0
+      }
+    }
+  },
+  {
+    "name": "canonical_idempotent_apply_twice",
+    "question": "Applying canonicalize_query_plan twice yields stable JSON",
+    "type": "canonical",
+    "canonical": {
+      "kind": "idempotent",
+      "plan": {
+        "dataset": "customers",
+        "select": [
+          {
+            "expr": {
+              "col": "customers.customer_id"
+            },
+            "alias": "id"
+          }
+        ],
+        "limit": 1,
+        "offset": 0
+      }
     }
   }
 ]
