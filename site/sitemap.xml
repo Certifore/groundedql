@@ -1,39 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-         <loc>https://alexanderabakah.github.io/dsl_compiler/</loc>
-         <lastmod>2026-03-26</lastmod>
+         <loc>https://certifore.github.io/dsl_compiler/</loc>
+         <lastmod>2026-03-27</lastmod>
     </url>
     <url>
-         <loc>https://alexanderabakah.github.io/dsl_compiler/api-reference/</loc>
-         <lastmod>2026-03-26</lastmod>
+         <loc>https://certifore.github.io/dsl_compiler/api-reference/</loc>
+         <lastmod>2026-03-27</lastmod>
     </url>
     <url>
-         <loc>https://alexanderabakah.github.io/dsl_compiler/concepts/</loc>
-         <lastmod>2026-03-26</lastmod>
+         <loc>https://certifore.github.io/dsl_compiler/concepts/</loc>
+         <lastmod>2026-03-27</lastmod>
     </url>
     <url>
-         <loc>https://alexanderabakah.github.io/dsl_compiler/contributing/</loc>
-         <lastmod>2026-03-26</lastmod>
+         <loc>https://certifore.github.io/dsl_compiler/contributing/</loc>
+         <lastmod>2026-03-27</lastmod>
     </url>
     <url>
-         <loc>https://alexanderabakah.github.io/dsl_compiler/exceptions/</loc>
-         <lastmod>2026-03-26</lastmod>
+         <loc>https://certifore.github.io/dsl_compiler/exceptions/</loc>
+         <lastmod>2026-03-27</lastmod>
     </url>
     <url>
-         <loc>https://alexanderabakah.github.io/dsl_compiler/getting-started/</loc>
-         <lastmod>2026-03-26</lastmod>
+         <loc>https://certifore.github.io/dsl_compiler/getting-started/</loc>
+         <lastmod>2026-03-27</lastmod>
     </url>
     <url>
-         <loc>https://alexanderabakah.github.io/dsl_compiler/llm-integration/</loc>
-         <lastmod>2026-03-26</lastmod>
+         <loc>https://certifore.github.io/dsl_compiler/llm-integration/</loc>
+         <lastmod>2026-03-27</lastmod>
     </url>
     <url>
-         <loc>https://alexanderabakah.github.io/dsl_compiler/query-plan-reference/</loc>
-         <lastmod>2026-03-26</lastmod>
+         <loc>https://certifore.github.io/dsl_compiler/query-plan-reference/</loc>
+         <lastmod>2026-03-27</lastmod>
     </url>
     <url>
-         <loc>https://alexanderabakah.github.io/dsl_compiler/schema-reference/</loc>
-         <lastmod>2026-03-26</lastmod>
+         <loc>https://certifore.github.io/dsl_compiler/schema-reference/</loc>
+         <lastmod>2026-03-27</lastmod>
     </url>
 </urlset>

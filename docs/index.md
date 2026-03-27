@@ -15,7 +15,7 @@ output on every run. Let your LLM own <em>intent</em>. Let QCE own <em>SQL</em>.
 <div class="qce-hero__actions">
   <a href="getting-started/" class="qce-btn qce-btn--primary">→ Get Started</a>
   <a href="concepts/" class="qce-btn qce-btn--outline">How it works</a>
-  <a href="https://github.com/alexanderabakah/dsl_compiler" class="qce-btn qce-btn--outline">GitHub</a>
+  <a href="https://github.com/Certifore/dsl_compiler" class="qce-btn qce-btn--outline">GitHub</a>
 </div>
 
 <div class="qce-badges">
@@ -26,6 +26,25 @@ output on every run. Let your LLM own <em>intent</em>. Let QCE own <em>SQL</em>.
   <span class="qce-badge qce-badge--green">v0.1.0</span>
 </div>
 
+</div>
+
+<div class="qce-stats" markdown>
+<div class="qce-stat">
+<span class="qce-stat__num">Deterministic</span>
+<span class="qce-stat__label">Same plan, same SQL</span>
+</div>
+<div class="qce-stat">
+<span class="qce-stat__num">Parameterized</span>
+<span class="qce-stat__label">No raw value interpolation</span>
+</div>
+<div class="qce-stat">
+<span class="qce-stat__num">Schema-Scoped</span>
+<span class="qce-stat__label">Allowlist only access</span>
+</div>
+<div class="qce-stat">
+<span class="qce-stat__num">LLM-Agnostic</span>
+<span class="qce-stat__label">OpenAI, Gemini, LangChain, callable</span>
+</div>
 </div>
 
 ---
@@ -206,7 +225,7 @@ pip install "qce[google]"    # + google-generativeai
 
 !!! tip "Installing from source"
     ```bash
-    git clone https://github.com/alexanderabakah/dsl_compiler
+    git clone https://github.com/Certifore/dsl_compiler
     cd dsl_compiler
     pip install -e ".[dev]"
     ```
@@ -215,40 +234,31 @@ pip install "qce[google]"    # + google-generativeai
 
 ## Next Steps
 
-<div class="grid cards" markdown>
-
--   :material-rocket-launch:{ .lg .middle } **Get Started in 5 Minutes**
-
-    ---
-
-    Install QCE, define your schema, and run your first query against a live database.
-
-    [:octicons-arrow-right-24: Getting Started](getting-started.md)
-
--   :material-lightbulb-on:{ .lg .middle } **Understand the Architecture**
-
-    ---
-
-    Learn the compilation pipeline, the security model, and how determinism is guaranteed.
-
-    [:octicons-arrow-right-24: Core Concepts](concepts.md)
-
--   :material-code-json:{ .lg .middle } **QueryPlan Reference**
-
-    ---
-
-    All operators, aggregations, rollup, relative dates, and cross-table query examples.
-
-    [:octicons-arrow-right-24: QueryPlan Reference](query-plan-reference.md)
-
--   :material-robot:{ .lg .middle } **Connect Your LLM**
-
-    ---
-
-    OpenAI, LangChain, Gemini, Groq, Ollama — or any callable function.
-
-    [:octicons-arrow-right-24: LLM Integration](llm-integration.md)
-
+<div class="qce-path-grid" markdown>
+<a class="qce-path-card" href="getting-started/">
+  <span class="qce-path-card__kicker">Quickstart</span>
+  <span class="qce-path-card__title">Get Started in 5 Minutes</span>
+  <span class="qce-path-card__desc">Install QCE, define your schema, and run your first query against a live database.</span>
+  <span class="qce-path-card__cta">Read guide →</span>
+</a>
+<a class="qce-path-card" href="concepts/">
+  <span class="qce-path-card__kicker">Architecture</span>
+  <span class="qce-path-card__title">Understand the Pipeline</span>
+  <span class="qce-path-card__desc">See how plans are validated, compiled, and executed safely and deterministically.</span>
+  <span class="qce-path-card__cta">Read concepts →</span>
+</a>
+<a class="qce-path-card" href="query-plan-reference/">
+  <span class="qce-path-card__kicker">Reference</span>
+  <span class="qce-path-card__title">QueryPlan Format</span>
+  <span class="qce-path-card__desc">Operators, aggregations, rollup, set operations, and advanced plan constructs.</span>
+  <span class="qce-path-card__cta">Open reference →</span>
+</a>
+<a class="qce-path-card" href="llm-integration/">
+  <span class="qce-path-card__kicker">Integrations</span>
+  <span class="qce-path-card__title">Connect Your LLM</span>
+  <span class="qce-path-card__desc">Use OpenAI, Gemini, Groq, LangChain, Ollama, or any callable adapter.</span>
+  <span class="qce-path-card__cta">Open integration guide →</span>
+</a>
 </div>
 
 </div>

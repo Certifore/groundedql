@@ -1,9 +1,9 @@
 site_name: QCE
 site_description: Deterministic, schema-validated JSON → SQL for Postgres. Ship LLM-powered data features without ever letting an LLM write raw SQL.
 site_author: Alexander Abakah
-site_url: https://alexanderabakah.github.io/dsl_compiler
-repo_url: https://github.com/alexanderabakah/dsl_compiler
-repo_name: alexanderabakah/dsl_compiler
+site_url: https://certifore.github.io/dsl_compiler
+repo_url: https://github.com/Certifore/dsl_compiler
+repo_name: Certifore/dsl_compiler
 edit_uri: edit/main/docs/
 copyright: Copyright &copy; 2026 Alexander Abakah &mdash; MIT License
 
@@ -54,7 +54,7 @@ extra_css:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/alexanderabakah/dsl_compiler
+      link: https://github.com/Certifore/dsl_compiler
       name: QCE on GitHub
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/qce/

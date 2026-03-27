@@ -19,6 +19,8 @@
   --md-primary-fg-color--dark:  #3730a3;
   --md-accent-fg-color:         #10b981;
   --md-typeset-a-color:         #4f46e5;
+  --md-typeset-font-size:       0.8rem;
+  --md-typeset-max-width:       100%;
 }
 
 [data-md-color-scheme="slate"] {
@@ -35,22 +37,57 @@
 .md-typeset h1 {
   font-weight: 800;
   letter-spacing: -0.02em;
+  line-height: 1.14;
+  margin-bottom: 0.75rem;
 }
 
 .md-typeset h2 {
   font-weight: 700;
   letter-spacing: -0.01em;
-  margin-top: 2.4em;
+  margin-top: 2.1em;
+  margin-bottom: 0.6em;
 }
 
 .md-typeset h3 {
   font-weight: 600;
+  margin-top: 1.55em;
+  margin-bottom: 0.45em;
+}
+
+.md-typeset p,
+.md-typeset li {
+  line-height: 1.68;
+}
+
+.md-typeset table:not([class]) {
+  font-size: 0.8rem;
+}
+
+.md-typeset table:not([class]) td,
+.md-typeset table:not([class]) th {
+  padding-top: 0.52rem;
+  padding-bottom: 0.52rem;
 }
 
 /* ---------- Hero Section ---------- */
 .qce-hero {
+  position: relative;
   padding: 5rem 0 3rem;
-  text-align: center;
+  text-align: left;
+  isolation: isolate;
+}
+
+.qce-hero::before {
+  content: "";
+  position: absolute;
+  inset: -2rem -1rem auto -1rem;
+  height: 115%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 320px at 20% 0%, rgba(99, 102, 241, 0.18), transparent 68%),
+    radial-gradient(720px 300px at 80% 0%, rgba(59, 130, 246, 0.14), transparent 65%);
+  filter: saturate(1.05);
 }
 
 .qce-hero__eyebrow {
@@ -78,8 +115,8 @@
   font-weight: 800;
   letter-spacing: -0.03em;
   line-height: 1.1;
-  margin: 0 auto 1.2rem;
-  max-width: 780px;
+  margin: 0 0 1.2rem;
+  max-width: 1100px;
   background: linear-gradient(135deg, #1e1b4b 0%, #4f46e5 50%, #6366f1 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -97,14 +134,14 @@
   font-size: 1.2rem;
   color: var(--md-default-fg-color--light);
   line-height: 1.7;
-  max-width: 620px;
-  margin: 0 auto 2rem;
+  max-width: 980px;
+  margin: 0 0 2rem;
 }
 
 .qce-hero__actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0.75rem;
   margin-bottom: 2rem;
 }
@@ -158,7 +195,7 @@
 .qce-badges {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0.5rem;
   margin-bottom: 3rem;
 }
@@ -217,7 +254,11 @@
 }
 
 .qce-feature__icon {
-  font-size: 2rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--qce-indigo);
   margin-bottom: 0.75rem;
   line-height: 1;
 }
@@ -275,9 +316,51 @@
   font-weight: 500;
 }
 
-.check   { color: #10b981; font-size: 1.2rem; }
-.cross   { color: #f43f5e; font-size: 1.2rem; }
-.partial { color: #f59e0b; font-size: 1.2rem; }
+.check {
+  color: #065f46;
+  background: #d1fae5;
+  border: 1px solid #6ee7b7;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.cross {
+  color: #991b1b;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.partial {
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+[data-md-color-scheme="slate"] .check {
+  color: #86efac;
+  background: #052e20;
+  border-color: #14532d;
+}
+[data-md-color-scheme="slate"] .cross {
+  color: #fda4af;
+  background: #3f0f1a;
+  border-color: #7f1d1d;
+}
+[data-md-color-scheme="slate"] .partial {
+  color: #fcd34d;
+  background: #3a2a07;
+  border-color: #78350f;
+}
 
 /* ---------- Stat Strip ---------- */
 .qce-stats {
@@ -302,11 +385,11 @@
 }
 
 .qce-stat__num {
-  font-size: 2rem;
-  font-weight: 800;
+  font-size: 1.05rem;
+  font-weight: 700;
   color: var(--qce-indigo);
   display: block;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.01em;
 }
 
 [data-md-color-scheme="slate"] .qce-stat__num {
@@ -314,12 +397,74 @@
 }
 
 .qce-stat__label {
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 500;
   color: var(--md-default-fg-color--light);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-top: 0.25rem;
+}
+
+/* ---------- Path cards ---------- */
+.qce-path-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.qce-path-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 1.15rem 1.15rem 1rem;
+  border: 1px solid var(--qce-border);
+  background: #fff;
+  border-radius: 0.85rem;
+  text-decoration: none !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.qce-path-card:hover {
+  border-color: #c7d2fe;
+  box-shadow: 0 12px 26px rgba(79, 70, 229, 0.12);
+  transform: translateY(-2px);
+}
+
+[data-md-color-scheme="slate"] .qce-path-card {
+  background: #141427;
+  border-color: #2e2e52;
+}
+[data-md-color-scheme="slate"] .qce-path-card:hover {
+  border-color: #6366f1;
+  box-shadow: 0 12px 30px rgba(99, 102, 241, 0.2);
+}
+
+.qce-path-card__kicker {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--qce-indigo-light);
+}
+
+.qce-path-card__title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--md-default-fg-color);
+}
+
+.qce-path-card__desc {
+  font-size: 0.86rem;
+  color: var(--md-default-fg-color--light);
+  line-height: 1.55;
+}
+
+.qce-path-card__cta {
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--qce-indigo);
 }
 
 /* ---------- Code block polish ---------- */
@@ -341,10 +486,34 @@
 /* ---------- Navigation ---------- */
 .md-header {
   background: linear-gradient(135deg, var(--qce-indigo-dark), var(--qce-indigo));
+  box-shadow: 0 2px 10px rgba(30, 27, 75, 0.18);
 }
 
 .md-tabs {
   background: linear-gradient(135deg, var(--qce-indigo-dark), var(--qce-indigo));
+}
+
+.md-tabs__link {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.md-nav__title {
+  font-weight: 700;
+}
+
+.md-nav__link {
+  border-radius: 0.35rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.md-nav__link:hover {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+[data-md-color-scheme="slate"] .md-nav__link:hover {
+  background: rgba(129, 140, 248, 0.12);
 }
 
 /* ---------- Footer ---------- */
@@ -355,6 +524,119 @@
 /* ---------- Homepage — hide page title ---------- */
 .qce-home .md-content__inner > h1:first-child {
   display: none;
+}
+
+.qce-home {
+  width: 100%;
+}
+
+/* ---------- Global document shell ---------- */
+.qce-doc-shell .md-content__inner {
+  max-width: none;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.qce-doc-shell .md-typeset > h1:first-of-type {
+  margin-bottom: 1rem;
+}
+
+/* ---------- Wider overall page geometry ---------- */
+.md-grid {
+  max-width: 120rem;
+}
+
+.md-content {
+  max-width: 100%;
+}
+
+.md-content__inner {
+  margin: 0 0.35rem 1.6rem;
+  max-width: none;
+}
+
+/* Material applies its own readable-width cap here; remove it decisively */
+.md-typeset {
+  max-width: none !important;
+}
+
+.md-content__inner .md-typeset {
+  width: 100%;
+}
+
+.md-main__inner .md-content {
+  min-width: 0;
+}
+
+/* ---------- Global wide layout (all pages) ---------- */
+.md-main,
+.md-main__inner,
+.md-grid {
+  max-width: none !important;
+}
+
+.md-main__inner {
+  width: 100% !important;
+}
+
+.md-main__inner .md-content,
+.md-main__inner .md-content__inner,
+.md-main__inner .md-content__inner.md-typeset {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+/* Keep a little breathing room while still using full width */
+.md-content__inner {
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+}
+
+/* Absolute fallback: make article itself uncapped */
+article.md-content__inner.md-typeset {
+  max-width: none !important;
+  width: 100% !important;
+}
+
+/* Give content more room on desktop while keeping navigation */
+/* Universal single-column docs mode: full-width content on all pages */
+.md-main__inner {
+  display: block !important;
+  max-width: none !important;
+}
+
+.md-sidebar,
+.md-sidebar--primary,
+.md-sidebar--secondary {
+  display: none !important;
+}
+
+.md-main__inner .md-content {
+  margin: 0 !important;
+  max-width: none !important;
+  width: 100% !important;
+}
+
+.md-content__inner {
+  margin: 0 0 1.6rem !important;
+  padding-left: 0.6rem !important;
+  padding-right: 0.6rem !important;
+  max-width: none !important;
+}
+
+article.md-content__inner.md-typeset {
+  width: min(1700px, calc(100vw - 1.2rem)) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* Slightly reduce side padding on medium screens */
+@media screen and (min-width: 60em) and (max-width: 76.24em) {
+  .md-content__inner {
+    margin-left: 0.4rem;
+    margin-right: 0.4rem;
+  }
 }
 
 /* ---------- Inline pill / tag ---------- */
@@ -377,11 +659,81 @@
 @media (max-width: 640px) {
   .qce-hero {
     padding: 3rem 0 2rem;
+    text-align: left;
   }
   .qce-hero__title {
     font-size: 2rem;
   }
   .qce-hero__subtitle {
     font-size: 1rem;
+  }
+}
+
+/* ---------- Home page wide mode ---------- */
+@media screen and (min-width: 60em) {
+  .qce-home .md-content__inner,
+  .qce-home {
+    max-width: 1420px;
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
+
+/* Ensure home hero isn't visually centered by inherited styles */
+.qce-home .qce-hero {
+  text-align: left !important;
+}
+
+.qce-home .qce-hero__actions,
+.qce-home .qce-badges {
+  justify-content: flex-start !important;
+}
+
+.qce-home .qce-hero__title,
+.qce-home .qce-hero__subtitle,
+.qce-home .qce-stats {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* ============================================================
+   Final layout override (global)
+   Purpose:
+   - keep left navigation visible/clickable
+   - remove right TOC rail
+   - make all pages wide
+   ============================================================ */
+.md-sidebar--primary {
+  display: block !important;
+}
+
+.md-sidebar--secondary {
+  display: none !important;
+}
+
+.md-main__inner {
+  display: grid !important;
+  grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr) !important;
+  column-gap: 0.8rem !important;
+  max-width: none !important;
+}
+
+.md-grid,
+.md-main,
+.md-content,
+.md-content__inner,
+article.md-content__inner.md-typeset,
+.md-typeset {
+  max-width: none !important;
+}
+
+.md-content__inner,
+article.md-content__inner.md-typeset {
+  width: 100% !important;
+}
+
+@media screen and (max-width: 76.24em) {
+  .md-main__inner {
+    display: block !important;
   }
 }

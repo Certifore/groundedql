@@ -2,6 +2,27 @@
 
 Understanding how QCE works end-to-end will help you configure it correctly and debug issues when they arise.
 
+<div class="qce-path-grid" markdown>
+<a class="qce-path-card" href="getting-started/">
+  <span class="qce-path-card__kicker">Step 1</span>
+  <span class="qce-path-card__title">Getting Started</span>
+  <span class="qce-path-card__desc">Install QCE, define schema allowlists, and run your first execution path.</span>
+  <span class="qce-path-card__cta">Open guide -></span>
+</a>
+<a class="qce-path-card" href="query-plan-reference/">
+  <span class="qce-path-card__kicker">Step 3</span>
+  <span class="qce-path-card__title">QueryPlan Reference</span>
+  <span class="qce-path-card__desc">Use the full plan grammar, operators, rollup, joins, and advanced expressions.</span>
+  <span class="qce-path-card__cta">Read reference -></span>
+</a>
+<a class="qce-path-card" href="api-reference/">
+  <span class="qce-path-card__kicker">Production</span>
+  <span class="qce-path-card__title">API Contracts</span>
+  <span class="qce-path-card__desc">Integrate planner/compiler/executor entry points with typed error handling.</span>
+  <span class="qce-path-card__cta">Open API docs -></span>
+</a>
+</div>
+
 !!! abstract "TL;DR"
     QCE separates **intent** (what data you want) from **execution** (how to fetch it). The LLM produces a structured `QueryPlan`; the compiler turns that into parameterized SQL. The two never mix.
 
@@ -79,16 +100,16 @@ The schema defines three things:
 
     ```yaml
     tables:
-      orders:                    # logical name — the LLM uses this
-        db_table: "Orders"       # physical name — the DB sees this
+      - name: orders               # logical name — the LLM uses this
+        db_table: '"Orders"'       # physical name — the DB sees this
         description: "Customer orders"
         columns:
-          order_id:
-            db_column: "OrderID"
+          - name: order_id
+            db_column: '"OrderID"'
             type: integer
-          freight:
-            db_column: "Freight"
-            type: float
+          - name: freight
+            db_column: '"Freight"'
+            type: numeric
     ```
 
 === "Links (Joins)"
@@ -97,10 +118,12 @@ The schema defines three things:
     links:
       - name: orders_to_customers
         from_table: orders
-        from_column: customer_id
         to_table: customers
-        to_column: customer_id
-        join_type: LEFT
+        join_type: left
+        "on":
+          - left: orders.customer_id
+            op: "="
+            right: customers.customer_id
     ```
 
     Links are used by the auto-join injector to find join paths automatically.
@@ -109,8 +132,8 @@ The schema defines three things:
 
     ```yaml
     tables:
-      orders:
-        primary_key: order_id
+      - name: orders
+        primary_id: order_id
     ```
 
     Primary keys help the semantic linter suggest `count_distinct` over `count` when appropriate.
@@ -241,7 +264,7 @@ Before retrying with the LLM, `semantic_lint` compares the user's question again
 | "per X", "by X", "each X" | non-empty `dimensions` | 2 |
 | "top N", "most", "highest" | `order_by` + `limit` set | 3 |
 | "average per", "avg per" | `rollup` present | 4 |
-| "how many", "count of" | `count_distinct(primary_key)` | 5 |
+| "how many", "count of" | `count_distinct(primary_id)` | 5 |
 
 Lint errors are appended to the structured retry message sent back to the LLM, giving it an explicit chance to self-correct.
 

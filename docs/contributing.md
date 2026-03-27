@@ -12,7 +12,7 @@ Thanks for your interest in contributing to QCE!
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/alexanderabakah/dsl_compiler
+git clone https://github.com/Certifore/dsl_compiler
 cd dsl_compiler
 ```
 

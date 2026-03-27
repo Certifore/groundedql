@@ -99,7 +99,7 @@ test/
 ### Recommended: Editable Install
 
 ```bash
-git clone <YOUR_REPO_URL>
+git clone https://github.com/Certifore/dsl_compiler.git
 cd dsl_compiler
 python -m venv .venv
 source .venv/bin/activate
