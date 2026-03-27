@@ -30,7 +30,7 @@ source env_dsl/bin/activate   # Linux/macOS
 pip install -e ".[dev]"
 ```
 
-This installs `dsl_compiler`/`qce` in editable mode (source changes are reflected immediately), plus `pytest`, `ruff`, `build`, and `twine`.
+This installs `dsl_compiler`/`qce` in editable mode (source changes are reflected immediately), plus `ruff`, `build`, and `twine`.
 
 ### 4. Install LLM Extras (optional)
 
@@ -81,13 +81,15 @@ docs/                   # this documentation site (MkDocs)
 
 ## Running Tests
 
+All automated checks go through `test/test_main.py` (no separate pytest modules).
+
+**Compiler + validation (no DB):**
+
 ```bash
-pytest test/ -v
+python test/test_main.py selfcheck
 ```
 
-### Regression Suite
-
-The regression suite (`test/regression_test/`) runs 28 real queries against a Northwind Postgres database. It requires database credentials:
+**Regression suite** — executes plans from `test/regression_test/test_qs.json` against Postgres:
 
 ```bash
 cp test/.env.example test/.env
@@ -95,7 +97,8 @@ cp test/.env.example test/.env
 ```
 
 ```bash
-pytest test/regression_test/ -v
+python test/test_main.py run      # execute and print results
+python test/test_main.py check    # compare to saved baseline (CI)
 ```
 
 ---
@@ -162,7 +165,7 @@ python -m dsl_compiler.spec_builder \
 3. **Run checks:**
 
     ```bash
-    ruff check dsl_compiler/ && pytest test/ -v
+    ruff check dsl_compiler/ && python test/test_main.py selfcheck
     ```
 
 4. **Commit** with a clear message:

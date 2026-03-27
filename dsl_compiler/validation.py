@@ -43,14 +43,20 @@ def validate_query_plan_dict(plan_dict: Dict[str, Any], schema_path: str) -> Tup
       1) Pydantic (hard schema)
       2) Dataset/field allowlist from schema.yaml
       3) DSL semantic rules (rollup references aliases, etc.)
+
+    The ``meta`` key (planner explainability: plan_hash, retries, etc.) is stripped
+    before schema validation — same as ``execute_query_plan`` / ``validate_query_plan``.
+
     Returns:
       (parsed_plan or None, errors)
     """
     errors: List[ValidationErrorItem] = []
 
+    plan_body = {k: v for k, v in plan_dict.items() if k != "meta"}
+
     # 1) Hard schema validation
     try:
-        plan = QueryPlan.model_validate(plan_dict)
+        plan = QueryPlan.model_validate(plan_body)
     except Exception as e:
         return None, [ValidationErrorItem(path="$", message=f"QueryPlan schema invalid: {e}")]
 

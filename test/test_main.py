@@ -6,11 +6,15 @@ Modes (set via TEST_MODE env var or command-line arg):
   update  — Execute all plans and OVERWRITE the baseline file.
   check   — Execute all plans and COMPARE against the saved baseline.
              Exits with code 1 if any row_count or first-row values differ.
+  pipeline — Benchmark 4 only: NL → LLM planner → compile → execute (see benchmark/.env).
+  selfcheck — No DB: compiler + schema + validation checks (former pytest cases).
 
 Usage:
   python test/test_main.py              # run (default)
   python test/test_main.py update       # overwrite baseline
   python test/test_main.py check        # regression check (for CI)
+  python test/test_main.py pipeline     # full pipeline benchmark (loads benchmark/.env)
+  python test/test_main.py selfcheck    # compiler hardening + validate_query_plan meta
 
 Test types in test_qs.json:
   (default) db   — execute against Postgres
@@ -54,10 +58,411 @@ REG_DIR.mkdir(parents=True, exist_ok=True)
 # Mode
 # ---------------------------------------------------------------------------
 MODE = (sys.argv[1] if len(sys.argv) > 1 else os.getenv("TEST_MODE", "run")).lower()
-assert MODE in {"run", "update", "check", "lint"}, f"Unknown mode '{MODE}'. Use: run | update | check | lint"
+assert MODE in {"run", "update", "check", "lint", "pipeline", "selfcheck"}, (
+    f"Unknown mode '{MODE}'. Use: run | update | check | lint | pipeline | selfcheck"
+)
+
+
+def _run_pipeline_mode() -> None:
+    """
+    Benchmark 4 — NL → planner → compile → execute.
+    Loads repo .env then benchmark/.env; writes benchmark/results/pipeline_latest.json.
+    """
+    import json as _json
+    from datetime import datetime, timezone
+
+    load_dotenv(dotenv_path=ENV_PATH, override=True)
+    load_dotenv(dotenv_path=ROOT / "benchmark" / ".env", override=True)
+    sys.path.insert(0, str(ROOT / "benchmark" / "compare"))
+    from run_comparison import (
+        _check_env,
+        _check_env_pipeline_flexible,
+        _db_url,
+        _print_table,
+        _print_token_table,
+        bench_pipeline_qce,
+        bench_pipeline_gpt4,
+        bench_pipeline_langchain,
+        make_client,
+        make_agent,
+        RESULTS_DIR,
+        DATA_DIR,
+        SCHEMA_PATH,
+        SPEC_PATH,
+    )
+
+    def _print_first_error_hint(pipe: list) -> None:
+        for r in pipe:
+            for d in r.get("details") or []:
+                err = d.get("error")
+                if not err:
+                    continue
+                qid = d.get("id", "?")
+                if "429" in err or "RESOURCE_EXHAUSTED" in err:
+                    print(
+                        f"\n  First failure (question {qid}): Gemini API quota/rate limit (429). "
+                        "See https://ai.google.dev/gemini-api/docs/rate-limits — full text in results JSON."
+                    )
+                else:
+                    line = err.strip().split("\n")[0]
+                    if len(line) > 200:
+                        line = line[:200] + "…"
+                    print(f"\n  First failure (question {qid}): {line}")
+                return
+
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+
+    if openai_key:
+        _check_env()
+    else:
+        _check_env_pipeline_flexible()
+
+    print("=" * 75)
+    print("  Pipeline benchmark (Benchmark 4)")
+    print(f"  Spec: {SPEC_PATH}")
+    print(f"  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    print("=" * 75)
+
+    with open(SCHEMA_PATH) as f:
+        schema = yaml.safe_load(f)
+    with open(DATA_DIR / "pipeline_questions.json") as f:
+        pipeline_questions = _json.load(f)
+
+    db_url = _db_url()
+
+    if not openai_key and gemini_key:
+        print("\n[setup] OPENAI_API_KEY not set — running QCE full pipeline with Gemini only.")
+        print(f"\n[1/1] QCE full pipeline ({len(pipeline_questions)} questions)...")
+        qce = bench_pipeline_qce(schema, pipeline_questions, db_url)
+        pipe = [qce]
+    else:
+        print("\n[setup] Initialising competitors...")
+        gpt4_client = make_client(openai_key)
+        langchain_agent = make_agent(db_url, openai_key)
+
+        print(f"\n[1/3] QCE full pipeline ({len(pipeline_questions)} questions)...")
+        qce = bench_pipeline_qce(schema, pipeline_questions, db_url)
+
+        print(f"\n[2/3] LangChain full pipeline ({len(pipeline_questions)} questions)...")
+        lc = bench_pipeline_langchain(langchain_agent, pipeline_questions)
+
+        print(f"\n[3/3] GPT-4 Direct full pipeline ({len(pipeline_questions)} questions)...")
+        gpt4 = bench_pipeline_gpt4(gpt4_client, schema, pipeline_questions, db_url)
+
+        pipe = [qce, lc, gpt4]
+
+    _print_table(f"Benchmark 4 — Full Pipeline ({len(pipeline_questions)} questions)", pipe)
+    _print_token_table(pipe)
+
+    if pipe and pipe[0].get("correct", -1) == 0 and pipe[0].get("total", 0) > 0:
+        _print_first_error_hint(pipe)
+
+    out_path = RESULTS_DIR / "pipeline_latest.json"
+    out_path.write_text(
+        _json.dumps(
+            {
+                "run_at": datetime.now(timezone.utc).isoformat(),
+                "spec_used": str(SPEC_PATH),
+                "results": pipe,
+            },
+            indent=2,
+            default=str,
+        )
+    )
+    print(f"\n  Results saved → {out_path}")
+
+    qce = pipe[0]
+    ok = qce.get("correct", 0) == qce.get("total", 0) and qce.get("total", 0) > 0
+    sys.exit(0 if ok else 1)
+
+
+def _run_selfcheck() -> None:
+    """Compiler/schema/validation checks (no DB). Replaces former test_compiler_fixes + test_validation_meta."""
+    import tempfile
+    from pathlib import Path as P
+
+    from dsl_compiler.compiler import Compiler, QueryPlanError
+    from dsl_compiler.exceptions import SchemaError
+    from dsl_compiler.schema_validator import validate_schema
+    from dsl_compiler.validation import validate_query_plan_dict
+
+    failures: list[str] = []
+
+    def _minimal_schema(*, bad_link_join_type: str | None = None) -> dict:
+        schema = {
+            "tables": [
+                {
+                    "name": "orders",
+                    "db_table": "orders",
+                    "columns": [
+                        {"name": "order_id", "db_column": "order_id", "type": "int"},
+                        {"name": "customer_id", "db_column": "customer_id", "type": "int"},
+                    ],
+                },
+                {
+                    "name": "customers",
+                    "db_table": "customers",
+                    "columns": [
+                        {"name": "customer_id", "db_column": "customer_id", "type": "int"},
+                        {"name": "name", "db_column": "name", "type": "varchar"},
+                    ],
+                },
+            ],
+            "links": [
+                {
+                    "name": "orders_to_customers",
+                    "from_table": "orders",
+                    "to_table": "customers",
+                    "join_type": "left",
+                    "on": [{"left": "orders.customer_id", "right": "customers.customer_id"}],
+                }
+            ],
+        }
+        if bad_link_join_type is not None:
+            schema["links"][0]["join_type"] = bad_link_join_type
+        return schema
+
+    # --- validate_query_plan_dict ignores planner meta ---
+    with tempfile.TemporaryDirectory() as td:
+        sp = P(td) / "schema.yaml"
+        sp.write_text(
+            yaml.safe_dump(
+                {
+                    "tables": [
+                        {
+                            "name": "work_orders",
+                            "columns": [{"name": "asset_tag"}, {"name": "work_order_id"}],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        plan = {
+            "version": "1.0",
+            "dataset": "work_orders",
+            "dimensions": [{"field": "asset_tag", "alias": "asset_tag"}],
+            "metrics": [{"agg": "count", "field": "*", "alias": "work_order_count"}],
+            "order_by": [{"by": "work_order_count", "dir": "desc"}],
+            "limit": 1,
+            "offset": 0,
+            "filters": [],
+            "meta": {
+                "plan_hash": "deadbeef",
+                "retry_count": 1,
+                "auto_fixes_applied": [],
+                "validation_errors": [],
+                "lint_errors": [],
+            },
+        }
+        parsed, errs = validate_query_plan_dict(plan, str(sp))
+        if parsed is None or errs:
+            failures.append(f"validate_query_plan_dict+meta: {errs}")
+
+    # --- schema validator: bad link join type ---
+    try:
+        validate_schema(_minimal_schema(bad_link_join_type="right"))
+        failures.append("validate_schema should reject bad join_type")
+    except SchemaError as e:
+        if "join_type" not in str(e).lower():
+            failures.append(f"validate_schema wrong message: {e}")
+    except Exception as e:
+        failures.append(f"validate_schema wrong exc: {e}")
+
+    # --- Compiler rejects bad link without prior validate_schema ---
+    try:
+        Compiler(_minimal_schema(bad_link_join_type="full"))
+        failures.append("Compiler should reject bad join_type at init")
+    except SchemaError as e:
+        if "join_type" not in str(e).lower():
+            failures.append(f"Compiler schema wrong message: {e}")
+    except Exception as e:
+        failures.append(f"Compiler schema wrong exc: {e}")
+
+    # --- duplicate explicit join requires as ---
+    try:
+        c = Compiler(_minimal_schema())
+        c.compile(
+            {
+                "dataset": "orders",
+                "joins": [
+                    {
+                        "dataset": "customers",
+                        "type": "inner",
+                        "on": {
+                            "cmp": {
+                                "left": {"col": "orders.customer_id"},
+                                "op": "=",
+                                "right": {"col": "customers.customer_id"},
+                            }
+                        },
+                    },
+                    {
+                        "dataset": "customers",
+                        "type": "inner",
+                        "on": {
+                            "cmp": {
+                                "left": {"col": "orders.customer_id"},
+                                "op": "=",
+                                "right": {"col": "customers.customer_id"},
+                            }
+                        },
+                    },
+                ],
+                "select": [{"expr": {"col": "orders.order_id"}, "alias": "order_id"}],
+                "limit": 5,
+            }
+        )
+        failures.append("duplicate join should require join.as")
+    except QueryPlanError as e:
+        if "as" not in str(e).lower():
+            failures.append(f"duplicate join message: {e}")
+    except Exception as e:
+        failures.append(f"duplicate join wrong exc: {e}")
+
+    # --- self-join with as compiles ---
+    try:
+        c = Compiler(_minimal_schema())
+        sql, _ = c.compile(
+            {
+                "dataset": "orders",
+                "joins": [
+                    {
+                        "dataset": "orders",
+                        "as": "o2",
+                        "type": "inner",
+                        "on": {
+                            "cmp": {
+                                "left": {"col": "orders.order_id"},
+                                "op": "=",
+                                "right": {"col": "o2.order_id"},
+                            }
+                        },
+                    }
+                ],
+                "select": [{"expr": {"col": "orders.order_id"}, "alias": "a"}],
+                "limit": 1,
+            }
+        )
+        if "JOIN" not in sql.upper() or "orders" not in sql.lower():
+            failures.append(f"self-join SQL unexpected: {sql[:120]}")
+    except Exception as e:
+        failures.append(f"self-join compile: {e}")
+
+    # --- sql function wrong arity ---
+    try:
+        c = Compiler(_minimal_schema())
+        c.compile(
+            {
+                "dataset": "orders",
+                "select": [
+                    {
+                        "expr": {"func": "count", "args": [{"col": "order_id"}, {"col": "customer_id"}]},
+                        "alias": "x",
+                    }
+                ],
+                "limit": 1,
+            }
+        )
+        failures.append("wrong func arity should error")
+    except QueryPlanError as e:
+        if "does not accept" not in str(e).lower():
+            failures.append(f"func arity message: {e}")
+    except Exception as e:
+        failures.append(f"func arity wrong exc: {e}")
+
+    # --- set_op column mismatch ---
+    try:
+        c = Compiler(_minimal_schema())
+        c.compile(
+            {
+                "set_op": {
+                    "op": "union_all",
+                    "left": {"dataset": "orders", "select": [{"expr": {"col": "order_id"}, "alias": "a"}], "limit": 1},
+                    "right": {
+                        "dataset": "orders",
+                        "select": [
+                            {"expr": {"col": "order_id"}, "alias": "a"},
+                            {"expr": {"col": "customer_id"}, "alias": "b"},
+                        ],
+                        "limit": 1,
+                    },
+                }
+            }
+        )
+        failures.append("set_op mismatch should error")
+    except QueryPlanError as e:
+        if "same number" not in str(e).lower():
+            failures.append(f"set_op message: {e}")
+    except Exception as e:
+        failures.append(f"set_op wrong exc: {e}")
+
+    # --- empty IN list ---
+    try:
+        c = Compiler(_minimal_schema())
+        c.compile(
+            {
+                "dataset": "orders",
+                "select": [{"expr": {"col": "order_id"}, "alias": "x"}],
+                "where": {"cmp": {"left": {"col": "order_id"}, "op": "in", "right": []}},
+                "limit": 1,
+            }
+        )
+        failures.append("empty IN should error")
+    except QueryPlanError as e:
+        if "non-empty" not in str(e).lower():
+            failures.append(f"empty IN message: {e}")
+    except Exception as e:
+        failures.append(f"empty IN wrong exc: {e}")
+
+    # --- dotted logical table name ---
+    try:
+        schema = {
+            "tables": [
+                {
+                    "name": "a.b",
+                    "db_table": "ab_t",
+                    "columns": [{"name": "c", "db_column": "c", "type": "int"}],
+                },
+                {
+                    "name": "a",
+                    "db_table": "a_t",
+                    "columns": [{"name": "b", "db_column": "b", "type": "int"}],
+                },
+            ],
+            "links": [],
+        }
+        c = Compiler(schema)
+        sql, _ = c.compile(
+            {
+                "dataset": "a.b",
+                "select": [{"expr": {"col": "a.b.c"}, "alias": "x"}],
+                "limit": 1,
+            }
+        )
+        if "ab_t" not in sql and "c" not in sql:
+            failures.append(f"dotted table SQL: {sql[:120]}")
+    except Exception as e:
+        failures.append(f"dotted table: {e}")
+
+    if failures:
+        print("[selfcheck] failures:")
+        for f in failures:
+            print(f"  - {f}")
+        sys.exit(1)
+    print("[selfcheck] all checks passed")
+    sys.exit(0)
+
+
+if MODE == "pipeline":
+    _run_pipeline_mode()
+
+if MODE == "selfcheck":
+    _run_selfcheck()
 
 # ---------------------------------------------------------------------------
-# DB connection (skipped in lint mode)
+# DB connection (skipped in lint, pipeline, and selfcheck modes)
 # ---------------------------------------------------------------------------
 load_dotenv(dotenv_path=ENV_PATH, override=True)
 
@@ -68,7 +473,7 @@ def _must(k: str) -> str:
     return v
 
 engine = None
-if MODE != "lint":
+if MODE not in ("lint", "pipeline", "selfcheck"):
     engine = create_engine(
         "postgresql+psycopg2://",
         creator=lambda: psycopg2.connect(

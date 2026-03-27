@@ -536,7 +536,7 @@ effectively zero. The safety guarantees are identical.
 python3 benchmark/compare/run_comparison.py
 
 # Pipeline-only (faster, re-runs Benchmark 4 only):
-python3 benchmark/compare/run_pipeline_only.py
+python test/test_main.py pipeline
 ```
 
 Load Northwind into your own Postgres instance:

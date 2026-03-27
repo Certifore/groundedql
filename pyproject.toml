@@ -30,7 +30,14 @@ dependencies = [
 [project.optional-dependencies]
 openai = ["openai>=1.0.0"]
 google = ["google-generativeai>=0.5.0"]
-dev = ["pytest>=8", "ruff>=0.6.0", "build>=1.2.0", "twine>=5.0.0"]
+# Comparison / pipeline benchmarks (LangChain chat models + DB)
+benchmark = [
+  "langchain-openai>=0.2",
+  "langchain-google-genai>=2.0",
+  "langchain-community>=0.3",
+  "python-dotenv",
+]
+dev = ["ruff>=0.6.0", "build>=1.2.0", "twine>=5.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/Certifore/dsl_compiler"

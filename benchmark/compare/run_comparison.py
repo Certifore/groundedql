@@ -6,8 +6,17 @@ Usage:
     python3 benchmark/compare/run_comparison.py
 
 Requires benchmark/.env with:
-    OPENAI_API_KEY=...
     DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+    OPENAI_API_KEY=...  (required for full comparison — LangChain + GPT-4 Direct)
+
+QCE planner LLM selection (pipeline / full-pipeline determinism):
+    - OPENAI_API_KEY only → ChatOpenAI
+    - GEMINI_API_KEY only → ChatGoogleGenerativeAI (pip install langchain-google-genai)
+    - Both set → ChatOpenAI by default; set QCE_USE_GEMINI=1 to force Gemini for QCE
+
+    optional: GEMINI_MODEL=gemini-2.0-flash
+
+For pipeline-only with only Gemini (no OpenAI), run: python test/test_main.py pipeline
 """
 from __future__ import annotations
 
@@ -94,10 +103,73 @@ def _make_engine(db_url: str):
     )
 
 
-def _check_env() -> None:
-    missing = [k for k in ["OPENAI_API_KEY", "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"] if not os.getenv(k)]
+def _require_db_env() -> None:
+    missing = [k for k in ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"] if not os.getenv(k)]
     if missing:
         raise SystemExit(f"[compare] Missing env vars: {missing}\nCheck benchmark/.env")
+
+
+def _check_env() -> None:
+    """Full comparison: DB + OpenAI (LangChain and GPT-4 Direct require it)."""
+    _require_db_env()
+    if not os.getenv("OPENAI_API_KEY", "").strip():
+        raise SystemExit(
+            "[compare] OPENAI_API_KEY is required for the full comparison "
+            "(LangChain + GPT-4 Direct).\n"
+            "For QCE-only against a real DB using Gemini, run:\n"
+            "  python test/test_main.py pipeline\n"
+            "with GEMINI_API_KEY (and DB vars) in benchmark/.env"
+        )
+
+
+def _check_env_pipeline_flexible() -> None:
+    """Benchmark 4 / pipeline-only: DB plus at least one LLM key (OpenAI and/or Gemini for QCE)."""
+    _require_db_env()
+    if not os.getenv("OPENAI_API_KEY", "").strip() and not os.getenv("GEMINI_API_KEY", "").strip():
+        raise SystemExit(
+            "[compare] Set OPENAI_API_KEY and/or GEMINI_API_KEY in benchmark/.env "
+            "(Gemini: pip install langchain-google-genai)"
+        )
+
+
+def _make_qce_langchain_llm(*, openai_model: str = "gpt-4o"):
+    """
+    LangChain chat model for QueryPlanPlanner.
+
+    Prefers OpenAI when OPENAI_API_KEY is set, unless QCE_USE_GEMINI=1.
+    Uses Gemini when only GEMINI_API_KEY is set, or when forcing Gemini with both keys.
+
+    Returns:
+        (llm, provider, model_id) where provider is \"gemini\" | \"openai\"
+    """
+    openai = os.getenv("OPENAI_API_KEY", "").strip()
+    gemini = os.getenv("GEMINI_API_KEY", "").strip()
+    force_gemini = os.getenv("QCE_USE_GEMINI", "").strip().lower() in ("1", "true", "yes")
+
+    use_gemini = bool(gemini) and (force_gemini or not openai)
+
+    if use_gemini:
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+        except ImportError as e:
+            raise SystemExit(
+                "GEMINI_API_KEY is set but langchain-google-genai is not installed.\n"
+                "  pip install langchain-google-genai"
+            ) from e
+        mid = (os.getenv("GEMINI_MODEL") or "gemini-2.0-flash").strip() or "gemini-2.0-flash"
+        llm = ChatGoogleGenerativeAI(model=mid, google_api_key=gemini, temperature=0)
+        return llm, "gemini", mid
+
+    if openai:
+        from langchain_openai import ChatOpenAI
+
+        llm = ChatOpenAI(model=openai_model, temperature=0, api_key=openai)
+        return llm, "openai", openai_model
+
+    raise SystemExit(
+        "Set GEMINI_API_KEY (and pip install langchain-google-genai) or OPENAI_API_KEY "
+        "for QCE pipeline benchmarks."
+    )
 
 
 def _latency_stats(latencies: List[float]) -> Dict[str, float]:
@@ -345,9 +417,8 @@ def bench_determinism_qce_full_pipeline(schema: dict, questions: list, db_url: s
     Checks whether the same SQL is produced on every run.
     This is the honest measure of end-to-end determinism including the LLM planner.
     """
-    from langchain_openai import ChatOpenAI
     engine = _make_engine(db_url)
-    llm = ChatOpenAI(model="gpt-4o", temperature=0, api_key=os.environ["OPENAI_API_KEY"])
+    llm, provider, model_id = _make_qce_langchain_llm(openai_model="gpt-4o")
     planner = QueryPlanPlanner(
         llm=llm,
         schema_path=str(SCHEMA_PATH),
@@ -383,7 +454,7 @@ def bench_determinism_qce_full_pipeline(schema: dict, questions: list, db_url: s
 
     total = len(questions)
     return {
-        "tool": "QCE",
+        "tool": f"QCE ({provider}/{model_id})",
         "score": f"{deterministic}/{total}",
         "deterministic": deterministic, "total": total,
         "failures": failures,
@@ -478,15 +549,10 @@ def bench_hallucination_langchain(agent, inputs: list) -> dict:
 # ---------------------------------------------------------------------------
 def bench_pipeline_qce(schema: dict, questions: list, db_url: str, model: str = "gpt-4o") -> dict:
     """Full QCE pipeline: question → LLM planner → QueryPlan JSON → compile → execute."""
-    from langchain_openai import ChatOpenAI  # use LangChain adapter — works reliably
     from langchain_community.callbacks import get_openai_callback
     engine = _make_engine(db_url)
 
-    llm = ChatOpenAI(
-        model=model,
-        temperature=0,
-        api_key=os.environ["OPENAI_API_KEY"],
-    )
+    llm, provider, model_id = _make_qce_langchain_llm(openai_model=model)
 
     planner = QueryPlanPlanner(
         llm=llm,
@@ -504,14 +570,23 @@ def bench_pipeline_qce(schema: dict, questions: list, db_url: str, model: str = 
     for item in questions:
         t0 = time.perf_counter()
         try:
-            with get_openai_callback() as cb:
+            if provider == "openai":
+                with get_openai_callback() as cb:
+                    plan = planner.plan_with_retry(item["question"], max_retries=1)
+                tokens = {
+                    "prompt": cb.prompt_tokens,
+                    "completion": cb.completion_tokens,
+                    "total": cb.total_tokens,
+                    "llm_calls": cb.successful_requests,
+                }
+            else:
                 plan = planner.plan_with_retry(item["question"], max_retries=1)
-            tokens = {
-                "prompt": cb.prompt_tokens,
-                "completion": cb.completion_tokens,
-                "total": cb.total_tokens,
-                "llm_calls": cb.successful_requests,
-            }
+                tokens = {
+                    "prompt": 0,
+                    "completion": 0,
+                    "total": 0,
+                    "llm_calls": 1,
+                }
             all_tokens.append(tokens)
             result = execute_query_plan(
                 engine=engine,
@@ -549,13 +624,13 @@ def bench_pipeline_qce(schema: dict, questions: list, db_url: str, model: str = 
 
     total = len(questions)
     return {
-        "tool": f"QCE (full pipeline)",
-        "model": model,
+        "tool": f"QCE (full pipeline, {provider}/{model_id})",
+        "model": model_id,
         "score": f"{correct}/{total}",
         "correct": correct, "total": total,
         "details": details,
         "latency": _latency_stats(latencies),
-        "token_stats": _token_stats(all_tokens, model=model),
+        "token_stats": _token_stats(all_tokens, model=model_id),
     }
 
 
