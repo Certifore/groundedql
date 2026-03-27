@@ -927,5 +927,281 @@
       "limit": 10,
       "offset": 0
     }
+  },
+  {
+    "name": "correlated_exists_customers_with_orders",
+    "question": "Customers who have at least one order (correlated EXISTS)",
+    "plan": {
+      "dataset": "customers",
+      "select": [
+        {
+          "expr": {
+            "col": "customers.customer_id"
+          },
+          "alias": "customer_id"
+        },
+        {
+          "expr": {
+            "col": "customers.company_name"
+          },
+          "alias": "company_name"
+        }
+      ],
+      "where": {
+        "exists": {
+          "plan": {
+            "dataset": "orders",
+            "select": [
+              {
+                "expr": {
+                  "lit": 1
+                },
+                "alias": "one"
+              }
+            ],
+            "where": {
+              "cmp": {
+                "left": {
+                  "col": "orders.customer_id"
+                },
+                "op": "=",
+                "right": {
+                  "col": "customers.customer_id"
+                }
+              }
+            },
+            "limit": 1,
+            "offset": 0
+          }
+        }
+      },
+      "limit": 20,
+      "offset": 0
+    }
+  },
+  {
+    "name": "correlated_nested_exists_customers_orders_details",
+    "question": "Customers with an order that has at least one line item (nested correlated EXISTS)",
+    "plan": {
+      "dataset": "customers",
+      "select": [
+        {
+          "expr": {
+            "col": "customers.customer_id"
+          },
+          "alias": "cid"
+        }
+      ],
+      "where": {
+        "exists": {
+          "plan": {
+            "dataset": "orders",
+            "select": [
+              {
+                "expr": {
+                  "lit": 1
+                },
+                "alias": "one"
+              }
+            ],
+            "where": {
+              "and": [
+                {
+                  "cmp": {
+                    "left": {
+                      "col": "orders.customer_id"
+                    },
+                    "op": "=",
+                    "right": {
+                      "col": "customers.customer_id"
+                    }
+                  }
+                },
+                {
+                  "exists": {
+                    "plan": {
+                      "dataset": "order_details",
+                      "select": [
+                        {
+                          "expr": {
+                            "lit": 1
+                          },
+                          "alias": "one"
+                        }
+                      ],
+                      "where": {
+                        "cmp": {
+                          "left": {
+                            "col": "order_details.order_id"
+                          },
+                          "op": "=",
+                          "right": {
+                            "col": "orders.order_id"
+                          }
+                        }
+                      },
+                      "limit": 1,
+                      "offset": 0
+                    }
+                  }
+                }
+              ]
+            },
+            "limit": 1,
+            "offset": 0
+          }
+        }
+      },
+      "limit": 15,
+      "offset": 0
+    }
+  },
+  {
+    "name": "correlated_scalar_subquery_orders_per_customer",
+    "question": "Sample customers with correlated scalar count of their orders",
+    "plan": {
+      "dataset": "customers",
+      "select": [
+        {
+          "expr": {
+            "col": "customers.customer_id"
+          },
+          "alias": "customer_id"
+        },
+        {
+          "expr": {
+            "scalar_subquery": {
+              "plan": {
+                "dataset": "orders",
+                "select": [
+                  {
+                    "expr": {
+                      "func": "count",
+                      "args": [
+                        {
+                          "col": "orders.order_id"
+                        }
+                      ]
+                    },
+                    "alias": "cnt"
+                  }
+                ],
+                "where": {
+                  "cmp": {
+                    "left": {
+                      "col": "orders.customer_id"
+                    },
+                    "op": "=",
+                    "right": {
+                      "col": "customers.customer_id"
+                    }
+                  }
+                },
+                "limit": 1,
+                "offset": 0
+              }
+            }
+          },
+          "alias": "order_cnt"
+        }
+      ],
+      "limit": 12,
+      "offset": 0
+    }
+  },
+  {
+    "name": "correlated_not_exists_customers_without_orders",
+    "question": "Customers with no orders (correlated NOT EXISTS)",
+    "plan": {
+      "dataset": "customers",
+      "select": [
+        {
+          "expr": {
+            "col": "customers.customer_id"
+          },
+          "alias": "customer_id"
+        }
+      ],
+      "where": {
+        "not_exists": {
+          "plan": {
+            "dataset": "orders",
+            "select": [
+              {
+                "expr": {
+                  "lit": 1
+                },
+                "alias": "one"
+              }
+            ],
+            "where": {
+              "cmp": {
+                "left": {
+                  "col": "orders.customer_id"
+                },
+                "op": "=",
+                "right": {
+                  "col": "customers.customer_id"
+                }
+              }
+            },
+            "limit": 1,
+            "offset": 0
+          }
+        }
+      },
+      "limit": 50,
+      "offset": 0
+    }
+  },
+  {
+    "name": "correlated_exists_orders_with_customers_join",
+    "question": "Orders with correlated EXISTS to customers (explicit orders_to_customers join on outer query)",
+    "plan": {
+      "dataset": "orders",
+      "joins": [
+        {
+          "link": "orders_to_customers"
+        }
+      ],
+      "select": [
+        {
+          "expr": {
+            "col": "orders.order_id"
+          },
+          "alias": "order_id"
+        }
+      ],
+      "where": {
+        "exists": {
+          "plan": {
+            "dataset": "orders",
+            "select": [
+              {
+                "expr": {
+                  "lit": 1
+                },
+                "alias": "one"
+              }
+            ],
+            "where": {
+              "cmp": {
+                "left": {
+                  "col": "orders.customer_id"
+                },
+                "op": "=",
+                "right": {
+                  "col": "customers.customer_id"
+                }
+              }
+            },
+            "limit": 1,
+            "offset": 0
+          }
+        }
+      },
+      "limit": 10,
+      "offset": 0
+    }
   }
 ]

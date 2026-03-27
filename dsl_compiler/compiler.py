@@ -206,7 +206,7 @@ class Compiler:
         self._alias_counter = 0  # reset per compile
 
         # Build a SQLAlchemy selectable (Select or CompoundSelect)
-        selectable = self._build_selectable(plan, cte_map={}, path="$")
+        selectable = self._build_selectable(plan, cte_map={}, path="$", outer_alias_map=None)
 
         compiled = selectable.compile(dialect=self.dialect, compile_kwargs={"render_postcompile": True})
         sql = str(compiled)
@@ -217,8 +217,29 @@ class Compiler:
 
         return sql, params
 
+    # ---------- Correlated subqueries (outer scope) ----------
+    def _scope_for_nested_subquery(
+        self,
+        outer_alias_map: Optional[Dict[str, sa.FromClause]],
+        inner_alias_map: Dict[str, sa.FromClause],
+    ) -> Dict[str, sa.FromClause]:
+        """
+        Combine enclosing scopes for a nested EXISTS / scalar_subquery.
+        Inner FROM-clause bindings win over outer when the same logical table name appears twice.
+        """
+        merged: Dict[str, sa.FromClause] = dict(outer_alias_map or {})
+        merged.update(inner_alias_map)
+        return merged
+
     # ---------- Core builder (handles legacy, CTE, set ops, rollup) ----------
-    def _build_selectable(self, plan: dict, *, cte_map: Dict[str, sa.CTE], path: str) -> sa.SelectBase:
+    def _build_selectable(
+        self,
+        plan: dict,
+        *,
+        cte_map: Dict[str, sa.CTE],
+        path: str,
+        outer_alias_map: Optional[Dict[str, sa.FromClause]] = None,
+    ) -> sa.SelectBase:
         _require(isinstance(plan, dict), "INVALID_PLAN", "Plan must be an object.", path)
 
         # Legacy lowering if needed
@@ -240,19 +261,28 @@ class Compiler:
             _require(name not in self.tables, "INVALID_PLAN", f"CTE name '{name}' conflicts with a schema table name.", f"{p}.name")
             _require(cte_plan is not None, "INVALID_PLAN", "CTE requires plan.", f"{p}.plan")
 
-            selectable = self._build_selectable(cte_plan, cte_map=local_ctes, path=f"{p}.plan")
+            selectable = self._build_selectable(
+                cte_plan, cte_map=local_ctes, path=f"{p}.plan", outer_alias_map=outer_alias_map
+            )
             cte_obj = selectable.cte(name)
             local_ctes[name] = cte_obj
 
         # Set operations
         if "set_op" in plan:
-            return self._build_set_op(plan, cte_map=local_ctes, path=path)
+            return self._build_set_op(plan, cte_map=local_ctes, path=path, outer_alias_map=outer_alias_map)
 
         # Normal SELECT (+ optional rollup)
-        return self._build_select_query(plan, cte_map=local_ctes, path=path)
+        return self._build_select_query(plan, cte_map=local_ctes, path=path, outer_alias_map=outer_alias_map)
 
     # ---------- Set operations ----------
-    def _build_set_op(self, plan: dict, *, cte_map: Dict[str, sa.CTE], path: str) -> sa.SelectBase:
+    def _build_set_op(
+        self,
+        plan: dict,
+        *,
+        cte_map: Dict[str, sa.CTE],
+        path: str,
+        outer_alias_map: Optional[Dict[str, sa.FromClause]] = None,
+    ) -> sa.SelectBase:
         p = f"{path}.set_op"
         sop = plan.get("set_op")
         _require(isinstance(sop, dict), "INVALID_PLAN", "set_op must be an object.", p)
@@ -266,8 +296,8 @@ class Compiler:
         _require(isinstance(left_plan, dict), "INVALID_PLAN", "set_op.left must be an object.", f"{p}.left")
         _require(isinstance(right_plan, dict), "INVALID_PLAN", "set_op.right must be an object.", f"{p}.right")
 
-        left = self._build_selectable(left_plan, cte_map=cte_map, path=f"{p}.left")
-        right = self._build_selectable(right_plan, cte_map=cte_map, path=f"{p}.right")
+        left = self._build_selectable(left_plan, cte_map=cte_map, path=f"{p}.left", outer_alias_map=outer_alias_map)
+        right = self._build_selectable(right_plan, cte_map=cte_map, path=f"{p}.right", outer_alias_map=outer_alias_map)
 
         if op == "union":
             comb = sa.union(left, right)
@@ -306,7 +336,14 @@ class Compiler:
         return comb
 
     # ---------- Normal SELECT (+ rollup) ----------
-    def _build_select_query(self, plan: dict, *, cte_map: Dict[str, sa.CTE], path: str) -> sa.SelectBase:
+    def _build_select_query(
+        self,
+        plan: dict,
+        *,
+        cte_map: Dict[str, sa.CTE],
+        path: str,
+        outer_alias_map: Optional[Dict[str, sa.FromClause]] = None,
+    ) -> sa.SelectBase:
         dataset = plan.get("dataset")
         _require(isinstance(dataset, str), "INVALID_PLAN", "dataset is required.", f"{path}.dataset")
 
@@ -340,13 +377,10 @@ class Compiler:
 
         base = source.alias(from_alias)
 
-        alias_map = {dataset: base}
-        from_clause = base
-
-        alias_map: Dict[str, sa.FromClause] = {dataset: base}
+        inner_alias_map: Dict[str, sa.FromClause] = {dataset: base}
         from_clause: sa.FromClause = base
 
-        # Apply joins
+        # Apply joins (inner FROM clause only — outer correlation is separate)
         for j_idx, j in enumerate(joins):
             p = f"{path}.joins[{j_idx}]"
             _require(isinstance(j, dict), "INVALID_PLAN", "Each join must be an object.", p)
@@ -355,7 +389,15 @@ class Compiler:
                 link_name = j.get("link")
                 _require(isinstance(link_name, str) and link_name in self.links,
                          "INVALID_PLAN", f"Unknown link '{link_name}'.", f"{p}.link")
-                from_clause, alias_map = self._apply_link_join(from_clause, alias_map, dataset, link_name, p)
+                from_clause, inner_alias_map = self._apply_link_join(
+                    from_clause,
+                    inner_alias_map,
+                    dataset,
+                    link_name,
+                    p,
+                    cte_map=cte_map,
+                    outer_alias_map=outer_alias_map,
+                )
                 continue
 
             j_ds = j.get("dataset")
@@ -365,12 +407,14 @@ class Compiler:
             on_expr = j.get("on")
             _require(on_expr is not None, "INVALID_PLAN", "join.on is required for explicit joins.", f"{p}.on")
 
-            if j_ds not in alias_map:
+            if j_ds not in inner_alias_map:
                 j_source = self._resolve_relation(j_ds, cte_map, f"{p}.dataset")
-                alias_map[j_ds] = j_source.alias(j_ds)
+                inner_alias_map[j_ds] = j_source.alias(j_ds)
 
-            right = alias_map[j_ds]
-            cond = self._compile_bool_expr(on_expr, alias_map, dataset, cte_map=cte_map, path=f"{p}.on")
+            right = inner_alias_map[j_ds]
+            cond = self._compile_bool_expr(
+                on_expr, inner_alias_map, dataset, cte_map=cte_map, path=f"{p}.on", outer_alias_map=outer_alias_map
+            )
             from_clause = from_clause.join(right, cond, isouter=(j_type == "left"))
 
         # SELECT
@@ -384,7 +428,9 @@ class Compiler:
             alias = item.get("alias")
             _require(expr is not None, "INVALID_PLAN", "select item requires expr.", f"{p}.expr")
 
-            col_expr = self._compile_expr(expr, alias_map, dataset, cte_map=cte_map, path=f"{p}.expr")
+            col_expr = self._compile_expr(
+                expr, inner_alias_map, dataset, cte_map=cte_map, path=f"{p}.expr", outer_alias_map=outer_alias_map
+            )
 
             if alias is not None:
                 _require(isinstance(alias, str) and _IDENT_RE.match(alias),
@@ -401,21 +447,27 @@ class Compiler:
 
         # WHERE
         if where is not None:
-            where_expr = self._compile_bool_expr(where, alias_map, dataset, cte_map=cte_map, path=f"{path}.where")
+            where_expr = self._compile_bool_expr(
+                where, inner_alias_map, dataset, cte_map=cte_map, path=f"{path}.where", outer_alias_map=outer_alias_map
+            )
             query = query.where(where_expr)
 
         # GROUP BY
         if group_by:
             _require(isinstance(group_by, list), "INVALID_PLAN", "group_by must be a list.", f"{path}.group_by")
             gb_exprs = [
-                self._compile_expr(e, alias_map, dataset, cte_map=cte_map, path=f"{path}.group_by[{k}]")
+                self._compile_expr(
+                    e, inner_alias_map, dataset, cte_map=cte_map, path=f"{path}.group_by[{k}]", outer_alias_map=outer_alias_map
+                )
                 for k, e in enumerate(group_by)
             ]
             query = query.group_by(*gb_exprs)
 
         # HAVING
         if having is not None:
-            having_expr = self._compile_bool_expr(having, alias_map, dataset, cte_map=cte_map, path=f"{path}.having")
+            having_expr = self._compile_bool_expr(
+                having, inner_alias_map, dataset, cte_map=cte_map, path=f"{path}.having", outer_alias_map=outer_alias_map
+            )
             query = query.having(having_expr)
 
         # ORDER BY (only when no rollup)
@@ -433,7 +485,9 @@ class Compiler:
                     e = alias_lookup[by]
                 else:
                     _require(by is not None, "INVALID_PLAN", "order_by.by required.", f"{pp}.by")
-                    e = self._compile_expr(by, alias_map, dataset, cte_map=cte_map, path=f"{pp}.by")
+                    e = self._compile_expr(
+                        by, inner_alias_map, dataset, cte_map=cte_map, path=f"{pp}.by", outer_alias_map=outer_alias_map
+                    )
 
                 ob_exprs.append(e.asc() if direction == "asc" else e.desc())
             query = query.order_by(*ob_exprs)
@@ -653,6 +707,9 @@ class Compiler:
         base_dataset: str,
         link_name: str,
         path: str,
+        *,
+        cte_map: Dict[str, sa.CTE],
+        outer_alias_map: Optional[Dict[str, sa.FromClause]] = None,
     ) -> Tuple[sa.FromClause, Dict[str, sa.FromClause]]:
         link = self.links[link_name]
 
@@ -679,8 +736,12 @@ class Compiler:
             op = on.get("op", "=")
             _require(op == "=", "INVALID_PLAN", "Only '=' supported in link joins.", lp)
 
-            l_expr = self._compile_expr({"col": left_ref}, alias_map, base_dataset, cte_map={}, path=f"{lp}.left")
-            r_expr = self._compile_expr({"col": right_ref}, alias_map, base_dataset, cte_map={}, path=f"{lp}.right")
+            l_expr = self._compile_expr(
+                {"col": left_ref}, alias_map, base_dataset, cte_map=cte_map, path=f"{lp}.left", outer_alias_map=outer_alias_map
+            )
+            r_expr = self._compile_expr(
+                {"col": right_ref}, alias_map, base_dataset, cte_map=cte_map, path=f"{lp}.right", outer_alias_map=outer_alias_map
+            )
             conds.append(l_expr == r_expr)
 
         on_expr = sa.and_(*conds) if conds else sa.true()
@@ -701,50 +762,80 @@ class Compiler:
         _require(lo <= iv <= hi, "INVALID_PLAN", f"Value must be between {lo} and {hi}.", path)
         return iv
 
-    def _col(self, alias_map: Dict[str, sa.FromClause], default_table: str, ref: str, path: str) -> sa.ColumnElement:
+    def _col(
+        self,
+        inner_alias_map: Dict[str, sa.FromClause],
+        default_table: str,
+        ref: str,
+        path: str,
+        *,
+        outer_alias_map: Optional[Dict[str, sa.FromClause]] = None,
+    ) -> sa.ColumnElement:
         _require(isinstance(ref, str), "INVALID_PLAN", "Column ref must be string.", path)
         t, c = _split_ref(ref, default_table)
 
+        def _resolve_column(alias_map: Dict[str, sa.FromClause], table_key: str) -> sa.ColumnElement:
+            tbl = alias_map[table_key]
+            if table_key in self.tables:
+                tdef = self.tables[table_key]
+                _require(c in tdef.columns, "UNKNOWN_COLUMN", f"Unknown column '{c}' in table '{table_key}'.", path)
+                col_def = tdef.columns[c]
+                db_col_name, _ = _strip_outer_quotes(col_def.db_column)
+                return tbl.c[db_col_name]
+            _require(c in tbl.c, "UNKNOWN_COLUMN", f"Unknown column '{c}' on dynamic source '{table_key}'.", path)
+            return tbl.c[c]
+
         if "." not in ref:
-            matching_tables = []
-            for tname, tdef in self.tables.items():
-                if tname in alias_map and c in tdef.columns:
-                    matching_tables.append(tname)
-            if len(matching_tables) > 1:
-                raise QueryPlanError("AMBIGUOUS_COLUMN", f"Ambiguous column '{c}' in tables {matching_tables}.", path)
+            inner_matches = [tname for tname, tdef in self.tables.items() if tname in inner_alias_map and c in tdef.columns]
+            if len(inner_matches) > 1:
+                raise QueryPlanError("AMBIGUOUS_COLUMN", f"Ambiguous column '{c}' in tables {inner_matches}.", path)
+            if len(inner_matches) == 1:
+                return _resolve_column(inner_alias_map, inner_matches[0])
+            if outer_alias_map:
+                outer_matches = [tname for tname, tdef in self.tables.items() if tname in outer_alias_map and c in tdef.columns]
+                if len(outer_matches) > 1:
+                    raise QueryPlanError("AMBIGUOUS_COLUMN", f"Ambiguous column '{c}' in tables {outer_matches}.", path)
+                if len(outer_matches) == 1:
+                    return _resolve_column(outer_alias_map, outer_matches[0])
+            raise QueryPlanError("UNKNOWN_COLUMN", f"Unknown unqualified column '{c}' for current scope.", path)
 
-        _require(t in alias_map, "INVALID_PLAN", f"Table/alias '{t}' referenced but not in FROM/JOIN.", path)
+        if t in inner_alias_map:
+            return _resolve_column(inner_alias_map, t)
+        if outer_alias_map and t in outer_alias_map:
+            return _resolve_column(outer_alias_map, t)
+        raise QueryPlanError("INVALID_PLAN", f"Table/alias '{t}' referenced but not in FROM/JOIN (or correlation scope).", path)
 
-        # If schema table: map logical col -> db col
-        if t in self.tables:
-            tdef = self.tables[t]
-            _require(c in tdef.columns, "UNKNOWN_COLUMN", f"Unknown column '{c}' in table '{t}'.", path)
-            col_def = tdef.columns[c]
-            db_col_name, _ = _strip_outer_quotes(col_def.db_column)
-            return alias_map[t].c[db_col_name]
-
-        # Otherwise: dynamic source (CTE/subquery). Require the column exists by name.
-        _require(c in alias_map[t].c, "UNKNOWN_COLUMN", f"Unknown column '{c}' on dynamic source '{t}'.", path)
-        return alias_map[t].c[c]
-
-    def _compile_expr(self, expr: Any, alias_map: Dict[str, sa.FromClause], default_table: str, *, cte_map: Dict[str, sa.CTE], path: str) -> sa.ColumnElement:
+    def _compile_expr(
+        self,
+        expr: Any,
+        alias_map: Dict[str, sa.FromClause],
+        default_table: str,
+        *,
+        cte_map: Dict[str, sa.CTE],
+        path: str,
+        outer_alias_map: Optional[Dict[str, sa.FromClause]] = None,
+    ) -> sa.ColumnElement:
         _require(isinstance(expr, dict), "INVALID_PLAN", "Expression must be an object.", path)
 
         if "col" in expr:
-            return self._col(alias_map, default_table, expr["col"], path=f"{path}.col")
+            return self._col(alias_map, default_table, expr["col"], path=f"{path}.col", outer_alias_map=outer_alias_map)
 
         if "lit" in expr:
             pname = self._new_param("v")
             return sa.bindparam(pname, value=expr["lit"])
 
         if "distinct" in expr:
-            inner = self._compile_expr(expr["distinct"], alias_map, default_table, cte_map=cte_map, path=f"{path}.distinct")
+            inner = self._compile_expr(
+                expr["distinct"], alias_map, default_table, cte_map=cte_map, path=f"{path}.distinct", outer_alias_map=outer_alias_map
+            )
             return sa.distinct(inner)
 
         if "cast" in expr:
             node = expr["cast"]
             _require(isinstance(node, dict), "INVALID_PLAN", "cast must be an object.", f"{path}.cast")
-            inner = self._compile_expr(node.get("expr"), alias_map, default_table, cte_map=cte_map, path=f"{path}.cast.expr")
+            inner = self._compile_expr(
+                node.get("expr"), alias_map, default_table, cte_map=cte_map, path=f"{path}.cast.expr", outer_alias_map=outer_alias_map
+            )
             typ = node.get("type")
             _require(isinstance(typ, str) and typ, "INVALID_PLAN", "cast.type must be a string.", f"{path}.cast.type")
             return sa.cast(inner, _map_sa_type(typ))
@@ -752,7 +843,10 @@ class Compiler:
         if "coalesce" in expr:
             args = expr["coalesce"]
             _require(isinstance(args, list) and args, "INVALID_PLAN", "coalesce must be a non-empty list.", f"{path}.coalesce")
-            compiled = [self._compile_expr(a, alias_map, default_table, cte_map=cte_map, path=f"{path}.coalesce[{i}]") for i, a in enumerate(args)]
+            compiled = [
+                self._compile_expr(a, alias_map, default_table, cte_map=cte_map, path=f"{path}.coalesce[{i}]", outer_alias_map=outer_alias_map)
+                for i, a in enumerate(args)
+            ]
             return sa.func.coalesce(*compiled)
 
         if "case" in expr:
@@ -765,12 +859,18 @@ class Compiler:
             for i, w in enumerate(whens):
                 wp = f"{path}.case.whens[{i}]"
                 _require(isinstance(w, dict), "INVALID_PLAN", "case.when item must be object.", wp)
-                cond = self._compile_bool_expr(w.get("when"), alias_map, default_table, cte_map=cte_map, path=f"{wp}.when")
-                val = self._compile_expr(w.get("then"), alias_map, default_table, cte_map=cte_map, path=f"{wp}.then")
+                cond = self._compile_bool_expr(
+                    w.get("when"), alias_map, default_table, cte_map=cte_map, path=f"{wp}.when", outer_alias_map=outer_alias_map
+                )
+                val = self._compile_expr(
+                    w.get("then"), alias_map, default_table, cte_map=cte_map, path=f"{wp}.then", outer_alias_map=outer_alias_map
+                )
                 compiled_whens.append((cond, val))
             else_expr = None
             if else_ is not None:
-                else_expr = self._compile_expr(else_, alias_map, default_table, cte_map=cte_map, path=f"{path}.case.else")
+                else_expr = self._compile_expr(
+                    else_, alias_map, default_table, cte_map=cte_map, path=f"{path}.case.else", outer_alias_map=outer_alias_map
+                )
             return sa.case(*compiled_whens, else_=else_expr)
 
         if "scalar_subquery" in expr:
@@ -779,7 +879,10 @@ class Compiler:
             subplan = node.get("plan")
             _require(isinstance(subplan, dict), "INVALID_PLAN", "scalar_subquery.plan must be an object.", f"{path}.scalar_subquery.plan")
             sub_sel = self._ensure_subplan_has_select(subplan)
-            sub_query = self._build_selectable(sub_sel, cte_map=cte_map, path=f"{path}.scalar_subquery.plan")
+            nested_outer = self._scope_for_nested_subquery(outer_alias_map, alias_map)
+            sub_query = self._build_selectable(
+                sub_sel, cte_map=cte_map, path=f"{path}.scalar_subquery.plan", outer_alias_map=nested_outer
+            )
             return sa.select(sub_query.scalar_subquery()).scalar_subquery()
 
         if "func" in expr:
@@ -787,7 +890,10 @@ class Compiler:
             args = expr.get("args", [])
             _require(isinstance(fn, str), "INVALID_PLAN", "func name must be string.", f"{path}.func")
             _require(isinstance(args, list), "INVALID_PLAN", "func.args must be list.", f"{path}.args")
-            compiled_args = [self._compile_expr(a, alias_map, default_table, cte_map=cte_map, path=f"{path}.args[{i}]") for i, a in enumerate(args)]
+            compiled_args = [
+                self._compile_expr(a, alias_map, default_table, cte_map=cte_map, path=f"{path}.args[{i}]", outer_alias_map=outer_alias_map)
+                for i, a in enumerate(args)
+            ]
 
             if fn.lower() in {"count_distinct", "countdistinct"}:
                 _require(len(compiled_args) == 1, "INVALID_PLAN", "count_distinct requires exactly one arg.", path)
@@ -798,7 +904,9 @@ class Compiler:
         if "over" in expr:
             node = expr["over"]
             _require(isinstance(node, dict), "INVALID_PLAN", "over must be an object.", f"{path}.over")
-            base_expr = self._compile_expr(node.get("expr"), alias_map, default_table, cte_map=cte_map, path=f"{path}.over.expr")
+            base_expr = self._compile_expr(
+                node.get("expr"), alias_map, default_table, cte_map=cte_map, path=f"{path}.over.expr", outer_alias_map=outer_alias_map
+            )
 
             part = node.get("partition_by", []) or []
             ob = node.get("order_by", []) or []
@@ -806,18 +914,21 @@ class Compiler:
             _require(isinstance(part, list), "INVALID_PLAN", "over.partition_by must be list.", f"{path}.over.partition_by")
             _require(isinstance(ob, list), "INVALID_PLAN", "over.order_by must be list.", f"{path}.over.order_by")
 
-            part_exprs = [self._compile_expr(e, alias_map, default_table, cte_map=cte_map, path=f"{path}.over.partition_by[{i}]") for i, e in enumerate(part)]
+            part_exprs = [
+                self._compile_expr(e, alias_map, default_table, cte_map=cte_map, path=f"{path}.over.partition_by[{i}]", outer_alias_map=outer_alias_map)
+                for i, e in enumerate(part)
+            ]
 
             ob_exprs = []
             for i, item in enumerate(ob):
                 ip = f"{path}.over.order_by[{i}]"
                 if isinstance(item, dict) and "expr" in item:
-                    e = self._compile_expr(item["expr"], alias_map, default_table, cte_map=cte_map, path=f"{ip}.expr")
+                    e = self._compile_expr(item["expr"], alias_map, default_table, cte_map=cte_map, path=f"{ip}.expr", outer_alias_map=outer_alias_map)
                     direction = (item.get("dir") or "asc").lower()
                     _require(direction in {"asc", "desc"}, "INVALID_PLAN", "order dir must be asc|desc.", f"{ip}.dir")
                     ob_exprs.append(e.asc() if direction == "asc" else e.desc())
                 else:
-                    e = self._compile_expr(item, alias_map, default_table, cte_map=cte_map, path=ip)
+                    e = self._compile_expr(item, alias_map, default_table, cte_map=cte_map, path=ip, outer_alias_map=outer_alias_map)
                     ob_exprs.append(e.asc())
 
             # Most window funcs come from sa.func.*; they support .over()
@@ -829,7 +940,10 @@ class Compiler:
             args = expr.get("args", [])
             _require(isinstance(op, str), "INVALID_PLAN", "op must be string.", f"{path}.op")
             _require(isinstance(args, list) and len(args) >= 1, "INVALID_PLAN", "op.args must be non-empty list.", f"{path}.args")
-            compiled = [self._compile_expr(a, alias_map, default_table, cte_map=cte_map, path=f"{path}.args[{i}]") for i, a in enumerate(args)]
+            compiled = [
+                self._compile_expr(a, alias_map, default_table, cte_map=cte_map, path=f"{path}.args[{i}]", outer_alias_map=outer_alias_map)
+                for i, a in enumerate(args)
+            ]
             out = compiled[0]
             for nxt in compiled[1:]:
                 out = out.op(op)(nxt)
@@ -837,26 +951,43 @@ class Compiler:
 
         raise QueryPlanError("INVALID_PLAN", "Unknown expression node.", path)
 
-    def _compile_bool_expr(self, node: Any, alias_map: Dict[str, sa.FromClause], default_table: str, *, cte_map: Dict[str, sa.CTE], path: str) -> sa.ColumnElement:
+    def _compile_bool_expr(
+        self,
+        node: Any,
+        alias_map: Dict[str, sa.FromClause],
+        default_table: str,
+        *,
+        cte_map: Dict[str, sa.CTE],
+        path: str,
+        outer_alias_map: Optional[Dict[str, sa.FromClause]] = None,
+    ) -> sa.ColumnElement:
         _require(isinstance(node, dict), "INVALID_PLAN", "Boolean expression must be an object.", path)
 
         if "and" in node:
             items = node["and"]
             _require(isinstance(items, list) and items, "INVALID_PLAN", "and must be non-empty list.", f"{path}.and")
             _require(len(items) <= self.max_predicates, "QUERY_TOO_COMPLEX", "Too many predicates.", f"{path}.and")
-            parts = [self._compile_bool_expr(it, alias_map, default_table, cte_map=cte_map, path=f"{path}.and[{i}]") for i, it in enumerate(items)]
+            parts = [
+                self._compile_bool_expr(it, alias_map, default_table, cte_map=cte_map, path=f"{path}.and[{i}]", outer_alias_map=outer_alias_map)
+                for i, it in enumerate(items)
+            ]
             return sa.and_(*parts)
 
         if "or" in node:
             items = node["or"]
             _require(isinstance(items, list) and items, "INVALID_PLAN", "or must be non-empty list.", f"{path}.or")
             _require(len(items) <= self.max_predicates, "QUERY_TOO_COMPLEX", "Too many predicates.", f"{path}.or")
-            parts = [self._compile_bool_expr(it, alias_map, default_table, cte_map=cte_map, path=f"{path}.or[{i}]") for i, it in enumerate(items)]
+            parts = [
+                self._compile_bool_expr(it, alias_map, default_table, cte_map=cte_map, path=f"{path}.or[{i}]", outer_alias_map=outer_alias_map)
+                for i, it in enumerate(items)
+            ]
             return sa.or_(*parts)
 
         if "not" in node:
             inner = node["not"]
-            return sa.not_(self._compile_bool_expr(inner, alias_map, default_table, cte_map=cte_map, path=f"{path}.not"))
+            return sa.not_(
+                self._compile_bool_expr(inner, alias_map, default_table, cte_map=cte_map, path=f"{path}.not", outer_alias_map=outer_alias_map)
+            )
 
         if "exists" in node or "not_exists" in node:
             key = "exists" if "exists" in node else "not_exists"
@@ -865,7 +996,8 @@ class Compiler:
             subplan = subnode.get("plan")
             _require(isinstance(subplan, dict), "INVALID_PLAN", f"{key}.plan must be an object.", f"{path}.{key}.plan")
             subplan = self._ensure_subplan_has_select(subplan)
-            subq = self._build_selectable(subplan, cte_map=cte_map, path=f"{path}.{key}.plan")
+            nested_outer = self._scope_for_nested_subquery(outer_alias_map, alias_map)
+            subq = self._build_selectable(subplan, cte_map=cte_map, path=f"{path}.{key}.plan", outer_alias_map=nested_outer)
             ex = sa.exists(subq)
             return sa.not_(ex) if key == "not_exists" else ex
 
@@ -873,7 +1005,9 @@ class Compiler:
             cmpn = node["cmp"]
             _require(isinstance(cmpn, dict), "INVALID_PLAN", "cmp must be object.", f"{path}.cmp")
 
-            left = self._compile_expr(cmpn.get("left"), alias_map, default_table, cte_map=cte_map, path=f"{path}.cmp.left")
+            left = self._compile_expr(
+                cmpn.get("left"), alias_map, default_table, cte_map=cte_map, path=f"{path}.cmp.left", outer_alias_map=outer_alias_map
+            )
             op = cmpn.get("op")
             right_node = cmpn.get("right")
             _require(isinstance(op, str), "INVALID_PLAN", "cmp.op must be string.", f"{path}.cmp.op")
@@ -884,7 +1018,9 @@ class Compiler:
                 return left.is_not(None)
 
             if isinstance(right_node, dict):
-                right = self._compile_expr(right_node, alias_map, default_table, cte_map=cte_map, path=f"{path}.cmp.right")
+                right = self._compile_expr(
+                    right_node, alias_map, default_table, cte_map=cte_map, path=f"{path}.cmp.right", outer_alias_map=outer_alias_map
+                )
             else:
                 right = sa.bindparam(self._new_param("v"), value=right_node)
 

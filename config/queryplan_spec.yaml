@@ -377,6 +377,36 @@ boolean_nodes:
           limit: 1
           offset: 0
 
+# -----------------------------------------------------------------------------
+# CORRELATED SUBQUERIES (EXISTS / NOT EXISTS / scalar_subquery)
+# -----------------------------------------------------------------------------
+correlated_subqueries:
+  description: >
+    A nested plan under exists, not_exists, or scalar_subquery may reference qualified
+    columns from any enclosing SELECT (correlated subquery). Use logical names from
+    schema.yaml ("table.column"). Resolution order: the subplan's own FROM/JOIN
+    bindings first; if the logical table is not in the inner FROM, enclosing scopes
+    are searched outward. When the same logical table appears in both an inner FROM
+    and an outer scope, the inner binding wins for unqualified column names.
+    If the outer SELECT correlates to a logical table that is not in the outer
+    FROM clause, add explicit joins (or link joins) on the outer plan so that
+    table appears in scope; auto_inject_joins only scans top-level select/where
+    and does not infer joins from nested subplans.
+  example_correlated_exists:
+    exists:
+      plan:
+        dataset: "orders"
+        select:
+          - expr: { lit: 1 }
+            alias: one
+        where:
+          cmp:
+            left: { col: "orders.customer_id" }
+            op: "="
+            right: { col: "customers.customer_id" }
+        limit: 1
+        offset: 0
+
 rollup:
   description: >
     rollup runs an outer aggregation over the inner grouped query output.
