@@ -416,9 +416,17 @@ Regenerate whenever `schema.yaml` changes.
 - [x] Standalone `validate_query_plan` API
 - [x] Auto-generated domain spec (`spec_builder`)
 - [ ] DB Introspection Wizard (`qce init <db_url>`)
-- [x] Correlated subqueries
-- [x] Richer join inference (multi-hop links)
-- [x] Plan canonicalization (structural: stable `plan_hash` / join & filter order; NL→plan still depends on the LLM)
+
+### Not done yet (planned hardening)
+
+These are known limits today; we expect to chip away at them in follow-up releases.
+
+- [ ] **Scalar subqueries** — The compiler does not prove that a `scalar_subquery` returns at most one row; Postgres errors at runtime if not. Optional lint or documented patterns (`LIMIT 1`, aggregates, unique keys) could tighten this.
+- [ ] **`func` names** — Any name is passed through to SQLAlchemy; typos become invalid SQL that fails in Postgres. An optional allowlist or validation mode would catch mistakes earlier.
+- [ ] **Set operations** — Branch **column counts** are checked; per-column **type compatibility** for `UNION` / `INTERSECT` / `EXCEPT` is still left to Postgres.
+- [ ] **Aggregates / `GROUP BY`** — Invalid grouping (e.g. non-aggregated columns) is not fully modeled in the compiler; the database rejects bad plans.
+- [ ] **Join inference + dotted names** — Auto-inject walks `table.column` refs; logical table names containing dots need extra care in that path.
+- [ ] **Drivers** — Execution is oriented around SQLAlchemy + the shipped `psycopg2-binary` stack; locked-down environments may prefer building `psycopg2` from source, and async drivers (`asyncpg`, etc.) are not first-class yet.
 
 ---
 
