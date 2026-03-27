@@ -46,10 +46,10 @@ REG_DIR.mkdir(parents=True, exist_ok=True)
 # Mode
 # ---------------------------------------------------------------------------
 MODE = (sys.argv[1] if len(sys.argv) > 1 else os.getenv("TEST_MODE", "run")).lower()
-assert MODE in {"run", "update", "check"}, f"Unknown mode '{MODE}'. Use: run | update | check"
+assert MODE in {"run", "update", "check", "lint"}, f"Unknown mode '{MODE}'. Use: run | update | check | lint"
 
 # ---------------------------------------------------------------------------
-# DB connection
+# DB connection (skipped in lint mode)
 # ---------------------------------------------------------------------------
 load_dotenv(dotenv_path=ENV_PATH, override=True)
 
@@ -59,24 +59,26 @@ def _must(k: str) -> str:
         raise SystemExit(f"[test] Missing env var '{k}' (looked in {ENV_PATH})")
     return v
 
-engine = create_engine(
-    "postgresql+psycopg2://",
-    creator=lambda: psycopg2.connect(
-        host=_must("DB_HOST"),
-        port=int(_must("DB_PORT")),
-        dbname=_must("DB_NAME"),
-        user=_must("DB_USER"),
-        password=_must("DB_PASSWORD"),
-        sslmode="require",
-    ),
-    poolclass=NullPool,
-    pool_pre_ping=True,
-)
+engine = None
+if MODE != "lint":
+    engine = create_engine(
+        "postgresql+psycopg2://",
+        creator=lambda: psycopg2.connect(
+            host=_must("DB_HOST"),
+            port=int(_must("DB_PORT")),
+            dbname=_must("DB_NAME"),
+            user=_must("DB_USER"),
+            password=_must("DB_PASSWORD"),
+            sslmode="require",
+        ),
+        poolclass=NullPool,
+        pool_pre_ping=True,
+    )
 
-# Quick connectivity check
-with engine.connect() as conn:
-    row = conn.execute(text("select current_database(), current_user")).fetchone()
-    print(f"[test] Connected: db={row[0]}, user={row[1]}")
+    # Quick connectivity check
+    with engine.connect() as conn:
+        row = conn.execute(text("select current_database(), current_user")).fetchone()
+        print(f"[test] Connected: db={row[0]}, user={row[1]}")
 
 # ---------------------------------------------------------------------------
 # Sanity checks
@@ -158,7 +160,11 @@ for i, test in enumerate(suite):
             errors += 1
 
     else:
-        # Standard DB test
+        # Standard DB test — skipped in lint mode
+        if MODE == "lint":
+            print(f"  [{i+1}/{len(suite)}] {name}: [SKIP] (db test, lint mode)")
+            continue
+
         try:
             res = execute_query_plan(
                 engine=engine,
@@ -189,6 +195,13 @@ for i, test in enumerate(suite):
             errors += 1
 
 print()
+
+# ---------------------------------------------------------------------------
+# Mode: lint — only lint tests, no DB needed
+# ---------------------------------------------------------------------------
+if MODE == "lint":
+    print(f"\n[test] Lint-only results: {len(results)} tests, {errors} failure(s)")
+    sys.exit(0 if errors == 0 else 1)
 
 # ---------------------------------------------------------------------------
 # Mode: update — save baseline
@@ -233,6 +246,12 @@ for entry in results:
         continue
 
     if entry.get("type") == "lint":
+        if base.get("type") != "lint" or "passed" not in base:
+            failed += 1
+            regression_failures.append(name)
+            print(f"  [STALE] {name} — baseline has no lint 'passed' field (legacy db row?).")
+            print("         Run: python test/test_main.py update")
+            continue
         ok = entry["passed"] == base["passed"]
         if ok:
             passed += 1

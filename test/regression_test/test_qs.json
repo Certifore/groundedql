@@ -6,7 +6,13 @@
       "version": "1.0",
       "dataset": "customers",
       "dimensions": [],
-      "metrics": [{"agg": "count_distinct", "field": "customer_id", "alias": "total_customers"}],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "customer_id",
+          "alias": "total_customers"
+        }
+      ],
       "filters": [],
       "order_by": [],
       "limit": 1,
@@ -20,7 +26,13 @@
       "version": "1.0",
       "dataset": "orders",
       "dimensions": [],
-      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "total_orders"}],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "order_id",
+          "alias": "total_orders"
+        }
+      ],
       "filters": [],
       "order_by": [],
       "limit": 1,
@@ -34,7 +46,13 @@
       "version": "1.0",
       "dataset": "products",
       "dimensions": [],
-      "metrics": [{"agg": "count_distinct", "field": "product_id", "alias": "total_products"}],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "product_id",
+          "alias": "total_products"
+        }
+      ],
       "filters": [],
       "order_by": [],
       "limit": 1,
@@ -47,10 +65,32 @@
     "plan": {
       "version": "1.0",
       "dataset": "orders",
-      "dimensions": [{"field": "ship_country", "alias": "ship_country"}],
-      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
-      "filters": [{"field": "ship_country", "op": "is_not_null", "value": null}],
-      "order_by": [{"by": "order_count", "dir": "desc"}],
+      "dimensions": [
+        {
+          "field": "ship_country",
+          "alias": "ship_country"
+        }
+      ],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "order_id",
+          "alias": "order_count"
+        }
+      ],
+      "filters": [
+        {
+          "field": "ship_country",
+          "op": "is_not_null",
+          "value": null
+        }
+      ],
+      "order_by": [
+        {
+          "by": "order_count",
+          "dir": "desc"
+        }
+      ],
       "limit": 100,
       "offset": 0
     }
@@ -61,10 +101,26 @@
     "plan": {
       "version": "1.0",
       "dataset": "orders",
-      "dimensions": [{"field": "customer_id", "alias": "customer_id"}],
-      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
+      "dimensions": [
+        {
+          "field": "customer_id",
+          "alias": "customer_id"
+        }
+      ],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "order_id",
+          "alias": "order_count"
+        }
+      ],
       "filters": [],
-      "order_by": [{"by": "order_count", "dir": "desc"}],
+      "order_by": [
+        {
+          "by": "order_count",
+          "dir": "desc"
+        }
+      ],
       "limit": 10,
       "offset": 0
     }
@@ -77,7 +133,13 @@
       "dataset": "products",
       "dimensions": [],
       "metrics": [],
-      "filters": [{"field": "category_id", "op": "=", "value": 1}],
+      "filters": [
+        {
+          "field": "category_id",
+          "op": "=",
+          "value": 1
+        }
+      ],
       "order_by": [],
       "limit": 100,
       "offset": 0
@@ -90,8 +152,20 @@
       "version": "1.0",
       "dataset": "products",
       "dimensions": [],
-      "metrics": [{"agg": "count_distinct", "field": "product_id", "alias": "discontinued_count"}],
-      "filters": [{"field": "discontinued", "op": "=", "value": 1}],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "product_id",
+          "alias": "discontinued_count"
+        }
+      ],
+      "filters": [
+        {
+          "field": "discontinued",
+          "op": "=",
+          "value": 1
+        }
+      ],
       "order_by": [],
       "limit": 1,
       "offset": 0
@@ -103,13 +177,36 @@
     "plan": {
       "version": "1.0",
       "dataset": "orders",
-      "dimensions": [{"field": "customer_id", "alias": "customer_id"}],
-      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "orders_per_customer"}],
-      "filters": [{"field": "customer_id", "op": "is_not_null", "value": null}],
+      "dimensions": [
+        {
+          "field": "customer_id",
+          "alias": "customer_id"
+        }
+      ],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "order_id",
+          "alias": "orders_per_customer"
+        }
+      ],
+      "filters": [
+        {
+          "field": "customer_id",
+          "op": "is_not_null",
+          "value": null
+        }
+      ],
       "order_by": [],
       "offset": 0,
       "rollup": {
-        "metrics": [{"agg": "avg", "field": "orders_per_customer", "alias": "avg_orders_per_customer"}],
+        "metrics": [
+          {
+            "agg": "avg",
+            "field": "orders_per_customer",
+            "alias": "avg_orders_per_customer"
+          }
+        ],
         "limit": 1,
         "offset": 0
       }
@@ -122,7 +219,13 @@
       "version": "1.0",
       "dataset": "orders",
       "dimensions": [],
-      "metrics": [{"agg": "sum", "field": "freight", "alias": "total_freight"}],
+      "metrics": [
+        {
+          "agg": "sum",
+          "field": "freight",
+          "alias": "total_freight"
+        }
+      ],
       "filters": [],
       "order_by": [],
       "limit": 1,
@@ -135,10 +238,26 @@
     "plan": {
       "version": "1.0",
       "dataset": "products",
-      "dimensions": [{"field": "category_id", "alias": "category_id"}],
-      "metrics": [{"agg": "count_distinct", "field": "product_id", "alias": "product_count"}],
+      "dimensions": [
+        {
+          "field": "category_id",
+          "alias": "category_id"
+        }
+      ],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "product_id",
+          "alias": "product_count"
+        }
+      ],
       "filters": [],
-      "order_by": [{"by": "product_count", "dir": "desc"}],
+      "order_by": [
+        {
+          "by": "product_count",
+          "dir": "desc"
+        }
+      ],
       "limit": 100,
       "offset": 0
     }
@@ -153,10 +272,29 @@
           "plan": {
             "dataset": "orders",
             "select": [
-              {"expr": {"col": "orders.customer_id"}, "alias": "customer_id"},
-              {"expr": {"func": "count_distinct", "args": [{"col": "orders.order_id"}]}, "alias": "order_count"}
+              {
+                "expr": {
+                  "col": "orders.customer_id"
+                },
+                "alias": "customer_id"
+              },
+              {
+                "expr": {
+                  "func": "count_distinct",
+                  "args": [
+                    {
+                      "col": "orders.order_id"
+                    }
+                  ]
+                },
+                "alias": "order_count"
+              }
             ],
-            "group_by": [{"col": "orders.customer_id"}],
+            "group_by": [
+              {
+                "col": "orders.customer_id"
+              }
+            ],
             "limit": 1000,
             "offset": 0
           }
@@ -164,10 +302,25 @@
       ],
       "dataset": "customer_order_counts",
       "select": [
-        {"expr": {"col": "customer_order_counts.customer_id"}, "alias": "customer_id"},
-        {"expr": {"col": "customer_order_counts.order_count"}, "alias": "order_count"}
+        {
+          "expr": {
+            "col": "customer_order_counts.customer_id"
+          },
+          "alias": "customer_id"
+        },
+        {
+          "expr": {
+            "col": "customer_order_counts.order_count"
+          },
+          "alias": "order_count"
+        }
       ],
-      "order_by": [{"by": "order_count", "dir": "desc"}],
+      "order_by": [
+        {
+          "by": "order_count",
+          "dir": "desc"
+        }
+      ],
       "limit": 5,
       "offset": 0
     }
@@ -181,22 +334,68 @@
         "left": {
           "dataset": "customers",
           "select": [
-            {"expr": {"col": "customers.customer_id"}, "alias": "customer_id"},
-            {"expr": {"col": "customers.company_name"}, "alias": "company_name"},
-            {"expr": {"col": "customers.country"}, "alias": "country"}
+            {
+              "expr": {
+                "col": "customers.customer_id"
+              },
+              "alias": "customer_id"
+            },
+            {
+              "expr": {
+                "col": "customers.company_name"
+              },
+              "alias": "company_name"
+            },
+            {
+              "expr": {
+                "col": "customers.country"
+              },
+              "alias": "country"
+            }
           ],
-          "where": {"cmp": {"left": {"col": "customers.country"}, "op": "=", "right": "Germany"}},
+          "where": {
+            "cmp": {
+              "left": {
+                "col": "customers.country"
+              },
+              "op": "=",
+              "right": "Germany"
+            }
+          },
           "limit": 100,
           "offset": 0
         },
         "right": {
           "dataset": "customers",
           "select": [
-            {"expr": {"col": "customers.customer_id"}, "alias": "customer_id"},
-            {"expr": {"col": "customers.company_name"}, "alias": "company_name"},
-            {"expr": {"col": "customers.country"}, "alias": "country"}
+            {
+              "expr": {
+                "col": "customers.customer_id"
+              },
+              "alias": "customer_id"
+            },
+            {
+              "expr": {
+                "col": "customers.company_name"
+              },
+              "alias": "company_name"
+            },
+            {
+              "expr": {
+                "col": "customers.country"
+              },
+              "alias": "country"
+            }
           ],
-          "where": {"cmp": {"left": {"col": "customers.country"}, "op": "=", "right": "France"}},
+          "where": {
+            "cmp": {
+              "left": {
+                "col": "customers.country"
+              },
+              "op": "=",
+              "right": "France"
+            }
+          },
           "limit": 100,
           "offset": 0
         }
@@ -209,22 +408,65 @@
     "plan": {
       "dataset": "products",
       "select": [
-        {"expr": {"col": "products.product_name"}, "alias": "product_name"},
-        {"expr": {"col": "products.unit_price"}, "alias": "unit_price"},
+        {
+          "expr": {
+            "col": "products.product_name"
+          },
+          "alias": "product_name"
+        },
+        {
+          "expr": {
+            "col": "products.unit_price"
+          },
+          "alias": "unit_price"
+        },
         {
           "expr": {
             "case": {
               "whens": [
-                {"when": {"cmp": {"left": {"col": "products.unit_price"}, "op": "<", "right": 20}}, "then": {"lit": "cheap"}},
-                {"when": {"cmp": {"left": {"col": "products.unit_price"}, "op": "<", "right": 50}}, "then": {"lit": "mid"}}
+                {
+                  "when": {
+                    "cmp": {
+                      "left": {
+                        "col": "products.unit_price"
+                      },
+                      "op": "<",
+                      "right": 20
+                    }
+                  },
+                  "then": {
+                    "lit": "cheap"
+                  }
+                },
+                {
+                  "when": {
+                    "cmp": {
+                      "left": {
+                        "col": "products.unit_price"
+                      },
+                      "op": "<",
+                      "right": 50
+                    }
+                  },
+                  "then": {
+                    "lit": "mid"
+                  }
+                }
               ],
-              "else": {"lit": "expensive"}
+              "else": {
+                "lit": "expensive"
+              }
             }
           },
           "alias": "price_tier"
         }
       ],
-      "order_by": [{"by": "unit_price", "dir": "asc"}],
+      "order_by": [
+        {
+          "by": "unit_price",
+          "dir": "asc"
+        }
+      ],
       "limit": 100,
       "offset": 0
     }
@@ -236,11 +478,31 @@
       "version": "1.0",
       "dataset": "orders",
       "dimensions": [
-        {"field": "customer_id", "alias": "customer_id"}
+        {
+          "field": "customer_id",
+          "alias": "customer_id"
+        }
       ],
-      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
-      "filters": [{"field": "customer_id", "op": "is_not_null", "value": null}],
-      "order_by": [{"by": "order_count", "dir": "desc"}],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "order_id",
+          "alias": "order_count"
+        }
+      ],
+      "filters": [
+        {
+          "field": "customer_id",
+          "op": "is_not_null",
+          "value": null
+        }
+      ],
+      "order_by": [
+        {
+          "by": "order_count",
+          "dir": "desc"
+        }
+      ],
       "limit": 100,
       "offset": 0
     }
@@ -251,19 +513,44 @@
     "plan": {
       "dataset": "orders",
       "select": [
-        {"expr": {"col": "orders.order_id"}, "alias": "order_id"},
-        {"expr": {"col": "orders.freight"}, "alias": "freight"},
+        {
+          "expr": {
+            "col": "orders.order_id"
+          },
+          "alias": "order_id"
+        },
+        {
+          "expr": {
+            "col": "orders.freight"
+          },
+          "alias": "freight"
+        },
         {
           "expr": {
             "over": {
-              "expr": {"func": "row_number", "args": []},
-              "order_by": [{"expr": {"col": "orders.freight"}, "dir": "desc"}]
+              "expr": {
+                "func": "row_number",
+                "args": []
+              },
+              "order_by": [
+                {
+                  "expr": {
+                    "col": "orders.freight"
+                  },
+                  "dir": "desc"
+                }
+              ]
             }
           },
           "alias": "freight_rank"
         }
       ],
-      "order_by": [{"by": "freight_rank", "dir": "asc"}],
+      "order_by": [
+        {
+          "by": "freight_rank",
+          "dir": "asc"
+        }
+      ],
       "limit": 10,
       "offset": 0
     }
@@ -275,13 +562,22 @@
       "version": "1.0",
       "dataset": "customers",
       "dimensions": [],
-      "metrics": [{"agg": "count", "field": "country", "alias": "country_count"}],
+      "metrics": [
+        {
+          "agg": "count",
+          "field": "country",
+          "alias": "country_count"
+        }
+      ],
       "filters": [],
       "order_by": [],
       "limit": 1,
       "offset": 0
     },
-    "expect_lint_errors": true
+    "type": "lint",
+    "lint": {
+      "expect": "fires"
+    }
   },
   {
     "name": "lint_distinct_clean",
@@ -290,13 +586,22 @@
       "version": "1.0",
       "dataset": "customers",
       "dimensions": [],
-      "metrics": [{"agg": "count_distinct", "field": "country", "alias": "country_count"}],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "country",
+          "alias": "country_count"
+        }
+      ],
       "filters": [],
       "order_by": [],
       "limit": 1,
       "offset": 0
     },
-    "expect_lint_errors": false
+    "type": "lint",
+    "lint": {
+      "expect": "clean"
+    }
   },
   {
     "name": "lint_grouping_fires",
@@ -305,13 +610,22 @@
       "version": "1.0",
       "dataset": "orders",
       "dimensions": [],
-      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "order_id",
+          "alias": "order_count"
+        }
+      ],
       "filters": [],
       "order_by": [],
       "limit": 1,
       "offset": 0
     },
-    "expect_lint_errors": true
+    "type": "lint",
+    "lint": {
+      "expect": "fires"
+    }
   },
   {
     "name": "lint_grouping_clean",
@@ -319,14 +633,28 @@
     "plan": {
       "version": "1.0",
       "dataset": "orders",
-      "dimensions": [{"field": "customer_id", "alias": "customer_id"}],
-      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
+      "dimensions": [
+        {
+          "field": "customer_id",
+          "alias": "customer_id"
+        }
+      ],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "order_id",
+          "alias": "order_count"
+        }
+      ],
       "filters": [],
       "order_by": [],
       "limit": 100,
       "offset": 0
     },
-    "expect_lint_errors": false
+    "type": "lint",
+    "lint": {
+      "expect": "clean"
+    }
   },
   {
     "name": "lint_top_n_fires_missing_order",
@@ -334,14 +662,28 @@
     "plan": {
       "version": "1.0",
       "dataset": "products",
-      "dimensions": [{"field": "product_name", "alias": "product_name"}],
-      "metrics": [{"agg": "avg", "field": "unit_price", "alias": "avg_price"}],
+      "dimensions": [
+        {
+          "field": "product_name",
+          "alias": "product_name"
+        }
+      ],
+      "metrics": [
+        {
+          "agg": "avg",
+          "field": "unit_price",
+          "alias": "avg_price"
+        }
+      ],
       "filters": [],
       "order_by": [],
       "limit": 5,
       "offset": 0
     },
-    "expect_lint_errors": true
+    "type": "lint",
+    "lint": {
+      "expect": "fires"
+    }
   },
   {
     "name": "lint_top_n_clean",
@@ -349,14 +691,33 @@
     "plan": {
       "version": "1.0",
       "dataset": "products",
-      "dimensions": [{"field": "product_name", "alias": "product_name"}],
-      "metrics": [{"agg": "avg", "field": "unit_price", "alias": "avg_price"}],
+      "dimensions": [
+        {
+          "field": "product_name",
+          "alias": "product_name"
+        }
+      ],
+      "metrics": [
+        {
+          "agg": "avg",
+          "field": "unit_price",
+          "alias": "avg_price"
+        }
+      ],
       "filters": [],
-      "order_by": [{"by": "avg_price", "dir": "desc"}],
+      "order_by": [
+        {
+          "by": "avg_price",
+          "dir": "desc"
+        }
+      ],
       "limit": 5,
       "offset": 0
     },
-    "expect_lint_errors": false
+    "type": "lint",
+    "lint": {
+      "expect": "clean"
+    }
   },
   {
     "name": "lint_two_step_fires",
@@ -364,14 +725,28 @@
     "plan": {
       "version": "1.0",
       "dataset": "orders",
-      "dimensions": [{"field": "customer_id", "alias": "customer_id"}],
-      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
+      "dimensions": [
+        {
+          "field": "customer_id",
+          "alias": "customer_id"
+        }
+      ],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "order_id",
+          "alias": "order_count"
+        }
+      ],
       "filters": [],
       "order_by": [],
       "limit": 100,
       "offset": 0
     },
-    "expect_lint_errors": true
+    "type": "lint",
+    "lint": {
+      "expect": "fires"
+    }
   },
   {
     "name": "lint_two_step_clean",
@@ -379,18 +754,44 @@
     "plan": {
       "version": "1.0",
       "dataset": "orders",
-      "dimensions": [{"field": "customer_id", "alias": "customer_id"}],
-      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
-      "filters": [{"field": "customer_id", "op": "is_not_null", "value": null}],
+      "dimensions": [
+        {
+          "field": "customer_id",
+          "alias": "customer_id"
+        }
+      ],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "order_id",
+          "alias": "order_count"
+        }
+      ],
+      "filters": [
+        {
+          "field": "customer_id",
+          "op": "is_not_null",
+          "value": null
+        }
+      ],
       "order_by": [],
       "offset": 0,
       "rollup": {
-        "metrics": [{"agg": "avg", "field": "order_count", "alias": "avg_orders_per_customer"}],
+        "metrics": [
+          {
+            "agg": "avg",
+            "field": "order_count",
+            "alias": "avg_orders_per_customer"
+          }
+        ],
         "limit": 1,
         "offset": 0
       }
     },
-    "expect_lint_errors": false
+    "type": "lint",
+    "lint": {
+      "expect": "clean"
+    }
   },
   {
     "name": "lint_grain_fires",
@@ -399,13 +800,22 @@
       "version": "1.0",
       "dataset": "customers",
       "dimensions": [],
-      "metrics": [{"agg": "count", "field": "country", "alias": "customer_count"}],
+      "metrics": [
+        {
+          "agg": "count",
+          "field": "country",
+          "alias": "customer_count"
+        }
+      ],
       "filters": [],
       "order_by": [],
       "limit": 1,
       "offset": 0
     },
-    "expect_lint_errors": true
+    "type": "lint",
+    "lint": {
+      "expect": "fires"
+    }
   },
   {
     "name": "lint_grain_clean",
@@ -414,13 +824,22 @@
       "version": "1.0",
       "dataset": "customers",
       "dimensions": [],
-      "metrics": [{"agg": "count_distinct", "field": "customer_id", "alias": "customer_count"}],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "customer_id",
+          "alias": "customer_count"
+        }
+      ],
       "filters": [],
       "order_by": [],
       "limit": 1,
       "offset": 0
     },
-    "expect_lint_errors": false
+    "type": "lint",
+    "lint": {
+      "expect": "clean"
+    }
   },
   {
     "name": "lint_meta_auto_fix_scalar",
@@ -429,7 +848,13 @@
       "version": "1.0",
       "dataset": "orders",
       "dimensions": [],
-      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "total_orders"}],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "order_id",
+          "alias": "total_orders"
+        }
+      ],
       "filters": [],
       "order_by": [],
       "limit": 500,
@@ -443,14 +868,37 @@
     "plan": {
       "version": "1.0",
       "dataset": "orders",
-      "dimensions": [{"field": "customer_id", "alias": "customer_id"}],
-      "metrics": [{"agg": "count_distinct", "field": "order_id", "alias": "order_count"}],
-      "filters": [{"field": "customer_id", "op": "is_not_null", "value": null}],
+      "dimensions": [
+        {
+          "field": "customer_id",
+          "alias": "customer_id"
+        }
+      ],
+      "metrics": [
+        {
+          "agg": "count_distinct",
+          "field": "order_id",
+          "alias": "order_count"
+        }
+      ],
+      "filters": [
+        {
+          "field": "customer_id",
+          "op": "is_not_null",
+          "value": null
+        }
+      ],
       "order_by": [],
       "limit": 100,
       "offset": 0,
       "rollup": {
-        "metrics": [{"agg": "avg", "field": "order_count", "alias": "avg_orders_per_customer"}],
+        "metrics": [
+          {
+            "agg": "avg",
+            "field": "order_count",
+            "alias": "avg_orders_per_customer"
+          }
+        ],
         "limit": 1,
         "offset": 0
       }
@@ -463,8 +911,18 @@
     "plan": {
       "dataset": "orders",
       "select": [
-        {"expr": {"col": "orders.order_id"}, "alias": "order_id"},
-        {"expr": {"col": "customers.company_name"}, "alias": "company_name"}
+        {
+          "expr": {
+            "col": "orders.order_id"
+          },
+          "alias": "order_id"
+        },
+        {
+          "expr": {
+            "col": "customers.company_name"
+          },
+          "alias": "company_name"
+        }
       ],
       "limit": 10,
       "offset": 0
