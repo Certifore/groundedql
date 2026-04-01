@@ -537,9 +537,20 @@ class Compiler:
                     e = alias_lookup[by]
                 else:
                     _require(by is not None, "INVALID_PLAN", "order_by.by required.", f"{pp}.by")
-                    e = self._compile_expr(
-                        by, inner_alias_map, dataset, cte_map=cte_map, path=f"{pp}.by", outer_alias_map=outer_alias_map
-                    )
+                    # Legacy order_by uses string column names; _compile_expr requires dict nodes.
+                    if isinstance(by, str):
+                        e = self._compile_expr(
+                            {"col": by},
+                            inner_alias_map,
+                            dataset,
+                            cte_map=cte_map,
+                            path=f"{pp}.by",
+                            outer_alias_map=outer_alias_map,
+                        )
+                    else:
+                        e = self._compile_expr(
+                            by, inner_alias_map, dataset, cte_map=cte_map, path=f"{pp}.by", outer_alias_map=outer_alias_map
+                        )
 
                 ob_exprs.append(e.asc() if direction == "asc" else e.desc())
             query = query.order_by(*ob_exprs)
@@ -997,7 +1008,17 @@ class Compiler:
                     _require(direction in {"asc", "desc"}, "INVALID_PLAN", "order dir must be asc|desc.", f"{ip}.dir")
                     ob_exprs.append(e.asc() if direction == "asc" else e.desc())
                 else:
-                    e = self._compile_expr(item, alias_map, default_table, cte_map=cte_map, path=ip, outer_alias_map=outer_alias_map)
+                    if isinstance(item, str):
+                        e = self._compile_expr(
+                            {"col": item},
+                            alias_map,
+                            default_table,
+                            cte_map=cte_map,
+                            path=ip,
+                            outer_alias_map=outer_alias_map,
+                        )
+                    else:
+                        e = self._compile_expr(item, alias_map, default_table, cte_map=cte_map, path=ip, outer_alias_map=outer_alias_map)
                     ob_exprs.append(e.asc())
 
             # Most window funcs come from sa.func.*; they support .over()

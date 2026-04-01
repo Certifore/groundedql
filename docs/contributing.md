@@ -81,15 +81,15 @@ docs/                   # this documentation site (MkDocs)
 
 ## Running Tests
 
-All automated checks go through `test/test_main.py` (no separate pytest modules).
+All automated checks go through `test/test_main.py` (no separate pytest modules). Cases live in `test/regression_test/test_qs.json` with a `type` field: **`db`** (default), **`lint`**, **`canonical`**, or **`compile`** (compiler / schema / validation; no DB).
 
-**Compiler + validation (no DB):**
+**No-DB tests** — semantic lint, canonicalize/fingerprint, and compile rows:
 
 ```bash
-python test/test_main.py selfcheck
+python test/test_main.py lint
 ```
 
-**Regression suite** — executes plans from `test/regression_test/test_qs.json` against Postgres:
+**Regression suite** — executes `db` rows from `test/regression_test/test_qs.json` against Postgres (plus non-DB rows in the same file):
 
 ```bash
 cp test/.env.example test/.env
@@ -97,9 +97,12 @@ cp test/.env.example test/.env
 ```
 
 ```bash
-python test/test_main.py run      # execute and print results
+python test/test_main.py          # full suite (default)
+python test/test_main.py run      # same: execute and print results
 python test/test_main.py check    # compare to saved baseline (CI)
 ```
+
+`pipeline` mode runs compile tests from the same JSON as a preflight, then the pipeline benchmark.
 
 ---
 
@@ -136,13 +139,13 @@ python -m dsl_compiler.spec_builder \
     1. Add the literal to `Operator` in `queryplan_models.py`
     2. Handle it in `Compiler._compile_bool_expr` in `compiler.py`
     3. Add it to `_operators_block()` in `spec_builder.py`
-    4. Add a test case in `test/test_main.py`
+    4. Add a `db` (or `compile`, etc.) case in `test/regression_test/test_qs.json`
 
 === "New Aggregation"
 
     1. Add the literal to `Agg` in `queryplan_models.py`
     2. Handle it in `Compiler._build_select_query` in `compiler.py`
-    3. Add a test case in `test/test_main.py`
+    3. Add a case in `test/regression_test/test_qs.json`
 
 === "New Semantic Lint Rule"
 
@@ -165,7 +168,7 @@ python -m dsl_compiler.spec_builder \
 3. **Run checks:**
 
     ```bash
-    ruff check dsl_compiler/ && python test/test_main.py selfcheck
+    ruff check dsl_compiler/ && python test/test_main.py lint
     ```
 
 4. **Commit** with a clear message:

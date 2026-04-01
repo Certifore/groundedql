@@ -2,24 +2,24 @@
 Regression test runner for dsl_compiler.
 
 Modes (set via TEST_MODE env var or command-line arg):
-  run     — Execute all plans, print results. Does NOT write baseline. (default)
-  update  — Execute all plans and OVERWRITE the baseline file.
-  check   — Execute all plans and COMPARE against the saved baseline.
-             Exits with code 1 if any row_count or first-row values differ.
-  pipeline — Benchmark 4 only: NL → LLM planner → compile → execute (see benchmark/.env).
-  selfcheck — No DB: compiler + schema + validation checks (former pytest cases).
+  run     — Full regression suite from test_qs.json (default)
+  update  — Execute all plans and OVERWRITE the baseline file
+  check   — Compare against baseline (exits 1 on regression; CI)
+  pipeline — Compile preflight from test_qs.json then Benchmark 4 (NL → planner → DB; see benchmark/.env)
+  lint    — No DB: lint + canonical + compile rows from test_qs.json
 
 Usage:
-  python test/test_main.py              # run (default)
+  python test/test_main.py              # full suite (default)
   python test/test_main.py update       # overwrite baseline
   python test/test_main.py check        # regression check (for CI)
-  python test/test_main.py pipeline     # full pipeline benchmark (loads benchmark/.env)
-  python test/test_main.py selfcheck    # compiler hardening + validate_query_plan meta
+  python test/test_main.py pipeline     # compile preflight + pipeline benchmark
+  python test/test_main.py lint        # no-DB tests only
 
 Test types in test_qs.json:
   (default) db   — execute against Postgres
   lint           — semantic_lint only (no DB)
   canonical      — structural plan_fingerprint / canonicalize checks (no DB)
+  compile        — compiler / schema / validate_query_plan_dict checks (no DB); see compile.kind
 """
 from __future__ import annotations
 
@@ -58,9 +58,235 @@ REG_DIR.mkdir(parents=True, exist_ok=True)
 # Mode
 # ---------------------------------------------------------------------------
 MODE = (sys.argv[1] if len(sys.argv) > 1 else os.getenv("TEST_MODE", "run")).lower()
-assert MODE in {"run", "update", "check", "lint", "pipeline", "selfcheck"}, (
-    f"Unknown mode '{MODE}'. Use: run | update | check | lint | pipeline | selfcheck"
+assert MODE in {"run", "update", "check", "lint", "pipeline"}, (
+    f"Unknown mode '{MODE}'. Use: run | update | check | lint | pipeline"
 )
+
+
+def _minimal_schema_for_compile(*, bad_link_join_type: str | None = None) -> dict:
+    schema = {
+        "tables": [
+            {
+                "name": "orders",
+                "db_table": "orders",
+                "columns": [
+                    {"name": "order_id", "db_column": "order_id", "type": "int"},
+                    {"name": "customer_id", "db_column": "customer_id", "type": "int"},
+                ],
+            },
+            {
+                "name": "customers",
+                "db_table": "customers",
+                "columns": [
+                    {"name": "customer_id", "db_column": "customer_id", "type": "int"},
+                    {"name": "name", "db_column": "name", "type": "varchar"},
+                ],
+            },
+        ],
+        "links": [
+            {
+                "name": "orders_to_customers",
+                "from_table": "orders",
+                "to_table": "customers",
+                "join_type": "left",
+                "on": [{"left": "orders.customer_id", "right": "customers.customer_id"}],
+            }
+        ],
+    }
+    if bad_link_join_type is not None:
+        schema["links"][0]["join_type"] = bad_link_join_type
+    return schema
+
+
+def _run_compile_test(test: dict) -> tuple[bool, str | None]:
+    """Dispatch compile.kind from test_qs.json (no DB)."""
+    import tempfile
+    from pathlib import Path as P
+
+    from dsl_compiler.compiler import Compiler, QueryPlanError
+    from dsl_compiler.exceptions import SchemaError
+    from dsl_compiler.schema_validator import validate_schema
+    from dsl_compiler.validation import validate_query_plan_dict
+
+    spec = test.get("compile") or {}
+    kind = spec.get("kind", "")
+
+    if kind == "validate_meta":
+        schema = spec.get("schema")
+        plan = spec.get("plan")
+        if not isinstance(schema, dict) or not isinstance(plan, dict):
+            return False, "validate_meta requires compile.schema and compile.plan objects"
+        with tempfile.TemporaryDirectory() as td:
+            sp = P(td) / "schema.yaml"
+            sp.write_text(yaml.safe_dump(schema), encoding="utf-8")
+            parsed, errs = validate_query_plan_dict(plan, str(sp))
+            if parsed is None or errs:
+                return False, f"validate_query_plan_dict+meta: {errs}"
+            return True, None
+
+    if kind == "schema_rejects_bad_link":
+        jt = spec.get("bad_link_join_type")
+        if not isinstance(jt, str):
+            return False, "schema_rejects_bad_link requires compile.bad_link_join_type"
+        try:
+            validate_schema(_minimal_schema_for_compile(bad_link_join_type=jt))
+            return False, "validate_schema should reject bad join_type"
+        except SchemaError as e:
+            if "join_type" not in str(e).lower():
+                return False, f"validate_schema wrong message: {e}"
+            return True, None
+        except Exception as e:
+            return False, f"validate_schema wrong exc: {e}"
+
+    if kind == "compiler_rejects_bad_schema":
+        jt = spec.get("bad_link_join_type")
+        if not isinstance(jt, str):
+            return False, "compiler_rejects_bad_schema requires compile.bad_link_join_type"
+        try:
+            Compiler(_minimal_schema_for_compile(bad_link_join_type=jt))
+            return False, "Compiler should reject bad join_type at init"
+        except SchemaError as e:
+            if "join_type" not in str(e).lower():
+                return False, f"Compiler schema wrong message: {e}"
+            return True, None
+        except Exception as e:
+            return False, f"Compiler schema wrong exc: {e}"
+
+    if kind == "duplicate_join_requires_as":
+        plan = spec.get("plan")
+        if not isinstance(plan, dict):
+            return False, "duplicate_join_requires_as requires compile.plan"
+        try:
+            c = Compiler(_minimal_schema_for_compile())
+            c.compile(plan)
+            return False, "duplicate join should require join.as"
+        except QueryPlanError as e:
+            if "as" not in str(e).lower():
+                return False, f"duplicate join message: {e}"
+            return True, None
+        except Exception as e:
+            return False, f"duplicate join wrong exc: {e}"
+
+    if kind == "self_join_compiles":
+        plan = spec.get("plan")
+        if not isinstance(plan, dict):
+            return False, "self_join_compiles requires compile.plan"
+        try:
+            c = Compiler(_minimal_schema_for_compile())
+            sql, _ = c.compile(plan)
+            if "JOIN" not in sql.upper() or "orders" not in sql.lower():
+                return False, f"self-join SQL unexpected: {sql[:120]}"
+            return True, None
+        except Exception as e:
+            return False, f"self-join compile: {e}"
+
+    if kind == "func_wrong_arity":
+        plan = spec.get("plan")
+        if not isinstance(plan, dict):
+            return False, "func_wrong_arity requires compile.plan"
+        try:
+            c = Compiler(_minimal_schema_for_compile())
+            c.compile(plan)
+            return False, "wrong func arity should error"
+        except QueryPlanError as e:
+            if "does not accept" not in str(e).lower():
+                return False, f"func arity message: {e}"
+            return True, None
+        except Exception as e:
+            return False, f"func arity wrong exc: {e}"
+
+    if kind == "set_op_mismatch":
+        plan = spec.get("plan")
+        if not isinstance(plan, dict):
+            return False, "set_op_mismatch requires compile.plan"
+        try:
+            c = Compiler(_minimal_schema_for_compile())
+            c.compile(plan)
+            return False, "set_op mismatch should error"
+        except QueryPlanError as e:
+            if "same number" not in str(e).lower():
+                return False, f"set_op message: {e}"
+            return True, None
+        except Exception as e:
+            return False, f"set_op wrong exc: {e}"
+
+    if kind == "empty_in":
+        plan = spec.get("plan")
+        if not isinstance(plan, dict):
+            return False, "empty_in requires compile.plan"
+        try:
+            c = Compiler(_minimal_schema_for_compile())
+            c.compile(plan)
+            return False, "empty IN should error"
+        except QueryPlanError as e:
+            if "non-empty" not in str(e).lower():
+                return False, f"empty IN message: {e}"
+            return True, None
+        except Exception as e:
+            return False, f"empty IN wrong exc: {e}"
+
+    if kind == "dotted_table":
+        schema = spec.get("schema")
+        plan = spec.get("plan")
+        if not isinstance(schema, dict) or not isinstance(plan, dict):
+            return False, "dotted_table requires compile.schema and compile.plan"
+        try:
+            c = Compiler(schema)
+            sql, _ = c.compile(plan)
+            if "ab_t" not in sql and "c" not in sql:
+                return False, f"dotted table SQL: {sql[:120]}"
+            return True, None
+        except Exception as e:
+            return False, f"dotted table: {e}"
+
+    if kind == "legacy_order_by_string":
+        plan = spec.get("plan")
+        if not isinstance(plan, dict):
+            return False, "legacy_order_by_string requires compile.plan"
+        try:
+            c = Compiler(_minimal_schema_for_compile())
+            sql, _ = c.compile(plan)
+            if "ORDER BY" not in sql.upper():
+                return False, "legacy order_by: expected ORDER BY in SQL"
+            return True, None
+        except Exception as e:
+            if "Expression must be an object" in str(e):
+                return False, f"legacy order_by string column: {e}"
+            return False, f"legacy order_by: {e}"
+
+    if kind == "compound_cte_compiles":
+        plan = spec.get("plan")
+        if not isinstance(plan, dict):
+            return False, "compound_cte_compiles requires compile.plan"
+        try:
+            c = Compiler(_minimal_schema_for_compile())
+            sql, _ = c.compile(plan)
+            sql_u = sql.upper()
+            if "WITH" not in sql_u:
+                return False, "compound plan: expected WITH in SQL (CTE pipeline)"
+            if "FIRST_ORDERS" not in sql_u and "first_orders" not in sql.lower():
+                return False, "compound plan: expected CTE name in SQL"
+            return True, None
+        except Exception as e:
+            return False, f"compound plan compile: {e}"
+
+    if kind == "compound_cte_validates":
+        schema = spec.get("schema")
+        plan = spec.get("plan")
+        if not isinstance(schema, dict) or not isinstance(plan, dict):
+            return False, "compound_cte_validates requires compile.schema and compile.plan"
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                sp2 = P(td) / "schema.yaml"
+                sp2.write_text(yaml.safe_dump(schema), encoding="utf-8")
+                _, verr = validate_query_plan_dict(plan, str(sp2))
+                if verr:
+                    return False, f"compound plan validation: {verr}"
+                return True, None
+        except Exception as e:
+            return False, f"compound plan validate_query_plan_dict: {e}"
+
+    return False, f"unknown compile.kind {kind!r}"
 
 
 def _run_pipeline_mode() -> None:
@@ -177,292 +403,27 @@ def _run_pipeline_mode() -> None:
     sys.exit(0 if ok else 1)
 
 
-def _run_selfcheck() -> None:
-    """Compiler/schema/validation checks (no DB). Replaces former test_compiler_fixes + test_validation_meta."""
-    import tempfile
-    from pathlib import Path as P
-
-    from dsl_compiler.compiler import Compiler, QueryPlanError
-    from dsl_compiler.exceptions import SchemaError
-    from dsl_compiler.schema_validator import validate_schema
-    from dsl_compiler.validation import validate_query_plan_dict
-
-    failures: list[str] = []
-
-    def _minimal_schema(*, bad_link_join_type: str | None = None) -> dict:
-        schema = {
-            "tables": [
-                {
-                    "name": "orders",
-                    "db_table": "orders",
-                    "columns": [
-                        {"name": "order_id", "db_column": "order_id", "type": "int"},
-                        {"name": "customer_id", "db_column": "customer_id", "type": "int"},
-                    ],
-                },
-                {
-                    "name": "customers",
-                    "db_table": "customers",
-                    "columns": [
-                        {"name": "customer_id", "db_column": "customer_id", "type": "int"},
-                        {"name": "name", "db_column": "name", "type": "varchar"},
-                    ],
-                },
-            ],
-            "links": [
-                {
-                    "name": "orders_to_customers",
-                    "from_table": "orders",
-                    "to_table": "customers",
-                    "join_type": "left",
-                    "on": [{"left": "orders.customer_id", "right": "customers.customer_id"}],
-                }
-            ],
-        }
-        if bad_link_join_type is not None:
-            schema["links"][0]["join_type"] = bad_link_join_type
-        return schema
-
-    # --- validate_query_plan_dict ignores planner meta ---
-    with tempfile.TemporaryDirectory() as td:
-        sp = P(td) / "schema.yaml"
-        sp.write_text(
-            yaml.safe_dump(
-                {
-                    "tables": [
-                        {
-                            "name": "work_orders",
-                            "columns": [{"name": "asset_tag"}, {"name": "work_order_id"}],
-                        }
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
-        plan = {
-            "version": "1.0",
-            "dataset": "work_orders",
-            "dimensions": [{"field": "asset_tag", "alias": "asset_tag"}],
-            "metrics": [{"agg": "count", "field": "*", "alias": "work_order_count"}],
-            "order_by": [{"by": "work_order_count", "dir": "desc"}],
-            "limit": 1,
-            "offset": 0,
-            "filters": [],
-            "meta": {
-                "plan_hash": "deadbeef",
-                "retry_count": 1,
-                "auto_fixes_applied": [],
-                "validation_errors": [],
-                "lint_errors": [],
-            },
-        }
-        parsed, errs = validate_query_plan_dict(plan, str(sp))
-        if parsed is None or errs:
-            failures.append(f"validate_query_plan_dict+meta: {errs}")
-
-    # --- schema validator: bad link join type ---
-    try:
-        validate_schema(_minimal_schema(bad_link_join_type="right"))
-        failures.append("validate_schema should reject bad join_type")
-    except SchemaError as e:
-        if "join_type" not in str(e).lower():
-            failures.append(f"validate_schema wrong message: {e}")
-    except Exception as e:
-        failures.append(f"validate_schema wrong exc: {e}")
-
-    # --- Compiler rejects bad link without prior validate_schema ---
-    try:
-        Compiler(_minimal_schema(bad_link_join_type="full"))
-        failures.append("Compiler should reject bad join_type at init")
-    except SchemaError as e:
-        if "join_type" not in str(e).lower():
-            failures.append(f"Compiler schema wrong message: {e}")
-    except Exception as e:
-        failures.append(f"Compiler schema wrong exc: {e}")
-
-    # --- duplicate explicit join requires as ---
-    try:
-        c = Compiler(_minimal_schema())
-        c.compile(
-            {
-                "dataset": "orders",
-                "joins": [
-                    {
-                        "dataset": "customers",
-                        "type": "inner",
-                        "on": {
-                            "cmp": {
-                                "left": {"col": "orders.customer_id"},
-                                "op": "=",
-                                "right": {"col": "customers.customer_id"},
-                            }
-                        },
-                    },
-                    {
-                        "dataset": "customers",
-                        "type": "inner",
-                        "on": {
-                            "cmp": {
-                                "left": {"col": "orders.customer_id"},
-                                "op": "=",
-                                "right": {"col": "customers.customer_id"},
-                            }
-                        },
-                    },
-                ],
-                "select": [{"expr": {"col": "orders.order_id"}, "alias": "order_id"}],
-                "limit": 5,
-            }
-        )
-        failures.append("duplicate join should require join.as")
-    except QueryPlanError as e:
-        if "as" not in str(e).lower():
-            failures.append(f"duplicate join message: {e}")
-    except Exception as e:
-        failures.append(f"duplicate join wrong exc: {e}")
-
-    # --- self-join with as compiles ---
-    try:
-        c = Compiler(_minimal_schema())
-        sql, _ = c.compile(
-            {
-                "dataset": "orders",
-                "joins": [
-                    {
-                        "dataset": "orders",
-                        "as": "o2",
-                        "type": "inner",
-                        "on": {
-                            "cmp": {
-                                "left": {"col": "orders.order_id"},
-                                "op": "=",
-                                "right": {"col": "o2.order_id"},
-                            }
-                        },
-                    }
-                ],
-                "select": [{"expr": {"col": "orders.order_id"}, "alias": "a"}],
-                "limit": 1,
-            }
-        )
-        if "JOIN" not in sql.upper() or "orders" not in sql.lower():
-            failures.append(f"self-join SQL unexpected: {sql[:120]}")
-    except Exception as e:
-        failures.append(f"self-join compile: {e}")
-
-    # --- sql function wrong arity ---
-    try:
-        c = Compiler(_minimal_schema())
-        c.compile(
-            {
-                "dataset": "orders",
-                "select": [
-                    {
-                        "expr": {"func": "count", "args": [{"col": "order_id"}, {"col": "customer_id"}]},
-                        "alias": "x",
-                    }
-                ],
-                "limit": 1,
-            }
-        )
-        failures.append("wrong func arity should error")
-    except QueryPlanError as e:
-        if "does not accept" not in str(e).lower():
-            failures.append(f"func arity message: {e}")
-    except Exception as e:
-        failures.append(f"func arity wrong exc: {e}")
-
-    # --- set_op column mismatch ---
-    try:
-        c = Compiler(_minimal_schema())
-        c.compile(
-            {
-                "set_op": {
-                    "op": "union_all",
-                    "left": {"dataset": "orders", "select": [{"expr": {"col": "order_id"}, "alias": "a"}], "limit": 1},
-                    "right": {
-                        "dataset": "orders",
-                        "select": [
-                            {"expr": {"col": "order_id"}, "alias": "a"},
-                            {"expr": {"col": "customer_id"}, "alias": "b"},
-                        ],
-                        "limit": 1,
-                    },
-                }
-            }
-        )
-        failures.append("set_op mismatch should error")
-    except QueryPlanError as e:
-        if "same number" not in str(e).lower():
-            failures.append(f"set_op message: {e}")
-    except Exception as e:
-        failures.append(f"set_op wrong exc: {e}")
-
-    # --- empty IN list ---
-    try:
-        c = Compiler(_minimal_schema())
-        c.compile(
-            {
-                "dataset": "orders",
-                "select": [{"expr": {"col": "order_id"}, "alias": "x"}],
-                "where": {"cmp": {"left": {"col": "order_id"}, "op": "in", "right": []}},
-                "limit": 1,
-            }
-        )
-        failures.append("empty IN should error")
-    except QueryPlanError as e:
-        if "non-empty" not in str(e).lower():
-            failures.append(f"empty IN message: {e}")
-    except Exception as e:
-        failures.append(f"empty IN wrong exc: {e}")
-
-    # --- dotted logical table name ---
-    try:
-        schema = {
-            "tables": [
-                {
-                    "name": "a.b",
-                    "db_table": "ab_t",
-                    "columns": [{"name": "c", "db_column": "c", "type": "int"}],
-                },
-                {
-                    "name": "a",
-                    "db_table": "a_t",
-                    "columns": [{"name": "b", "db_column": "b", "type": "int"}],
-                },
-            ],
-            "links": [],
-        }
-        c = Compiler(schema)
-        sql, _ = c.compile(
-            {
-                "dataset": "a.b",
-                "select": [{"expr": {"col": "a.b.c"}, "alias": "x"}],
-                "limit": 1,
-            }
-        )
-        if "ab_t" not in sql and "c" not in sql:
-            failures.append(f"dotted table SQL: {sql[:120]}")
-    except Exception as e:
-        failures.append(f"dotted table: {e}")
-
-    if failures:
-        print("[selfcheck] failures:")
-        for f in failures:
-            print(f"  - {f}")
-        sys.exit(1)
-    print("[selfcheck] all checks passed")
-    sys.exit(0)
-
-
 if MODE == "pipeline":
+    if not SUITE_PATH.exists():
+        raise SystemExit(f"[test] Required file not found: {SUITE_PATH}")
+    with open(SUITE_PATH) as f:
+        _suite_pipeline: list = json.load(f)
+    _pf_errs = 0
+    for _t in _suite_pipeline:
+        if _t.get("type") != "compile":
+            continue
+        _ok, _err = _run_compile_test(_t)
+        if not _ok:
+            print(f"[compile] {_t.get('name')}: {_err}")
+            _pf_errs += 1
+    if _pf_errs:
+        print(f"[compile] {_pf_errs} failure(s) — fix before pipeline")
+        sys.exit(1)
+    print("[compile] OK (pipeline preflight)\n")
     _run_pipeline_mode()
 
-if MODE == "selfcheck":
-    _run_selfcheck()
-
 # ---------------------------------------------------------------------------
-# DB connection (skipped in lint, pipeline, and selfcheck modes)
+# DB connection (skipped in lint and pipeline modes)
 # ---------------------------------------------------------------------------
 load_dotenv(dotenv_path=ENV_PATH, override=True)
 
@@ -473,7 +434,7 @@ def _must(k: str) -> str:
     return v
 
 engine = None
-if MODE not in ("lint", "pipeline", "selfcheck"):
+if MODE not in ("lint", "pipeline"):
     engine = create_engine(
         "postgresql+psycopg2://",
         creator=lambda: psycopg2.connect(
@@ -594,7 +555,24 @@ for i, test in enumerate(suite):
     name = test.get("name", f"test_{i}")
     question = test.get("question", "")
     plan = test.get("plan")
-    test_type = test.get("type", "db")  # "db" | "lint" | "canonical"
+    test_type = test.get("type", "db")  # "db" | "lint" | "canonical" | "compile"
+
+    if test_type == "compile":
+        ok, err = _run_compile_test(test)
+        result_entry = {
+            "name": name,
+            "question": question,
+            "type": "compile",
+            "passed": ok,
+            "error": err,
+        }
+        results.append(result_entry)
+        status = "PASS" if ok else "FAIL"
+        print(f"  [{i+1}/{len(suite)}] {name}: [{status}]")
+        if not ok:
+            print(f"         {err}")
+            errors += 1
+        continue
 
     if test_type == "canonical":
         ok, err = _run_canonical_test(test)
@@ -693,7 +671,7 @@ print()
 # Mode: lint — only lint tests, no DB needed
 # ---------------------------------------------------------------------------
 if MODE == "lint":
-    print(f"\n[test] Lint + canonical (no DB): {len(results)} tests, {errors} failure(s)")
+    print(f"\n[test] Lint + canonical + compile (no DB): {len(results)} tests, {errors} failure(s)")
     sys.exit(0 if errors == 0 else 1)
 
 # ---------------------------------------------------------------------------
@@ -759,6 +737,22 @@ for entry in results:
             failed += 1
             regression_failures.append(name)
             print(f"  [STALE] {name} — baseline has no canonical 'passed' field.")
+            print("         Run: python test/test_main.py update")
+            continue
+        ok = entry["passed"] == base["passed"]
+        if ok:
+            passed += 1
+            print(f"  [PASS] {name}")
+        else:
+            failed += 1
+            regression_failures.append(name)
+            print(f"  [FAIL] {name}")
+            print(f"         passed baseline={base['passed']}  current={entry['passed']}")
+    elif entry.get("type") == "compile":
+        if base.get("type") != "compile" or "passed" not in base:
+            failed += 1
+            regression_failures.append(name)
+            print(f"  [STALE] {name} — baseline has no compile 'passed' field.")
             print("         Run: python test/test_main.py update")
             continue
         ok = entry["passed"] == base["passed"]

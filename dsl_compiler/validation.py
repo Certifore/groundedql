@@ -7,6 +7,27 @@ import yaml
 
 from .queryplan_models import QueryPlan
 
+_MAX_CTE_DEPTH = 8
+
+
+def _is_legacy_queryplan_shape(d: dict) -> bool:
+    """Same heuristic as Compiler._build_selectable legacy branch."""
+    return bool(
+        d.get("dataset")
+        and any(k in d for k in ("dimensions", "metrics", "filters"))
+        and "select" not in d
+        and "set_op" not in d
+    )
+
+
+def _prefix_cte_path(i: int, inner_path: str) -> str:
+    base = f"$.with[{i}].plan"
+    if inner_path == "$":
+        return base
+    if inner_path.startswith("$."):
+        return base + inner_path[1:]
+    return f"{base}.{inner_path}"
+
 
 @dataclass
 class ValidationErrorItem:
@@ -37,7 +58,12 @@ def _schema_tables(schema: Dict[str, Any]) -> Dict[str, Set[str]]:
     return out
 
 
-def validate_query_plan_dict(plan_dict: Dict[str, Any], schema_path: str) -> Tuple[Optional[QueryPlan], List[ValidationErrorItem]]:
+def validate_query_plan_dict(
+    plan_dict: Dict[str, Any],
+    schema_path: str,
+    *,
+    _cte_depth: int = 0,
+) -> Tuple[Optional[QueryPlan], List[ValidationErrorItem]]:
     """
     Validates plan_dict:
       1) Pydantic (hard schema)
@@ -47,10 +73,16 @@ def validate_query_plan_dict(plan_dict: Dict[str, Any], schema_path: str) -> Tup
     The ``meta`` key (planner explainability: plan_hash, retries, etc.) is stripped
     before schema validation — same as ``execute_query_plan`` / ``validate_query_plan``.
 
+    Nested ``with`` / CTE plans are validated recursively when they match the legacy
+    QueryPlan shape (or full QueryPlan including nested ``with``).
+
     Returns:
       (parsed_plan or None, errors)
     """
     errors: List[ValidationErrorItem] = []
+
+    if _cte_depth > _MAX_CTE_DEPTH:
+        return None, [ValidationErrorItem(path="$", message=f"CTE nesting exceeds {_MAX_CTE_DEPTH}.")]
 
     plan_body = {k: v for k, v in plan_dict.items() if k != "meta"}
 
@@ -64,11 +96,24 @@ def validate_query_plan_dict(plan_dict: Dict[str, Any], schema_path: str) -> Tup
     schema = load_schema_yaml(schema_path)
     table_cols = _schema_tables(schema)
 
-    if plan.dataset not in table_cols:
-        errors.append(ValidationErrorItem(path="$.dataset", message=f"Unknown dataset '{plan.dataset}'. Must be one of: {sorted(table_cols.keys())}"))
-        return plan, errors
+    cte_names = {c.name for c in (plan.ctes or [])}
 
-    allowed_cols = table_cols[plan.dataset]
+    if plan.dataset in table_cols:
+        allowed_cols: Optional[Set[str]] = table_cols[plan.dataset]
+    elif plan.dataset in cte_names:
+        # Outer query reads FROM a WITH subquery — column set depends on inner plan; compiler enforces.
+        allowed_cols = None
+    else:
+        keys = sorted(table_cols.keys())
+        if cte_names:
+            keys = sorted(set(keys) | cte_names)
+        errors.append(
+            ValidationErrorItem(
+                path="$.dataset",
+                message=f"Unknown dataset '{plan.dataset}'. Must be a schema table or a CTE name from \"with\": {keys}",
+            )
+        )
+        return plan, errors
 
     # helper
     def check_col(path: str, col: Optional[str]):
@@ -76,7 +121,7 @@ def validate_query_plan_dict(plan_dict: Dict[str, Any], schema_path: str) -> Tup
             return
         if col == "*":
             return
-        if col not in allowed_cols:
+        if allowed_cols is not None and col not in allowed_cols:
             errors.append(ValidationErrorItem(path=path, message=f"Unknown column '{col}' for dataset '{plan.dataset}'."))
 
     # filters
@@ -120,5 +165,24 @@ def validate_query_plan_dict(plan_dict: Dict[str, Any], schema_path: str) -> Tup
         # rollup queries usually return 1 row; enforce sane defaults
         if plan.rollup.limit < 1:
             errors.append(ValidationErrorItem(path="$.rollup.limit", message="rollup.limit must be >= 1"))
+
+    # Nested CTE plans (same column allowlist rules where applicable)
+    if plan.ctes:
+        for i, cte in enumerate(plan.ctes):
+            sub = cte.plan
+            if not isinstance(sub, dict):
+                errors.append(ValidationErrorItem(path=f"$.with[{i}].plan", message="CTE plan must be an object."))
+                continue
+            merged = dict(sub)
+            if _is_legacy_queryplan_shape(merged) and "version" not in merged:
+                merged["version"] = "1.0"
+            try:
+                QueryPlan.model_validate(merged)
+            except Exception:
+                # Advanced select/set_op-only CTEs: compiler is authoritative; skip Pydantic subtree.
+                continue
+            _, inner_errs = validate_query_plan_dict(merged, schema_path, _cte_depth=_cte_depth + 1)
+            for e in inner_errs:
+                errors.append(ValidationErrorItem(path=_prefix_cte_path(i, e.path), message=e.message))
 
     return plan, errors

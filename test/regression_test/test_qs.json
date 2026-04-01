@@ -264,7 +264,7 @@
   },
   {
     "name": "cte_top_customers",
-    "question": "Using a CTE, find the top 5 customers by order count",
+    "question": "Compound question in one plan: in a CTE, count orders per customer, then return the top 5 customers by order count",
     "plan": {
       "with": [
         {
@@ -322,6 +322,217 @@
         }
       ],
       "limit": 5,
+      "offset": 0
+    }
+  },
+  {
+    "name": "compound_three_cte_usa_orders_then_top_customers",
+    "question": "In one compound plan answer three linked parts for USA shipments: (1) start from orders shipped to the USA, (2) count distinct orders per customer, (3) return the top 3 customers by that order count with their IDs and counts.",
+    "plan": {
+      "with": [
+        {
+          "name": "usa_orders_only",
+          "plan": {
+            "dataset": "orders",
+            "select": [
+              { "expr": { "col": "orders.order_id" }, "alias": "order_id" },
+              { "expr": { "col": "orders.customer_id" }, "alias": "customer_id" },
+              { "expr": { "col": "orders.order_date" }, "alias": "order_date" }
+            ],
+            "where": {
+              "cmp": {
+                "left": { "col": "orders.ship_country" },
+                "op": "=",
+                "right": "USA"
+              }
+            },
+            "limit": 1000,
+            "offset": 0
+          }
+        },
+        {
+          "name": "orders_per_customer",
+          "plan": {
+            "dataset": "usa_orders_only",
+            "select": [
+              { "expr": { "col": "usa_orders_only.customer_id" }, "alias": "customer_id" },
+              {
+                "expr": {
+                  "func": "count_distinct",
+                  "args": [{ "col": "usa_orders_only.order_id" }]
+                },
+                "alias": "order_count"
+              }
+            ],
+            "group_by": [{ "col": "usa_orders_only.customer_id" }],
+            "limit": 1000,
+            "offset": 0
+          }
+        },
+        {
+          "name": "top_three_customers",
+          "plan": {
+            "dataset": "orders_per_customer",
+            "select": [
+              { "expr": { "col": "orders_per_customer.customer_id" }, "alias": "customer_id" },
+              { "expr": { "col": "orders_per_customer.order_count" }, "alias": "order_count" }
+            ],
+            "order_by": [{ "by": "order_count", "dir": "desc" }],
+            "limit": 3,
+            "offset": 0
+          }
+        }
+      ],
+      "dataset": "top_three_customers",
+      "select": [
+        { "expr": { "col": "top_three_customers.customer_id" }, "alias": "customer_id" },
+        { "expr": { "col": "top_three_customers.order_count" }, "alias": "order_count" }
+      ],
+      "order_by": [{ "by": "order_count", "dir": "desc" }],
+      "limit": 3,
+      "offset": 0
+    }
+  },
+  {
+    "name": "compound_four_cte_heavy_orders_lines_categories",
+    "question": "In one compound plan (Northwind): (1) take orders with freight over 100, (2) keep only the 10 most recent by order date, (3) expand to line items and products for those orders, (4) resolve each line to its product category — return order id, ship city, product name, and category name.",
+    "plan": {
+      "with": [
+        {
+          "name": "heavy_freight_orders",
+          "plan": {
+            "dataset": "orders",
+            "select": [
+              { "expr": { "col": "orders.order_id" }, "alias": "order_id" },
+              { "expr": { "col": "orders.order_date" }, "alias": "order_date" },
+              { "expr": { "col": "orders.freight" }, "alias": "freight" },
+              { "expr": { "col": "orders.ship_city" }, "alias": "ship_city" }
+            ],
+            "where": {
+              "cmp": {
+                "left": { "col": "orders.freight" },
+                "op": ">",
+                "right": 100
+              }
+            },
+            "limit": 1000,
+            "offset": 0
+          }
+        },
+        {
+          "name": "ten_most_recent_heavy",
+          "plan": {
+            "dataset": "heavy_freight_orders",
+            "select": [
+              { "expr": { "col": "heavy_freight_orders.order_id" }, "alias": "order_id" },
+              { "expr": { "col": "heavy_freight_orders.order_date" }, "alias": "order_date" },
+              { "expr": { "col": "heavy_freight_orders.freight" }, "alias": "freight" },
+              { "expr": { "col": "heavy_freight_orders.ship_city" }, "alias": "ship_city" }
+            ],
+            "order_by": [{ "by": "order_date", "dir": "desc" }],
+            "limit": 10,
+            "offset": 0
+          }
+        },
+        {
+          "name": "lines_with_products",
+          "plan": {
+            "dataset": "ten_most_recent_heavy",
+            "joins": [
+              {
+                "dataset": "order_details",
+                "type": "inner",
+                "on": {
+                  "cmp": {
+                    "left": { "col": "ten_most_recent_heavy.order_id" },
+                    "op": "=",
+                    "right": { "col": "order_details.order_id" }
+                  }
+                }
+              },
+              { "link": "order_details_to_products" }
+            ],
+            "select": [
+              { "expr": { "col": "ten_most_recent_heavy.order_id" }, "alias": "order_id" },
+              { "expr": { "col": "ten_most_recent_heavy.ship_city" }, "alias": "ship_city" },
+              { "expr": { "col": "products.product_name" }, "alias": "product_name" },
+              { "expr": { "col": "products.category_id" }, "alias": "category_id" }
+            ],
+            "limit": 500,
+            "offset": 0
+          }
+        },
+        {
+          "name": "lines_with_category_names",
+          "plan": {
+            "dataset": "lines_with_products",
+            "joins": [
+              {
+                "dataset": "categories",
+                "type": "inner",
+                "on": {
+                  "cmp": {
+                    "left": { "col": "lines_with_products.category_id" },
+                    "op": "=",
+                    "right": { "col": "categories.category_id" }
+                  }
+                }
+              }
+            ],
+            "select": [
+              { "expr": { "col": "lines_with_products.order_id" }, "alias": "order_id" },
+              { "expr": { "col": "lines_with_products.ship_city" }, "alias": "ship_city" },
+              { "expr": { "col": "lines_with_products.product_name" }, "alias": "product_name" },
+              { "expr": { "col": "categories.category_name" }, "alias": "category_name" }
+            ],
+            "order_by": [
+              { "by": "category_name", "dir": "asc" },
+              { "by": "order_id", "dir": "asc" }
+            ],
+            "limit": 500,
+            "offset": 0
+          }
+        }
+      ],
+      "dataset": "lines_with_category_names",
+      "select": [
+        { "expr": { "col": "lines_with_category_names.order_id" }, "alias": "order_id" },
+        { "expr": { "col": "lines_with_category_names.ship_city" }, "alias": "ship_city" },
+        { "expr": { "col": "lines_with_category_names.product_name" }, "alias": "product_name" },
+        { "expr": { "col": "lines_with_category_names.category_name" }, "alias": "category_name" }
+      ],
+      "order_by": [
+        { "by": "category_name", "dir": "asc" },
+        { "by": "order_id", "dir": "asc" }
+      ],
+      "limit": 100,
+      "offset": 0
+    }
+  },
+  {
+    "name": "compound_legacy_cte_limit_orders_then_count_rows",
+    "question": "Compound question in one plan: take five orders as a slice, then how many rows are in that slice?",
+    "plan": {
+      "version": "1.0",
+      "with": [
+        {
+          "name": "first_orders",
+          "plan": {
+            "version": "1.0",
+            "dataset": "orders",
+            "dimensions": [],
+            "metrics": [],
+            "filters": [],
+            "limit": 5,
+            "offset": 0
+          }
+        }
+      ],
+      "dataset": "first_orders",
+      "dimensions": [],
+      "metrics": [{ "agg": "count", "field": "*", "alias": "row_count" }],
+      "filters": [],
+      "limit": 1,
       "offset": 0
     }
   },
@@ -1362,6 +1573,288 @@
             "alias": "id"
           }
         ],
+        "limit": 1,
+        "offset": 0
+      }
+    }
+  },
+  {
+    "name": "compile_validate_meta_strips_planner_meta",
+    "question": "How many work orders are there per asset tag, sorted by count?",
+    "type": "compile",
+    "compile": {
+      "kind": "validate_meta",
+      "schema": {
+        "tables": [
+          {
+            "name": "work_orders",
+            "columns": [{ "name": "asset_tag" }, { "name": "work_order_id" }]
+          }
+        ]
+      },
+      "plan": {
+        "version": "1.0",
+        "dataset": "work_orders",
+        "dimensions": [{ "field": "asset_tag", "alias": "asset_tag" }],
+        "metrics": [{ "agg": "count", "field": "*", "alias": "work_order_count" }],
+        "order_by": [{ "by": "work_order_count", "dir": "desc" }],
+        "limit": 1,
+        "offset": 0,
+        "filters": [],
+        "meta": {
+          "plan_hash": "deadbeef",
+          "retry_count": 1,
+          "auto_fixes_applied": [],
+          "validation_errors": [],
+          "lint_errors": []
+        }
+      }
+    }
+  },
+  {
+    "name": "compile_schema_rejects_bad_link_join_type",
+    "question": "List orders with customer names (schema link configuration must be valid)",
+    "type": "compile",
+    "compile": { "kind": "schema_rejects_bad_link", "bad_link_join_type": "right" }
+  },
+  {
+    "name": "compile_compiler_rejects_bad_link_at_init",
+    "question": "List orders with customer names (schema link configuration must be valid)",
+    "type": "compile",
+    "compile": { "kind": "compiler_rejects_bad_schema", "bad_link_join_type": "full" }
+  },
+  {
+    "name": "compile_duplicate_explicit_join_requires_as",
+    "question": "Show order IDs with the customers table joined twice on the same keys",
+    "type": "compile",
+    "compile": {
+      "kind": "duplicate_join_requires_as",
+      "plan": {
+        "dataset": "orders",
+        "joins": [
+          {
+            "dataset": "customers",
+            "type": "inner",
+            "on": {
+              "cmp": {
+                "left": { "col": "orders.customer_id" },
+                "op": "=",
+                "right": { "col": "customers.customer_id" }
+              }
+            }
+          },
+          {
+            "dataset": "customers",
+            "type": "inner",
+            "on": {
+              "cmp": {
+                "left": { "col": "orders.customer_id" },
+                "op": "=",
+                "right": { "col": "customers.customer_id" }
+              }
+            }
+          }
+        ],
+        "select": [{ "expr": { "col": "orders.order_id" }, "alias": "order_id" }],
+        "limit": 5
+      }
+    }
+  },
+  {
+    "name": "compile_self_join_with_as",
+    "question": "Match each order to itself on order ID using a self-join",
+    "type": "compile",
+    "compile": {
+      "kind": "self_join_compiles",
+      "plan": {
+        "dataset": "orders",
+        "joins": [
+          {
+            "dataset": "orders",
+            "as": "o2",
+            "type": "inner",
+            "on": {
+              "cmp": {
+                "left": { "col": "orders.order_id" },
+                "op": "=",
+                "right": { "col": "o2.order_id" }
+              }
+            }
+          }
+        ],
+        "select": [{ "expr": { "col": "orders.order_id" }, "alias": "a" }],
+        "limit": 1
+      }
+    }
+  },
+  {
+    "name": "compile_sql_func_wrong_arity",
+    "question": "What is COUNT of order_id and customer_id together? (invalid: count takes one argument)",
+    "type": "compile",
+    "compile": {
+      "kind": "func_wrong_arity",
+      "plan": {
+        "dataset": "orders",
+        "select": [
+          {
+            "expr": { "func": "count", "args": [{ "col": "order_id" }, { "col": "customer_id" }] },
+            "alias": "x"
+          }
+        ],
+        "limit": 1
+      }
+    }
+  },
+  {
+    "name": "compile_set_op_branch_column_mismatch",
+    "question": "Combine all order IDs with all order ID and customer ID pairs in one result",
+    "type": "compile",
+    "compile": {
+      "kind": "set_op_mismatch",
+      "plan": {
+        "set_op": {
+          "op": "union_all",
+          "left": {
+            "dataset": "orders",
+            "select": [{ "expr": { "col": "order_id" }, "alias": "a" }],
+            "limit": 1
+          },
+          "right": {
+            "dataset": "orders",
+            "select": [
+              { "expr": { "col": "order_id" }, "alias": "a" },
+              { "expr": { "col": "customer_id" }, "alias": "b" }
+            ],
+            "limit": 1
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "compile_empty_in_list_rejected",
+    "question": "Which orders have an order ID in an empty list of IDs?",
+    "type": "compile",
+    "compile": {
+      "kind": "empty_in",
+      "plan": {
+        "dataset": "orders",
+        "select": [{ "expr": { "col": "order_id" }, "alias": "x" }],
+        "where": { "cmp": { "left": { "col": "order_id" }, "op": "in", "right": [] } },
+        "limit": 1
+      }
+    }
+  },
+  {
+    "name": "compile_dotted_logical_table_name",
+    "question": "What is c from the logical table named a.b?",
+    "type": "compile",
+    "compile": {
+      "kind": "dotted_table",
+      "schema": {
+        "tables": [
+          {
+            "name": "a.b",
+            "db_table": "ab_t",
+            "columns": [{ "name": "c", "db_column": "c", "type": "int" }]
+          },
+          {
+            "name": "a",
+            "db_table": "a_t",
+            "columns": [{ "name": "b", "db_column": "b", "type": "int" }]
+          }
+        ],
+        "links": []
+      },
+      "plan": {
+        "dataset": "a.b",
+        "select": [{ "expr": { "col": "a.b.c" }, "alias": "x" }],
+        "limit": 1
+      }
+    }
+  },
+  {
+    "name": "compile_legacy_order_by_string_column",
+    "question": "How many orders per customer, ordered by order ID descending?",
+    "type": "compile",
+    "compile": {
+      "kind": "legacy_order_by_string",
+      "plan": {
+        "version": "1.0",
+        "dataset": "orders",
+        "dimensions": [{ "field": "customer_id", "alias": "customer_id" }],
+        "metrics": [{ "agg": "count", "field": "*", "alias": "n" }],
+        "filters": [],
+        "order_by": [{ "by": "order_id", "dir": "desc" }],
+        "limit": 5
+      }
+    }
+  },
+  {
+    "name": "compile_compound_plan_cte_sql",
+    "question": "After restricting to the first five orders, how many rows are in that set?",
+    "type": "compile",
+    "compile": {
+      "kind": "compound_cte_compiles",
+      "plan": {
+        "version": "1.0",
+        "with": [
+          {
+            "name": "first_orders",
+            "plan": {
+              "version": "1.0",
+              "dataset": "orders",
+              "dimensions": [],
+              "metrics": [],
+              "filters": [],
+              "limit": 5,
+              "offset": 0
+            }
+          }
+        ],
+        "dataset": "first_orders",
+        "dimensions": [],
+        "metrics": [{ "agg": "count", "field": "*", "alias": "row_count" }],
+        "filters": [],
+        "limit": 1,
+        "offset": 0
+      }
+    }
+  },
+  {
+    "name": "compile_compound_plan_cte_validation",
+    "question": "After restricting to the first five orders, how many rows are in that set?",
+    "type": "compile",
+    "compile": {
+      "kind": "compound_cte_validates",
+      "schema": {
+        "tables": [
+          {
+            "name": "orders",
+            "columns": [{ "name": "order_id" }, { "name": "customer_id" }]
+          }
+        ]
+      },
+      "plan": {
+        "version": "1.0",
+        "with": [
+          {
+            "name": "first_orders",
+            "plan": {
+              "version": "1.0",
+              "dataset": "orders",
+              "dimensions": [],
+              "metrics": [],
+              "filters": [],
+              "limit": 5,
+              "offset": 0
+            }
+          }
+        ],
+        "dataset": "first_orders",
+        "dimensions": [],
+        "metrics": [{ "agg": "count", "field": "*", "alias": "row_count" }],
+        "filters": [],
         "limit": 1,
         "offset": 0
       }

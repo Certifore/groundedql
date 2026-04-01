@@ -69,12 +69,6 @@ def _join_sort_key(j: Any) -> tuple:
     return ("", "", _stable_json(j))
 
 
-def _cte_sort_key(c: Any) -> tuple:
-    if isinstance(c, dict):
-        return (str(c.get("name") or ""), _stable_json(c))
-    return ("", _stable_json(c))
-
-
 def _rollup_filter_sort_key(f: Any) -> tuple:
     if isinstance(f, dict):
         return (str(f.get("field") or ""), str(f.get("op") or ""), _stable_json(f.get("value")))
@@ -108,7 +102,8 @@ def _canonicalize_commutative_lists(obj: Json) -> None:
             elif k == "with" and isinstance(v, list):
                 for x in v:
                     _canonicalize_commutative_lists(x)
-                obj[k] = sorted(v, key=_cte_sort_key)
+                # Do not sort: CTE order is semantically significant — later bodies may
+                # reference earlier CTE names (see execute_query_plan → canonicalize).
             elif k == "group_by" and isinstance(v, list):
                 for x in v:
                     _canonicalize_commutative_lists(x)
@@ -159,6 +154,9 @@ def canonicalize_query_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
     """
     Return a deep-copied plan with commutative lists sorted and all object keys
     sorted recursively. Safe to call before compile and before plan_hash.
+
+    The ``with`` (CTE) list is *not* reordered: later CTE bodies may reference
+    earlier CTE names; only inner commutative lists inside each CTE plan are normalized.
     """
     if not isinstance(plan, dict):
         raise TypeError("canonicalize_query_plan expects a dict")

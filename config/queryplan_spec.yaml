@@ -106,9 +106,8 @@ structural_invariants: |
   - "contains" means case-insensitive substring match (ILIKE %value%) at compile-time.
 
   ORDER_BY
-  - plan.order_by MUST reference existing output column names:
-    - either a dimension alias, or a metric alias.
-    - NEVER order_by a raw dataset column name unless it is also selected as a dimension alias.
+  - plan.order_by[*].by should name a dimension alias, a metric alias, or a logical column that
+    is valid for the generated GROUP BY / SELECT (same rules as SQL).
 
   LIMIT/OFFSET
   - limit and offset are OPTIONAL.
@@ -131,7 +130,29 @@ structural_invariants: |
       (b) a dimension alias produced by plan.dimensions
     It MUST NOT refer to a raw dataset column (unless that column was explicitly output as a dimension alias).
 
-  FILTER VALUES AND DATES
+# -----------------------------------------------------------------------------
+# COMPOUND QUESTIONS — OPTIONAL "with" (CTEs)
+# -----------------------------------------------------------------------------
+compound_queries_with_ctes: |
+  When a single legacy SELECT cannot express the intent (multiple grains, staged filters),
+  add an optional top-level JSON key "with" (array). Each element is:
+    { "name": "<identifier>", "plan": <nested QueryPlan or select-shaped plan> }
+
+  Rules:
+  - "name" becomes the SQL CTE name; it MUST NOT collide with a logical schema table name.
+  - "plan" uses the same shapes as a normal QueryPlan (legacy dimensions/metrics/filters) or
+    an advanced plan with "select", "set_op", or nested "with".
+  - The outer plan.dataset may reference a CTE "name" as the FROM source (like a table).
+
+  The compiler emits WITH cte AS (...), ... SELECT ... from the outer plan.
+
+  Prefer rollup or a single well-formed legacy plan first; use "with" when the question
+  truly requires a pipeline (e.g. restrict rows in step 1, aggregate in step 2).
+
+# -----------------------------------------------------------------------------
+# FILTER VALUES AND DATES
+# -----------------------------------------------------------------------------
+filter_values_and_dates: |
   - filter values MUST be plain scalars (string, number, null, list).
   - NEVER put SQL expressions (e.g. "CURRENT_TIMESTAMP - INTERVAL '7 days'") as a value.
     The compiler treats all values as bind parameters — SQL expressions will be rejected by Postgres.

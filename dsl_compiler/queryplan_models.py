@@ -60,6 +60,18 @@ class Rollup(BaseModel):
     offset: int = 0
 
 
+class CteDef(BaseModel):
+    """Named sub-plan compiled as WITH name AS (...)."""
+
+    model_config = STRICT
+
+    name: str = Field(..., description="CTE name (SQL identifier, not a schema table name)")
+    plan: Dict[str, Any] = Field(
+        ...,
+        description="Nested plan: legacy 1.0 shape and/or select/set_op/with accepted by Compiler.",
+    )
+
+
 class QueryPlan(BaseModel):
     """
     This is the “legacy” QueryPlan shape you are using today.
@@ -79,6 +91,13 @@ class QueryPlan(BaseModel):
     offset: int = 0
 
     rollup: Optional[Rollup] = None
+
+    # JSON key "with" — SQL CTEs, composed before the main dataset query (see compiler _build_selectable).
+    ctes: Optional[List[CteDef]] = Field(
+        default=None,
+        alias="with",
+        description="Optional WITH clauses; each plan is compiled recursively.",
+    )
 
 
 def queryplan_json_schema() -> Dict[str, Any]:
