@@ -2053,6 +2053,57 @@
     }
   },
   {
+    "name": "compile_chained_cte_validates",
+    "question": "Second CTE reads from first CTE (WITH a AS (...), b AS (SELECT ... FROM a))",
+    "type": "compile",
+    "compile": {
+      "kind": "chained_cte_validates",
+      "schema": {
+        "tables": [
+          {
+            "name": "orders",
+            "columns": [{ "name": "order_id" }, { "name": "customer_id" }]
+          }
+        ]
+      },
+      "plan": {
+        "version": "1.0",
+        "with": [
+          {
+            "name": "filtered_orders",
+            "plan": {
+              "version": "1.0",
+              "dataset": "orders",
+              "dimensions": [],
+              "metrics": [],
+              "filters": [],
+              "limit": 10,
+              "offset": 0
+            }
+          },
+          {
+            "name": "order_counts",
+            "plan": {
+              "version": "1.0",
+              "dataset": "filtered_orders",
+              "dimensions": [],
+              "metrics": [{ "agg": "count", "field": "*", "alias": "n" }],
+              "filters": [],
+              "limit": 1,
+              "offset": 0
+            }
+          }
+        ],
+        "dataset": "order_counts",
+        "dimensions": [],
+        "metrics": [],
+        "filters": [],
+        "limit": 1,
+        "offset": 0
+      }
+    }
+  },
+  {
     "name": "compile_relative_date_calendar_year",
     "question": "$relative_date calendar_year_start resolution",
     "type": "compile",

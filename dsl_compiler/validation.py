@@ -63,6 +63,7 @@ def validate_query_plan_dict(
     schema_path: str,
     *,
     _cte_depth: int = 0,
+    _visible_cte_names: Optional[Set[str]] = None,
 ) -> Tuple[Optional[QueryPlan], List[ValidationErrorItem]]:
     """
     Validates plan_dict:
@@ -75,6 +76,9 @@ def validate_query_plan_dict(
 
     Nested ``with`` / CTE plans are validated recursively when they match the legacy
     QueryPlan shape (or full QueryPlan including nested ``with``).
+
+    ``_visible_cte_names`` (internal): CTE names from earlier siblings in the same
+    ``WITH`` list so ``dataset`` can reference ``WITH a AS (...), b AS (SELECT ... FROM a)``.
 
     Returns:
       (parsed_plan or None, errors)
@@ -96,17 +100,18 @@ def validate_query_plan_dict(
     schema = load_schema_yaml(schema_path)
     table_cols = _schema_tables(schema)
 
-    cte_names = {c.name for c in (plan.ctes or [])}
+    local_cte_names = {c.name for c in (plan.ctes or []) if c.name}
+    visible_cte_names = local_cte_names | (_visible_cte_names or set())
 
     if plan.dataset in table_cols:
         allowed_cols: Optional[Set[str]] = table_cols[plan.dataset]
-    elif plan.dataset in cte_names:
-        # Outer query reads FROM a WITH subquery — column set depends on inner plan; compiler enforces.
+    elif plan.dataset in visible_cte_names:
+        # Query reads FROM a WITH subquery — column set depends on inner plan; compiler enforces.
         allowed_cols = None
     else:
         keys = sorted(table_cols.keys())
-        if cte_names:
-            keys = sorted(set(keys) | cte_names)
+        if visible_cte_names:
+            keys = sorted(set(keys) | visible_cte_names)
         errors.append(
             ValidationErrorItem(
                 path="$.dataset",
@@ -181,7 +186,16 @@ def validate_query_plan_dict(
             except Exception:
                 # Advanced select/set_op-only CTEs: compiler is authoritative; skip Pydantic subtree.
                 continue
-            _, inner_errs = validate_query_plan_dict(merged, schema_path, _cte_depth=_cte_depth + 1)
+            prior_sibling_names = {
+                plan.ctes[j].name for j in range(i) if plan.ctes[j].name
+            }
+            inherited_visible = prior_sibling_names | (_visible_cte_names or set())
+            _, inner_errs = validate_query_plan_dict(
+                merged,
+                schema_path,
+                _cte_depth=_cte_depth + 1,
+                _visible_cte_names=inherited_visible,
+            )
             for e in inner_errs:
                 errors.append(ValidationErrorItem(path=_prefix_cte_path(i, e.path), message=e.message))
 

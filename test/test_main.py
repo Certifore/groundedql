@@ -270,11 +270,11 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         except Exception as e:
             return False, f"compound plan compile: {e}"
 
-    if kind == "compound_cte_validates":
+    if kind in ("compound_cte_validates", "chained_cte_validates"):
         schema = spec.get("schema")
         plan = spec.get("plan")
         if not isinstance(schema, dict) or not isinstance(plan, dict):
-            return False, "compound_cte_validates requires compile.schema and compile.plan"
+            return False, f"{kind} requires compile.schema and compile.plan"
         try:
             with tempfile.TemporaryDirectory() as td:
                 sp2 = P(td) / "schema.yaml"
