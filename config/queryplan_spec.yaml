@@ -253,6 +253,10 @@ semantics_rules: |
     string column in schema_summary for that table where a description or label could appear, combined
     with OR in the advanced where clause (or equivalent), so users only describe columns once in
     schema.yaml and never hand-author SQL patterns.
+  - Do NOT map trade or craft keywords (plumbing, electrical, HVAC, …) onto workflow or enum-like
+    columns such as order_type or order_category unless schema.yaml explicitly documents that those
+    literals appear there. In CMMS-style data, order_type is often PLANNED / HOUSING / SUPPORT; trade
+    names appear in work descriptions, component, shop_name, long text fields, etc.
   - For statistical questions (standard deviation, variance, median, percentile, correlation),
     use the advanced format with the appropriate Postgres function name in a `func` node.
     Do NOT use avg as a proxy for these — use the correct function.

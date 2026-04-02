@@ -209,7 +209,7 @@ plan["meta"] == {
     "retry_count":        0,              # 0 = first attempt succeeded
     "auto_fixes_applied": [],             # list of applied auto-fix descriptions
     "validation_errors":  [],             # empty = valid
-    "lint_errors":        [],             # semantic lint warnings (non-fatal)
+    "lint_errors":        [],             # semantic lint; QueryAgent refuses to execute if non-empty (when enforce_semantic_lint=True)
 }
 ```
 
@@ -228,9 +228,12 @@ class QueryAgent:
         schema_path: str,
         spec_path: str,
         llm: Any,
-        max_plan_retries: int = 1,
+        max_plan_retries: int = 2,
+        enforce_semantic_lint: bool = True,
     )
 ```
+
+`max_plan_retries` is the number of **extra** LLM attempts after the first plan when structural or semantic checks fail. `enforce_semantic_lint` (default True) prevents execution when `semantic_lint` still reports errors after retries; set False only for debugging.
 
 ### `ask(question)`
 
@@ -243,9 +246,21 @@ Returns the same structure as `execute_query_plan` on success. On plan validatio
 ```python
 {
     "error": {
-        "message":          "validation failed after 1 retry",
+        "message":          "validation failed after retries",
         "validation_errors": [{"path": "$.metrics[0].field", "message": "..."}],
         "plan":             {...},
+    }
+}
+```
+
+When semantic lint still fails (and `enforce_semantic_lint` is True):
+
+```python
+{
+    "error": {
+        "message":     "QueryPlan failed semantic lint after retries — plan does not match the question.",
+        "lint_errors": ["Lint: ...", ...],
+        "plan":        {...},
     }
 }
 ```

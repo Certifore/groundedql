@@ -73,6 +73,8 @@ def semantic_lint(
     errors: List[str] = []
 
     _check_multi_part_compound(q, plan, errors)
+    _check_trade_on_workflow_columns(q, plan, errors)
+    _check_compound_outer_uses_filtered_cte(q, plan, errors)
     _check_distinct(q, plan, errors)
     _check_grouping(q, plan, errors)
     _check_top_n(q, plan, errors)
@@ -82,6 +84,104 @@ def semantic_lint(
         _check_grain(q, plan, schema, errors)
 
     return errors
+
+
+# ---------------------------------------------------------------------------
+# Trade keywords vs workflow columns (order_type / order_category)
+# ---------------------------------------------------------------------------
+
+_TRADE_IN_QUESTION = re.compile(
+    r"\b(plumbing|plumb|hvac|electrical|electric|mechanical|carpentry|steam|pipefit)\b",
+    re.I,
+)
+
+_WORKFLOW_ENUM_FIELDS = frozenset({"order_type", "order_category"})
+
+# Values that look like a trade/craft encoded as a filter (not PLANNED / PREVENTIVE / …)
+_TRADE_VALUE_HINT = re.compile(r"plumb|hvac|electric|carpent|mechanic|steamfit|pipe", re.I)
+
+
+def _iter_plans_depth_first(plan: Dict[str, Any]):
+    """Yield this plan and every nested CTE inner plan."""
+    yield plan
+    for w in plan.get("with") or []:
+        if isinstance(w, dict) and isinstance(w.get("plan"), dict):
+            yield from _iter_plans_depth_first(w["plan"])
+
+
+def _collect_filters_from_plan_tree(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for p in _iter_plans_depth_first(plan):
+        out.extend(p.get("filters") or [])
+    return out
+
+
+def _check_trade_on_workflow_columns(q: str, plan: Dict[str, Any], errors: List[str]) -> None:
+    """
+    Fire when the question mentions a trade but filters order_type/order_category with a
+    trade-shaped value — common LLM mistake; trades usually live in free-text fields.
+    """
+    if not _TRADE_IN_QUESTION.search(q):
+        return
+    for f in _collect_filters_from_plan_tree(plan):
+        field = f.get("field")
+        if not isinstance(field, str):
+            continue
+        field = field.split(".")[-1]
+        if field not in _WORKFLOW_ENUM_FIELDS:
+            continue
+        val = f.get("value")
+        if not isinstance(val, str) or not _TRADE_VALUE_HINT.search(val):
+            continue
+        op = (f.get("op") or "").lower()
+        if op not in ("contains", "=", "starts_with", "ends_with"):
+            continue
+        errors.append(
+            "Lint: question mentions a trade/skill; "
+            f"filter on '{field}' with value {val!r} looks like a trade term. "
+            "Columns like order_type and order_category usually hold workflow values "
+            "(PLANNED, HOUSING, PREVENTIVE, …), not trade names. "
+            "Use op 'contains' on description/component/shop free-text columns (often OR several), "
+            "unless the schema states that trade appears in this column."
+        )
+        return
+
+
+def _check_compound_outer_uses_filtered_cte(q: str, plan: Dict[str, Any], errors: List[str]) -> None:
+    """
+    Fire when a multi-deliverable question uses WITH, a CTE applies filters, but the outer
+    query selects from a base dataset with empty filters (ignores the CTE predicates).
+    """
+    if not _is_multi_part_deliverables_question(q):
+        return
+    ctes = plan.get("with") or []
+    if not ctes:
+        return
+    cte_names: set[str] = set()
+    inner_has_filters = False
+    for w in ctes:
+        if not isinstance(w, dict):
+            continue
+        n = w.get("name")
+        if isinstance(n, str):
+            cte_names.add(n)
+        inner = w.get("plan") or {}
+        if inner.get("filters"):
+            inner_has_filters = True
+    if not inner_has_filters:
+        return
+    if plan.get("filters"):
+        return
+    ds = plan.get("dataset")
+    if not isinstance(ds, str):
+        return
+    if ds in cte_names:
+        return
+    errors.append(
+        "Lint: compound plan has a CTE with filters but the outer query uses dataset "
+        f"'{ds}' with empty filters. Point the outer FROM at the CTE that applies the same "
+        "building/keyword/date filters, or repeat those filters on the outer query."
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -155,24 +155,14 @@ class QueryPlanPlanner:
             return yaml.safe_load(f) or {}
 
     def plan(self, question: str) -> Dict[str, Any]:
-        schema_text = self._read_text(self.schema_path)
-        spec_text = yaml.dump(self.spec)
-        schema = self._read_schema()
+        """
+        Single LLM call, no retries. Still runs structural validation and semantic_lint;
+        results are attached in ``meta`` (``lint_errors``, ``validation_errors``).
 
-        messages = build_planner_messages(
-            question=question,
-            schema_yaml_text=schema_text,
-            spec_text=spec_text,
-        )
-
-        plan_dict = self.llm.generate_json(
-            json_schema=queryplan_json_schema(),
-            messages=messages,
-            temperature=self.temperature,
-        )
-        plan_dict, _ = _auto_fix_plan(plan_dict, question, schema)
-        print(f"[DSL] LLM QueryPlan: {plan_dict}")
-        return plan_dict
+        For production, prefer :meth:`plan_with_retry` with ``max_retries >= 1`` so the
+        model can fix lint/validation feedback.
+        """
+        return self.plan_with_retry(question, max_retries=0)
 
     def plan_with_retry(self, question: str, max_retries: int = 1) -> Dict[str, Any]:
         schema_text = self._read_text(self.schema_path)
@@ -198,7 +188,8 @@ class QueryPlanPlanner:
         print(f"[DSL] LLM QueryPlan: {plan_dict}")
 
         _, errs = validate_query_plan_dict(plan_dict, self.schema_path)
-        lint_errs = semantic_lint(question, plan_dict, schema)
+        plan_for_lint = {k: v for k, v in plan_dict.items() if k != "meta"}
+        lint_errs = semantic_lint(question, plan_for_lint, schema)
 
         while (errs or lint_errs) and retry_count < max_retries:
             retry_count += 1
@@ -230,7 +221,8 @@ class QueryPlanPlanner:
             print(f"[DSL] LLM QueryPlan (retry {retry_count}): {plan_dict}")
 
             _, errs = validate_query_plan_dict(plan_dict, self.schema_path)
-            lint_errs = semantic_lint(question, plan_dict, schema)   # <-- pass schema
+            plan_for_lint = {k: v for k, v in plan_dict.items() if k != "meta"}
+            lint_errs = semantic_lint(question, plan_for_lint, schema)
 
         # Attach explainability metadata
         plan_dict["meta"] = {

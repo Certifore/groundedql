@@ -208,6 +208,8 @@ def _semantics_rules(tables: list) -> str:
         "      <  {\"$relative_date\": {\"op\": \"calendar_year_start\", \"year_offset\": 0}}",
         "- Topic/trade keywords (plumbing, etc.): OR \"contains\" across all plausible string columns",
         "  for that table from schema_summary — do not use only one column unless the question names it.",
+        "- Do NOT map trade names onto order_type/order_category unless the schema says so;",
+        "  those columns are usually workflow (PLANNED, HOUSING, PREVENTIVE, …), not crafts.",
     ]
     # Per-table grain rules
     for t in tables:

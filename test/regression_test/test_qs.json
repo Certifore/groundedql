@@ -1122,6 +1122,81 @@
     }
   },
   {
+    "name": "lint_trade_on_workflow_columns_fires",
+    "question": "How many plumbing work orders were in page house last year and list the most recent 10 and which rooms",
+    "plan": {
+      "version": "1.0",
+      "dataset": "work_orders",
+      "dimensions": [],
+      "metrics": [],
+      "filters": [],
+      "limit": 10,
+      "offset": 0,
+      "with": [
+        {
+          "name": "plumbing_cte",
+          "plan": {
+            "version": "1.0",
+            "dataset": "work_orders",
+            "dimensions": [],
+            "metrics": [
+              { "agg": "count_distinct", "field": "work_order_id", "alias": "n" }
+            ],
+            "filters": [
+              { "field": "order_type", "op": "contains", "value": "PLUMBING" }
+            ],
+            "limit": 1,
+            "offset": 0
+          }
+        }
+      ]
+    },
+    "type": "lint",
+    "lint": {
+      "expect": "fires",
+      "fragment": "workflow values"
+    }
+  },
+  {
+    "name": "lint_compound_outer_ignores_filtered_cte_fires",
+    "question": "How many plumbing work orders were in page house last year and list the most recent 10 and which rooms",
+    "plan": {
+      "version": "1.0",
+      "dataset": "work_orders",
+      "dimensions": [
+        { "field": "work_order_id", "alias": "work_order_id" }
+      ],
+      "metrics": [],
+      "filters": [],
+      "order_by": [{ "by": "edit_date", "dir": "desc" }],
+      "limit": 10,
+      "offset": 0,
+      "with": [
+        {
+          "name": "plumbing_work_orders",
+          "plan": {
+            "version": "1.0",
+            "dataset": "work_orders",
+            "dimensions": [],
+            "metrics": [
+              { "agg": "count_distinct", "field": "work_order_id", "alias": "total_plumbing" }
+            ],
+            "filters": [
+              { "field": "building_name", "op": "contains", "value": "PAGE HOUSE" }
+            ],
+            "limit": 1,
+            "offset": 0
+          }
+        }
+      ]
+    },
+    "type": "lint",
+    "lint": {
+      "expect": "fires",
+      "fragment": "CTE with filters"
+    }
+  },
+  {
     "name": "lint_grain_fires",
     "question": "How many customers are there?",
     "plan": {

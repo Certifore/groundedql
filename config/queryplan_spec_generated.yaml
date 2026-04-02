@@ -299,7 +299,9 @@ semantics_rules: "- Use 'contains' for fuzzy name/keyword matching (compiled as 
   : {\"op\": \"calendar_year_start\", \"year_offset\": 0}}\n- Topic/trade keywords\
   \ (plumbing, etc.): OR \"contains\" across all plausible string columns\n  for that\
   \ table from schema_summary — do not use only one column unless the question names\
-  \ it.\n- For 'customers': when counting distinct customers, use count_distinct('customer_id')\
+  \ it.\n- Do NOT map trade names onto order_type/order_category unless the schema\
+  \ says so;\n  those columns are usually workflow (PLANNED, HOUSING, PREVENTIVE,\
+  \ …), not crafts.\n- For 'customers': when counting distinct customers, use count_distinct('customer_id')\
   \ — 'customer_id' is the primary identifier.\n- For 'orders': when counting distinct\
   \ orders, use count_distinct('order_id') — 'order_id' is the primary identifier.\n\
   - For 'products': when counting distinct products, use count_distinct('product_id')\
