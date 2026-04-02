@@ -807,6 +807,13 @@ class Compiler:
                 clauses.append({"cmp": {"left": {"col": field}, "op": op, "right": value}})
             where = {"and": clauses}
 
+        adv_where = plan.get("where")
+        if adv_where is not None:
+            if where is None:
+                where = adv_where
+            else:
+                where = {"and": [where, adv_where]}
+
         out = {
             "dataset": dataset,
             "joins": joins,

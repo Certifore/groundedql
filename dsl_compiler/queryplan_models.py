@@ -74,8 +74,9 @@ class CteDef(BaseModel):
 
 class QueryPlan(BaseModel):
     """
-    This is the “legacy” QueryPlan shape you are using today.
-    You can later add the advanced format as a separate model.
+    Legacy QueryPlan shape plus optional advanced ``where`` tree (boolean ``and`` / ``or`` / ``cmp``).
+    When ``keyword_search_or`` is set in schema.yaml for a table, combine legacy ``filters`` (AND)
+    with ``where`` for OR-of-contains across those columns — see queryplan spec examples.
     """
     model_config = STRICT
 
@@ -85,6 +86,12 @@ class QueryPlan(BaseModel):
     filters: List[QueryFilter] = Field(default_factory=list)
     dimensions: List[QueryDimension] = Field(default_factory=list)
     metrics: List[QueryMetric] = Field(default_factory=list)
+
+    # Advanced predicate tree merged with legacy filters in the compiler (AND).
+    where: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional boolean tree: {and: [...]}, {or: [...]}, {cmp: {left, op, right}}, {not: ...}",
+    )
 
     order_by: List[OrderBy] = Field(default_factory=list)
     limit: Optional[int] = 100

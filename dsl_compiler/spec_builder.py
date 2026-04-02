@@ -402,6 +402,47 @@ def _build_examples(tables: list) -> List[Dict[str, Any]]:
                 },
             })
 
+    # Keyword OR (schema keyword_search_or): show filters AND + where.or — generic column names from schema
+    for t in tables:
+        kso = t.get("keyword_search_or")
+        if not isinstance(kso, list) or len(kso) < 2:
+            continue
+        cols = [c for c in kso if isinstance(c, str)]
+        if len(cols) < 2:
+            continue
+        tname = t.get("name")
+        pid = t.get("primary_id") or "id"
+        kw = "keyword"  # placeholder — replace with trade/symptom term from the question
+        or_branch = []
+        for col in cols:
+            or_branch.append({"cmp": {"left": {"col": col}, "op": "contains", "right": kw}})
+        examples.append({
+            "question": (
+                f"How many {tname} in a building last year matching a free-text trade/symptom "
+                f"(search across {cols} with OR, not AND on one column)?"
+            ),
+            "note": (
+                f"Table '{tname}' has keyword_search_or {cols!r}: use legacy filters for building/dates "
+                "and a top-level `where` with `or` of `cmp` contains for the keyword across ALL listed columns."
+            ),
+            "plan": {
+                "version": "1.0",
+                "dataset": tname,
+                "dimensions": [],
+                "metrics": [{"agg": "count_distinct", "field": pid, "alias": f"total_{tname}"}],
+                "filters": [
+                    {"field": "building_name", "op": "contains", "value": "BUILDING NAME"},
+                    {"field": "entry_date", "op": ">=", "value": "2025-01-01T00:00:00+00:00"},
+                    {"field": "entry_date", "op": "<", "value": "2026-01-01T00:00:00+00:00"},
+                ],
+                "where": {"or": or_branch},
+                "order_by": [],
+                "limit": 1,
+                "offset": 0,
+            },
+        })
+        break  # one generic example is enough
+
     return examples
 
 
