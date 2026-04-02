@@ -191,6 +191,9 @@ def _plan_construction_procedure() -> str:
         "   - OMIT limit from inner plan so all groups are included.\n"
         "   - rollup.limit=1 for scalar result.\n"
         "7) Order + limit: for 'top N' set order_by metric alias desc + limit=N.\n"
+        "8) Multi-CTE questions: the outer query's `dataset` should be the CTE name that produces the "
+        "rows you return (e.g. listing CTE), NOT the base table again with empty filters — or repeat "
+        "the same filters/`where` on the outer query.\n"
     )
 
 

@@ -185,11 +185,14 @@ def _check_compound_outer_uses_filtered_cte(q: str, plan: Dict[str, Any], errors
         if isinstance(n, str):
             cte_names.add(n)
         inner = w.get("plan") or {}
-        if inner.get("filters"):
+        if inner.get("filters") or inner.get("where"):
             inner_has_filters = True
     if not inner_has_filters:
         return
     if _substantive_outer_filters(plan.get("filters") or []):
+        return
+    # Outer query may use only advanced `where` (merged with filters in the compiler).
+    if plan.get("where") is not None:
         return
     ds = plan.get("dataset")
     if not isinstance(ds, str):
@@ -394,6 +397,11 @@ def _check_multi_part_compound(q: str, plan: Dict[str, Any], errors: List[str]) 
     if plan.get("with"):
         return
     if plan.get("set_op") or plan.get("rollup"):
+        return
+    # Single-query escape hatch: substantive legacy filters + advanced `where` (e.g. OR across
+    # keyword_search_or). Prefer separate CTEs for count vs list when grains differ, but allow
+    # execution when the planner already combined building/date filters with a `where.or` tree.
+    if _substantive_outer_filters(plan.get("filters") or []) and plan.get("where") is not None:
         return
 
     errors.append(
