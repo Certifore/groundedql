@@ -8,6 +8,7 @@ from .join_planner import auto_inject_joins, build_link_graph, shortest_join_pat
 from .plan_canonical import canonicalize_query_plan, plan_fingerprint
 from .spec_builder import build_spec, write_spec
 from .decompose import is_compound, split_compound, SubQuestion
+from .plan_autofix import autofix_plan
 from .exceptions import (
     DSLCompilerError,
     SchemaError,
@@ -37,6 +38,7 @@ __all__ = [
     "is_compound",
     "split_compound",
     "SubQuestion",
+    "autofix_plan",
     "DSLCompilerError",
     "SchemaError",
     "QueryPlanError",

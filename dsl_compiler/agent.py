@@ -13,6 +13,7 @@ from .api.api import execute_query_plan
 from .llm_adapters import make_llm_client
 from .semantic_lint import semantic_lint
 from .decompose import is_compound, split_compound, SubQuestion
+from .plan_autofix import autofix_plan
 
 
 class QueryAgent:
@@ -60,11 +61,16 @@ class QueryAgent:
                 }
             }
 
+        schema_data = yaml.safe_load(
+            Path(self.schema_path).read_text(encoding="utf-8")
+        ) or {}
+
+        plan_body = {k: v for k, v in plan_dict.items() if k != "meta"}
+        autofix_plan(plan_body, schema_data)
+        for k, v in plan_body.items():
+            plan_dict[k] = v
+
         if self.enforce_semantic_lint:
-            schema_data = yaml.safe_load(
-                Path(self.schema_path).read_text(encoding="utf-8")
-            ) or {}
-            plan_body = {k: v for k, v in plan_dict.items() if k != "meta"}
             lint_errs = semantic_lint(question, plan_body, schema_data)
             if lint_errs:
                 return {
