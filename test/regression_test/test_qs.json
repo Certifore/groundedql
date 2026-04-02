@@ -767,6 +767,23 @@
     }
   },
   {
+    "name": "legacy_group_by_includes_order_by_column",
+    "question": "Regression: legacy plan with GROUP BY (dimensions + metrics) and ORDER BY on a column not listed as a dimension must run (PostgreSQL requires that column in GROUP BY).",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [
+        { "field": "ship_country", "alias": "ship_country" },
+        { "field": "order_id", "alias": "order_id" }
+      ],
+      "metrics": [{ "agg": "count_distinct", "field": "order_id", "alias": "n" }],
+      "filters": [],
+      "order_by": [{ "by": "order_date", "dir": "desc" }],
+      "limit": 3,
+      "offset": 0
+    }
+  },
+  {
     "name": "lint_distinct_fires",
     "question": "How many distinct countries do customers come from?",
     "plan": {
@@ -998,6 +1015,56 @@
         "limit": 1,
         "offset": 0
       }
+    },
+    "type": "lint",
+    "lint": {
+      "expect": "clean"
+    }
+  },
+  {
+    "name": "lint_multi_part_compound_fires",
+    "question": "How many plumbing work orders were in page house last year and list the most recent 10 and which rooms",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [{ "field": "order_id", "alias": "order_id" }],
+      "metrics": [{ "agg": "count_distinct", "field": "order_id", "alias": "n" }],
+      "filters": [],
+      "order_by": [{ "by": "order_date", "dir": "desc" }],
+      "limit": 10,
+      "offset": 0
+    },
+    "type": "lint",
+    "lint": {
+      "expect": "fires",
+      "fragment": "multiple deliverables"
+    }
+  },
+  {
+    "name": "lint_multi_part_compound_clean",
+    "question": "How many plumbing work orders were in page house last year and list the most recent 10 and which rooms",
+    "plan": {
+      "version": "1.0",
+      "with": [
+        {
+          "name": "filtered_slice",
+          "plan": {
+            "version": "1.0",
+            "dataset": "orders",
+            "dimensions": [],
+            "metrics": [],
+            "filters": [],
+            "limit": 10,
+            "offset": 0
+          }
+        }
+      ],
+      "dataset": "filtered_slice",
+      "dimensions": [],
+      "metrics": [{ "agg": "count", "field": "*", "alias": "row_count" }],
+      "filters": [],
+      "limit": 1,
+      "offset": 0
     },
     "type": "lint",
     "lint": {

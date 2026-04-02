@@ -149,6 +149,17 @@ compound_queries_with_ctes: |
   Prefer rollup or a single well-formed legacy plan first; use "with" when the question
   truly requires a pipeline (e.g. restrict rows in step 1, aggregate in step 2).
 
+  MULTI-PART NATURAL LANGUAGE (same user message, several answers):
+  If the user asks for more than one analytical result in one sentence — e.g. (i) a total
+  count, (ii) a ranked or recent list (top N / most recent), AND (iii) row-level detail
+  such as "which rooms" — do NOT force that into one grouped legacy query with mixed
+  dimensions and metrics. Instead emit a compound plan:
+  - Use one or more CTEs to apply filters and/or restrict to the relevant rows.
+  - Use the outer query for listing (dimensions + order_by + limit) or for a scalar metric.
+  - When a global count and a per-row list are both required, use separate CTEs or
+    compute the count in a CTE and join or UNION as appropriate; do not rely on a single
+    GROUP BY that mixes entity grain with list sorting unless the schema truly matches.
+
 # -----------------------------------------------------------------------------
 # FILTER VALUES AND DATES
 # -----------------------------------------------------------------------------
@@ -181,6 +192,9 @@ plan_construction_procedure: |
      - If the question asks for a LIST of entities: use dimensions + optional metrics.
      - If the question asks for a SINGLE scalar: usually metrics only (no dimensions),
        OR dimensions + rollup (if it is an "aggregate of grouped values").
+     - If the question combines HOW MANY / COUNT with LIST / MOST RECENT / TOP N and
+       WHICH / WHAT (multiple deliverables in one question), prefer compound_queries_with_ctes
+       (pipeline with "with") instead of one legacy plan.
 
   4) Decide grouping:
      - If the question says "by X", "per X", "grouped by X": put X in dimensions.

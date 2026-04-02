@@ -715,6 +715,54 @@ class Compiler:
 
             select_items.append({"expr": expr, "alias": alias})
 
+        # With GROUP BY, PostgreSQL requires ORDER BY expressions to appear in GROUP BY or be
+        # aggregates. LLMs often set order_by to a time column (e.g. entry_date) without listing
+        # it as a dimension — add those base columns to group_by so SQL is valid.
+        if group_by and order_by:
+            metric_aliases = {m.get("alias") for m in mets if isinstance(m.get("alias"), str)}
+            dim_alias_to_field = {
+                d.get("alias"): d.get("field")
+                for d in dims
+                if isinstance(d.get("alias"), str) and isinstance(d.get("field"), str)
+            }
+            grouped: set[str] = set()
+            for d in dims:
+                f = d.get("field")
+                if isinstance(f, str):
+                    grouped.add(f)
+                    grouped.add(f.split(".", 1)[-1])
+
+            def _order_by_resolved_to_grouped(by_key: str) -> bool:
+                if by_key in metric_aliases:
+                    return True
+                if by_key in dim_alias_to_field:
+                    f = dim_alias_to_field[by_key]
+                    return f in grouped or f.split(".", 1)[-1] in grouped
+                if by_key in grouped:
+                    return True
+                if "." in by_key and by_key.split(".", 1)[-1] in grouped:
+                    return True
+                return False
+
+            tbl = self.tables.get(dataset)
+            logical_names = {c.logical for c in tbl.columns.values()} if tbl else set()
+
+            for ob in order_by:
+                if not isinstance(ob, dict):
+                    continue
+                by = ob.get("by")
+                if not isinstance(by, str):
+                    continue
+                if _order_by_resolved_to_grouped(by):
+                    continue
+                logical = by.split(".", 1)[-1] if "." in by else by
+                if logical not in logical_names:
+                    continue
+                if logical in grouped:
+                    continue
+                group_by.append({"col": logical})
+                grouped.add(logical)
+
         # If no dimensions and no metrics, select all columns from the schema table
         if not select_items:
             if dataset in self.tables:

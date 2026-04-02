@@ -38,6 +38,19 @@ def _order_by(plan: Dict[str, Any]) -> List[Any]:
     return plan.get("order_by") or []
 
 
+def _is_multi_part_deliverables_question(q: str) -> bool:
+    """Count + list/rank + which/what detail — needs compound CTE plan, not one grouped query."""
+    has_count = _has(r"\bhow many\b", q) or _has(r"\bnumber of\b", q)
+    has_list = (
+        _has(r"\blist\b", q)
+        or _has(r"\bmost recent\b", q)
+        or _has(r"\btop\s+\d+\b", q)
+        or _has(r"\bshow (me )?the\b", q)
+    )
+    has_detail = _has(r"\bwhich\b", q) or _has(r"\bwhat are the\b", q) or _has(r"\bwhat is the\b", q)
+    return bool(has_count and has_list and has_detail)
+
+
 # Public API
 
 def semantic_lint(
@@ -59,6 +72,7 @@ def semantic_lint(
     q = _q(question)
     errors: List[str] = []
 
+    _check_multi_part_compound(q, plan, errors)
     _check_distinct(q, plan, errors)
     _check_grouping(q, plan, errors)
     _check_top_n(q, plan, errors)
@@ -156,6 +170,9 @@ _TOP_N_PATTERNS = [
 def _check_top_n(q: str, plan: Dict[str, Any], errors: List[str]) -> None:
     if not any(_has(p, q) for p in _TOP_N_PATTERNS):
         return
+    # "most recent" / "top N" inside a multi-clause question is addressed by compound "with", not order_by on a single legacy plan
+    if _is_multi_part_deliverables_question(q):
+        return
 
     match = _first_match(_TOP_N_PATTERNS, q)
     missing = []
@@ -174,7 +191,27 @@ def _check_top_n(q: str, plan: Dict[str, Any], errors: List[str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Rule 4: Two-step aggregation intent → rollup must be present
+# Rule 4: Multi-part deliverables (count + list + detail) → compound "with"
+# ---------------------------------------------------------------------------
+
+def _check_multi_part_compound(q: str, plan: Dict[str, Any], errors: List[str]) -> None:
+    if not _is_multi_part_deliverables_question(q):
+        return
+    if plan.get("with"):
+        return
+    if plan.get("set_op") or plan.get("rollup"):
+        return
+
+    errors.append(
+        "Lint: the question asks for multiple deliverables (e.g. a count, a ranked list, and detail). "
+        'Prefer a compound plan with top-level "with" (CTEs): pipeline filters in early CTEs, '
+        "outer SELECT for listing or metrics; use separate CTEs when counts and lists need different grains. "
+        "Avoid one grouped legacy query that mixes unrelated grains."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rule 5: Two-step aggregation intent → rollup must be present
 # ---------------------------------------------------------------------------
 
 _TWO_STEP_PATTERNS = [
@@ -212,7 +249,7 @@ def _check_two_step_aggregation(q: str, plan: Dict[str, Any], errors: List[str])
 
 
 # ---------------------------------------------------------------------------
-# Rule 5: Grain — count metrics should use primary_id when counting entities
+# Rule 6: Grain — count metrics should use primary_id when counting entities
 # ---------------------------------------------------------------------------
 
 _COUNT_QUESTION_PATTERNS = [
