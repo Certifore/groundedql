@@ -252,18 +252,32 @@ def _check_keyword_search_or(plan: Dict[str, Any], schema: Dict[str, Any], error
         for sub in _iter_plans_depth_first(plan):
             if sub.get("dataset") != name:
                 continue
-            if _or_tree_contains_all_keyword_cols(sub.get("where"), colset):
-                continue
-            keyword_fields: List[str] = []
+            has_correct_or = _or_tree_contains_all_keyword_cols(sub.get("where"), colset)
+
+            legacy_kw: List[str] = []
             for f in sub.get("filters") or []:
                 if (f.get("op") or "").lower() != "contains":
                     continue
                 field = (f.get("field") or "").split(".")[-1]
                 if field in colset:
-                    keyword_fields.append(field)
-            if not keyword_fields:
+                    legacy_kw.append(field)
+
+            if has_correct_or and legacy_kw:
+                errors.append(
+                    f"Lint: table '{name}' keyword_search_or {cols!r}: the `where` OR tree is correct "
+                    f"but filters also contain AND-ed `contains` on {sorted(set(legacy_kw))!r}. "
+                    "Those legacy filters require ALL columns to match (AND), defeating the OR intent. "
+                    "Remove keyword `contains` filters from the `filters` array — the `where.or` "
+                    "already handles the keyword search correctly."
+                )
+                return
+
+            if has_correct_or:
                 continue
-            uniq_kw = set(keyword_fields)
+
+            if not legacy_kw:
+                continue
+            uniq_kw = set(legacy_kw)
             if len(uniq_kw) >= 2:
                 errors.append(
                     f"Lint: table '{name}' keyword_search_or {cols!r}: legacy filters AND "
