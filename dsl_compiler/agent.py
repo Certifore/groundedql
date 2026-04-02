@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 from sqlalchemy.engine import Engine
@@ -11,6 +12,7 @@ from .validation import validate_query_plan_dict
 from .api.api import execute_query_plan
 from .llm_adapters import make_llm_client
 from .semantic_lint import semantic_lint
+from .decompose import is_compound, split_compound, SubQuestion
 
 
 class QueryAgent:
@@ -78,3 +80,61 @@ class QueryAgent:
             schema_path=self.schema_path,
             query_plan=plan_dict,
         )
+
+    def ask_compound(self, question: str) -> Dict[str, Any]:
+        """
+        Smart entry point that handles compound questions automatically.
+
+        If the question asks for multiple deliverables (e.g. a count AND a
+        ranked list with detail columns), it splits the question into focused
+        sub-questions, runs each through :meth:`ask`, and merges the results.
+
+        For simple questions it delegates to :meth:`ask` directly.
+
+        Returns a dict with:
+            - ``"compound": False, ...`` for simple questions (same as ``ask()``)
+            - ``"compound": True, "parts": [...]`` for compound questions, where
+              each part is ``{"role": str, "question": str, "result": dict}``
+        """
+        if not is_compound(question):
+            result = self.ask(question)
+            result["compound"] = False
+            return result
+
+        subs = split_compound(question)
+        print(
+            f"[QCE] Compound question detected — splitting into {len(subs)} sub-questions.",
+            file=sys.stderr,
+        )
+
+        parts: List[Dict[str, Any]] = []
+        has_success = False
+
+        for sq in subs:
+            print(f"[QCE]   {sq.role}: {sq.text!r}", file=sys.stderr)
+            try:
+                r = self.ask(sq.text)
+                is_error = isinstance(r, dict) and bool(r.get("error"))
+                if not is_error:
+                    has_success = True
+                parts.append({
+                    "role": sq.role,
+                    "question": sq.text,
+                    "result": r,
+                })
+            except Exception as exc:
+                print(f"[QCE]   {sq.role} failed: {exc}", file=sys.stderr)
+                parts.append({
+                    "role": sq.role,
+                    "question": sq.text,
+                    "result": {"error": {"message": str(exc)}},
+                })
+
+        if not has_success:
+            first_err = next(
+                (p["result"] for p in parts if p["result"].get("error")),
+                {"error": {"message": "All sub-questions failed."}},
+            )
+            return first_err
+
+        return {"compound": True, "parts": parts}
