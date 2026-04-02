@@ -12,6 +12,7 @@ from .api.api import _resolve_relative_dates
 from .semantic_lint import semantic_lint
 from .join_planner import auto_inject_joins
 from .plan_canonical import canonicalize_query_plan, plan_fingerprint
+from .plan_autofix import autofix_plan as _schema_autofix
 from .spec_builder import build_minimal_queryplan_spec
 
 
@@ -83,6 +84,13 @@ def _auto_fix_plan(plan_dict: dict, question: str = "", schema: Optional[Dict[st
         plan_dict = auto_inject_joins(plan_dict, schema)
         if plan_dict is not original:
             fixes.append("joins_auto_injected_from_link_graph")
+
+    # Schema-aware fixes: count→count_distinct, keyword OR completion, etc.
+    if schema is not None:
+        plan_body = {k: v for k, v in plan_dict.items() if k != "meta"}
+        _schema_autofix(plan_body, schema)
+        for k, v in plan_body.items():
+            plan_dict[k] = v
 
     plan_dict = canonicalize_query_plan(plan_dict)
     fixes.append("plan_canonicalized")
