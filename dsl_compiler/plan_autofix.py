@@ -112,19 +112,60 @@ def _or_tree_columns(where: Any) -> Set[str]:
     return cols
 
 
+def _extract_keyword_value(plan: Dict[str, Any], kso: Set[str]) -> Optional[str]:
+    """Find the search term from filters or where.or that targets keyword_search_or columns."""
+    for f in plan.get("filters") or []:
+        if not isinstance(f, dict):
+            continue
+        if (f.get("op") or "").lower() == "contains":
+            field = (f.get("field") or "").split(".")[-1]
+            if field in kso and f.get("value"):
+                return str(f["value"])
+
+    where = plan.get("where")
+    if isinstance(where, dict) and "or" in where:
+        for item in where.get("or") or []:
+            if not isinstance(item, dict) or "cmp" not in item:
+                continue
+            c = item["cmp"]
+            if (c.get("op") or "").lower() == "contains" and c.get("right"):
+                return str(c["right"])
+    return None
+
+
+def _build_keyword_or(kso: Set[str], value: str) -> Dict[str, Any]:
+    """Build a correct where.or tree covering all keyword_search_or columns."""
+    return {"or": [
+        {"cmp": {"left": {"col": col}, "op": "contains", "right": value}}
+        for col in sorted(kso)
+    ]}
+
+
 def _fix_duplicate_keyword_filters(plan: Dict[str, Any], meta: Dict[str, Any]) -> None:
-    """Strip keyword_search_or columns from filters when where.or handles them."""
+    """Ensure keyword_search_or columns use where.or (not filters) with all columns covered."""
     kso: Optional[Set[str]] = meta.get("keyword_search_or")
     if not kso:
         return
 
-    where = plan.get("where")
-    if not where:
+    keyword_value = _extract_keyword_value(plan, kso)
+    if not keyword_value:
         return
 
-    or_cols = _or_tree_columns(where)
+    where = plan.get("where")
+    or_cols = _or_tree_columns(where) if where else set()
+
     if not kso.issubset(or_cols):
-        return
+        correct_or = _build_keyword_or(kso, keyword_value)
+        if where is None:
+            plan["where"] = correct_or
+        elif isinstance(where, dict) and "or" in where:
+            plan["where"] = correct_or
+        else:
+            plan["where"] = {"and": [where, correct_or]}
+        print(
+            f"[QCE autofix] Built/completed where.or for keyword_search_or columns: {sorted(kso)}",
+            file=sys.stderr,
+        )
 
     filters = plan.get("filters")
     if not filters:
