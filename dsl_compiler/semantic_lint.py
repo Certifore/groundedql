@@ -526,6 +526,13 @@ def _check_grain(q: str, plan: Dict[str, Any], schema: Dict[str, Any], errors: L
                 f"The declared primary identifier for '{dataset}' is '{primary_id}'. "
                 f"Use agg='count_distinct', field='{primary_id}' for an accurate entity count."
             )
+        elif agg == "count" and field == primary_id:
+            errors.append(
+                f"Lint: question implies counting {dataset} entities ('{_first_match(_COUNT_QUESTION_PATTERNS, q)}') "
+                f"but metric '{alias}' uses agg='count' on '{primary_id}' — "
+                f"COUNT({primary_id}) counts rows (including duplicates from joins/phases). "
+                f"Use agg='count_distinct', field='{primary_id}' for an accurate entity count."
+            )
         elif agg in {"count", "count_distinct"} and field != primary_id:
             errors.append(
                 f"Lint: question implies counting {dataset} entities ('{_first_match(_COUNT_QUESTION_PATTERNS, q)}') "
