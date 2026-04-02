@@ -47,7 +47,9 @@ def build_spec(schema_path: str | Path) -> Dict[str, Any]:
         "Output MUST be valid JSON only (no markdown, no prose, no SQL)."
     )
 
-    spec["system_instructions"] = _build_system_instructions(tables)
+    spec["system_instructions"] = _build_system_instructions(
+        tables, context=schema.get("context", "")
+    )
     spec["defaults"] = {"limit": 100, "offset": 0, "max_limit": 1000}
     spec["operators_supported"] = _operators_block()
     spec["schema_summary"] = _build_schema_summary(tables)
@@ -91,13 +93,21 @@ def _load_schema(path: str | Path) -> Dict[str, Any]:
     return data
 
 
-def _build_system_instructions(tables: list) -> str:
+def _build_system_instructions(tables: list, context: str = "") -> str:
     table_names = [t["name"] for t in tables if "name" in t]
     names_str = ", ".join(f'"{n}"' for n in table_names)
+    ctx_block = ""
+    if context:
+        ctx_block = (
+            f"\nDATA CONTEXT:\n{context.strip()}\n"
+            "If the user mentions the organization/campus/site by name, that refers to the "
+            "ENTIRE dataset — do NOT add a filter for it.\n\n"
+        )
     return (
         "You are a QueryPlan generator.\n"
         "Your job is to convert a natural-language question into a JSON QueryPlan object.\n"
         "You MUST output JSON only — no markdown, no prose, no SQL.\n\n"
+        f"{ctx_block}"
         "RULES:\n"
         f"- dataset MUST be one of: {names_str}\n"
         "- Use ONLY the logical column names listed in schema_summary below.\n"
