@@ -746,7 +746,16 @@ class Compiler:
                 return False
 
             tbl = self.tables.get(dataset)
-            logical_names = {c.logical for c in tbl.columns.values()} if tbl else set()
+            if tbl is not None:
+                logical_names = {c.logical for c in tbl.columns.values()}
+            else:
+                # Outer query over a CTE: `dataset` is not a schema table name, so the lookup
+                # above is empty and ORDER BY columns (e.g. entry_date) were never appended to
+                # GROUP BY, causing PostgreSQL GroupingError. Accept any logical column name
+                # declared on schema tables (CTEs reuse the same logical names).
+                logical_names = set()
+                for t in self.tables.values():
+                    logical_names.update(c.logical for c in t.columns.values())
 
             for ob in order_by:
                 if not isinstance(ob, dict):
