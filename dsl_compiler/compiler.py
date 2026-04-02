@@ -715,11 +715,12 @@ class Compiler:
 
             select_items.append({"expr": expr, "alias": alias})
 
+        metric_aliases = {m.get("alias") for m in mets if isinstance(m.get("alias"), str)}
+
         # With GROUP BY, PostgreSQL requires ORDER BY expressions to appear in GROUP BY or be
         # aggregates. LLMs often set order_by to a time column (e.g. entry_date) without listing
         # it as a dimension — add those base columns to group_by so SQL is valid.
         if group_by and order_by:
-            metric_aliases = {m.get("alias") for m in mets if isinstance(m.get("alias"), str)}
             dim_alias_to_field = {
                 d.get("alias"): d.get("field")
                 for d in dims
@@ -762,6 +763,18 @@ class Compiler:
                     continue
                 group_by.append({"col": logical})
                 grouped.add(logical)
+
+        # Scalar aggregate (no dimensions → no GROUP BY): ORDER BY a raw column is invalid
+        # (PostgreSQL GroupingError). LLMs often copy order_by from a detail query. Keep only
+        # clauses that sort by a metric alias (present in the SELECT list).
+        if not group_by and mets and order_by:
+            order_by = [
+                ob
+                for ob in order_by
+                if isinstance(ob, dict)
+                and isinstance(ob.get("by"), str)
+                and ob.get("by") in metric_aliases
+            ]
 
         # If no dimensions and no metrics, select all columns from the schema table
         if not select_items:

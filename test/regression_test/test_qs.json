@@ -2217,6 +2217,33 @@
     }
   },
   {
+    "name": "compile_scalar_aggregate_strips_order_by",
+    "question": "Metrics-only legacy plan: ORDER BY raw column is invalid for scalar aggregate",
+    "type": "compile",
+    "compile": {
+      "kind": "scalar_aggregate_strips_order_by_compiles",
+      "schema": {
+        "tables": [
+          {
+            "name": "orders",
+            "db_table": "orders",
+            "columns": [{ "name": "order_id" }, { "name": "order_date" }]
+          }
+        ]
+      },
+      "plan": {
+        "version": "1.0",
+        "dataset": "orders",
+        "dimensions": [],
+        "metrics": [{ "agg": "count", "field": "*", "alias": "total_rows" }],
+        "filters": [],
+        "limit": 1,
+        "offset": 0,
+        "order_by": [{ "by": "order_date", "dir": "desc" }]
+      }
+    }
+  },
+  {
     "name": "compile_cte_outer_count_distinct",
     "question": "Outer legacy plan: dataset is CTE name; metric count_distinct on column from CTE",
     "type": "compile",

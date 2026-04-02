@@ -305,9 +305,35 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
                 return False, f"expected WITH CTE in SQL: {sql[:240]}"
             if "count(distinct" not in sql_l.replace(" ", ""):
                 return False, f"expected COUNT(DISTINCT ...) in SQL: {sql[:240]}"
+            # Outer plan includes order_by by edit_date; scalar aggregate must drop it (no inner ORDER BY).
+            if "order by" in sql_l:
+                return False, f"invalid outer order_by should be stripped: {sql[:320]}"
             return True, None
         except Exception as e:
             return False, f"cte outer count_distinct compile: {e}"
+
+    if kind == "scalar_aggregate_strips_order_by_compiles":
+        schema = spec.get("schema")
+        plan = spec.get("plan")
+        if not isinstance(schema, dict) or not isinstance(plan, dict):
+            return False, "scalar_aggregate_strips_order_by_compiles requires compile.schema and compile.plan"
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                sp2 = P(td) / "schema.yaml"
+                sp2.write_text(yaml.safe_dump(schema), encoding="utf-8")
+                _, verr = validate_query_plan_dict(plan, str(sp2))
+                if verr:
+                    return False, f"scalar aggregate validation: {verr}"
+            c = Compiler(schema)
+            sql, _ = c.compile(plan)
+            sql_l = sql.lower()
+            if "count(" not in sql_l:
+                return False, f"expected aggregate in SQL: {sql[:240]}"
+            if "order by" in sql_l:
+                return False, f"scalar aggregate must drop ORDER BY on non-metric columns: {sql[:320]}"
+            return True, None
+        except Exception as e:
+            return False, f"scalar aggregate strip order_by: {e}"
 
     if kind == "relative_date_calendar_year":
         import datetime as dt
