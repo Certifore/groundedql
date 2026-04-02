@@ -1072,6 +1072,56 @@
     }
   },
   {
+    "name": "lint_multi_part_compound_northwind_fires",
+    "question": "How many dairy product orders were shipped to London last year and list the most recent 10 and which ship cities",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [{ "field": "order_id", "alias": "order_id" }],
+      "metrics": [{ "agg": "count_distinct", "field": "order_id", "alias": "n" }],
+      "filters": [],
+      "order_by": [{ "by": "order_date", "dir": "desc" }],
+      "limit": 10,
+      "offset": 0
+    },
+    "type": "lint",
+    "lint": {
+      "expect": "fires",
+      "fragment": "multiple deliverables"
+    }
+  },
+  {
+    "name": "lint_multi_part_compound_northwind_clean",
+    "question": "How many dairy product orders were shipped to London last year and list the most recent 10 and which ship cities",
+    "plan": {
+      "version": "1.0",
+      "with": [
+        {
+          "name": "filtered_slice",
+          "plan": {
+            "version": "1.0",
+            "dataset": "orders",
+            "dimensions": [],
+            "metrics": [],
+            "filters": [],
+            "limit": 10,
+            "offset": 0
+          }
+        }
+      ],
+      "dataset": "filtered_slice",
+      "dimensions": [],
+      "metrics": [{ "agg": "count", "field": "*", "alias": "row_count" }],
+      "filters": [],
+      "limit": 1,
+      "offset": 0
+    },
+    "type": "lint",
+    "lint": {
+      "expect": "clean"
+    }
+  },
+  {
     "name": "lint_grain_fires",
     "question": "How many customers are there?",
     "plan": {
@@ -1925,6 +1975,14 @@
         "limit": 1,
         "offset": 0
       }
+    }
+  },
+  {
+    "name": "compile_relative_date_calendar_year",
+    "question": "$relative_date calendar_year_start resolution",
+    "type": "compile",
+    "compile": {
+      "kind": "relative_date_calendar_year"
     }
   }
 ]

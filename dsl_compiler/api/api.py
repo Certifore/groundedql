@@ -24,6 +24,13 @@ def _resolve_relative_dates(plan: Any) -> Any:
       {"$relative_date": {"op": "now_minus_days", "days": 7}}
       -> replaced with "2024-01-15T10:30:00+00:00" (UTC ISO string)
 
+      {"$relative_date": {"op": "calendar_year_start", "year_offset": -1}}
+      -> UTC midnight at the start of the calendar year relative to "now":
+         year_offset 0 = Jan 1 of the current UTC year;
+         year_offset -1 = Jan 1 of the previous UTC year; etc.
+      Use two filters for "last calendar year":
+        field >= calendar_year_start(-1) AND field < calendar_year_start(0)
+
     This allows the LLM to express date-relative intent without generating
     SQL expressions as string values (which fail bindparam type checking).
     """
@@ -42,6 +49,15 @@ def _resolve_relative_dates(plan: Any) -> Any:
                 return dt.isoformat()
             if op == "today":
                 return datetime.date.today().isoformat()
+            if op == "calendar_year_start":
+                now = datetime.datetime.now(datetime.timezone.utc)
+                current_year = now.year
+                off = int(spec.get("year_offset", 0))
+                target_year = current_year + off
+                start = datetime.datetime(
+                    target_year, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc
+                )
+                return start.isoformat()
             # Unknown op — leave as-is so validation catches it
             return plan
 

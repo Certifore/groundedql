@@ -19,7 +19,7 @@ Test types in test_qs.json:
   (default) db   — execute against Postgres
   lint           — semantic_lint only (no DB)
   canonical      — structural plan_fingerprint / canonicalize checks (no DB)
-  compile        — compiler / schema / validate_query_plan_dict checks (no DB); see compile.kind
+  compile        — compiler / schema / validate_query_plan_dict / $relative_date checks (no DB); see compile.kind
 """
 from __future__ import annotations
 
@@ -285,6 +285,37 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
                 return True, None
         except Exception as e:
             return False, f"compound plan validate_query_plan_dict: {e}"
+
+    if kind == "relative_date_calendar_year":
+        import datetime as dt
+
+        from dsl_compiler.api.api import _resolve_relative_dates
+
+        lo = _resolve_relative_dates(
+            {"$relative_date": {"op": "calendar_year_start", "year_offset": -1}}
+        )
+        hi = _resolve_relative_dates(
+            {"$relative_date": {"op": "calendar_year_start", "year_offset": 0}}
+        )
+        d_lo = dt.datetime.fromisoformat(lo)
+        d_hi = dt.datetime.fromisoformat(hi)
+        if d_lo.month != 1 or d_lo.day != 1 or d_hi.month != 1 or d_hi.day != 1:
+            return False, f"calendar_year_start expected Jan 1: lo={lo!r} hi={hi!r}"
+        if d_hi.year != d_lo.year + 1:
+            return False, f"calendar_year_start year gap: lo={lo!r} hi={hi!r}"
+        if d_lo.tzinfo != dt.timezone.utc or d_hi.tzinfo != dt.timezone.utc:
+            return False, f"calendar_year_start expected UTC: lo={lo!r} hi={hi!r}"
+        y = dt.datetime.now(dt.timezone.utc).year
+        expected_default = dt.datetime(
+            y, 1, 1, 0, 0, 0, tzinfo=dt.timezone.utc
+        ).isoformat()
+        z = _resolve_relative_dates({"$relative_date": {"op": "calendar_year_start"}})
+        if z != expected_default:
+            return (
+                False,
+                f"calendar_year_start default year_offset: got {z!r} want {expected_default!r}",
+            )
+        return True, None
 
     return False, f"unknown compile.kind {kind!r}"
 

@@ -203,6 +203,11 @@ def _semantics_rules(tables: list) -> str:
         "    last 7 days:  {\"$relative_date\": {\"op\": \"now_minus_days\", \"days\": 7}}",
         "    last 24 hrs:  {\"$relative_date\": {\"op\": \"now_minus_hours\", \"hours\": 24}}",
         "    today:        {\"$relative_date\": {\"op\": \"today\"}}",
+        "    last calendar year (two filters on the date column, AND):",
+        "      >= {\"$relative_date\": {\"op\": \"calendar_year_start\", \"year_offset\": -1}}",
+        "      <  {\"$relative_date\": {\"op\": \"calendar_year_start\", \"year_offset\": 0}}",
+        "- Topic/trade keywords (plumbing, etc.): OR \"contains\" across all plausible string columns",
+        "  for that table from schema_summary — do not use only one column unless the question names it.",
     ]
     # Per-table grain rules
     for t in tables:

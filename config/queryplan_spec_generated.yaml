@@ -293,13 +293,18 @@ semantics_rules: "- Use 'contains' for fuzzy name/keyword matching (compiled as 
   - For time-based filters use the $relative_date sentinel (never a SQL expression):\n\
   \    last 7 days:  {\"$relative_date\": {\"op\": \"now_minus_days\", \"days\": 7}}\n\
   \    last 24 hrs:  {\"$relative_date\": {\"op\": \"now_minus_hours\", \"hours\"\
-  : 24}}\n    today:        {\"$relative_date\": {\"op\": \"today\"}}\n- For 'customers':\
-  \ when counting distinct customers, use count_distinct('customer_id') — 'customer_id'\
-  \ is the primary identifier.\n- For 'orders': when counting distinct orders, use\
-  \ count_distinct('order_id') — 'order_id' is the primary identifier.\n- For 'products':\
-  \ when counting distinct products, use count_distinct('product_id') — 'product_id'\
-  \ is the primary identifier.\n- For 'categories': when counting distinct categories,\
-  \ use count_distinct('category_id') — 'category_id' is the primary identifier.\n\
+  : 24}}\n    today:        {\"$relative_date\": {\"op\": \"today\"}}\n    last calendar\
+  \ year (two filters on the date column, AND):\n      >= {\"$relative_date\": {\"\
+  op\": \"calendar_year_start\", \"year_offset\": -1}}\n      <  {\"$relative_date\"\
+  : {\"op\": \"calendar_year_start\", \"year_offset\": 0}}\n- Topic/trade keywords\
+  \ (plumbing, etc.): OR \"contains\" across all plausible string columns\n  for that\
+  \ table from schema_summary — do not use only one column unless the question names\
+  \ it.\n- For 'customers': when counting distinct customers, use count_distinct('customer_id')\
+  \ — 'customer_id' is the primary identifier.\n- For 'orders': when counting distinct\
+  \ orders, use count_distinct('order_id') — 'order_id' is the primary identifier.\n\
+  - For 'products': when counting distinct products, use count_distinct('product_id')\
+  \ — 'product_id' is the primary identifier.\n- For 'categories': when counting distinct\
+  \ categories, use count_distinct('category_id') — 'category_id' is the primary identifier.\n\
   - For 'employees': when counting distinct employees, use count_distinct('employee_id')\
   \ — 'employee_id' is the primary identifier.\n- For 'suppliers': when counting distinct\
   \ suppliers, use count_distinct('supplier_id') — 'supplier_id' is the primary identifier.\n\

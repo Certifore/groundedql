@@ -171,7 +171,10 @@ filter_values_and_dates: |
       {"field": "edit_date", "op": ">=", "value": {"$relative_date": {"op": "now_minus_days", "days": 7}}}
       {"field": "entry_date", "op": ">=", "value": {"$relative_date": {"op": "now_minus_hours", "hours": 24}}}
       {"field": "edit_date", "op": ">=", "value": {"$relative_date": {"op": "today"}}}
-  - The library resolves $relative_date to a concrete ISO-8601 UTC timestamp at query time.
+  - Calendar-year windows (see semantics_rules): use calendar_year_start with year_offset, not a rolling 365-day window.
+      {"field": "entry_date", "op": ">=", "value": {"$relative_date": {"op": "calendar_year_start", "year_offset": -1}}}
+      {"field": "entry_date", "op": "<", "value": {"$relative_date": {"op": "calendar_year_start", "year_offset": 0}}}
+  - The library resolves $relative_date to a concrete ISO-8601 UTC timestamp (or date for "today") at query time.
 
 # -----------------------------------------------------------------------------
 # GENERIC PLAN CONSTRUCTION (SCALABLE — NOT PER-QUESTION PATTERNS)
@@ -237,6 +240,19 @@ semantics_rules: |
       "last 7 days"  -> {"$relative_date": {"op": "now_minus_days", "days": 7}}
       "last 24 hours" -> {"$relative_date": {"op": "now_minus_hours", "hours": 24}}
       "today"        -> {"$relative_date": {"op": "today"}}
+  - Calendar vs rolling windows (DEFAULT for common English — do not require extra schema prose):
+      Phrases like "last year", "previous year", "in 2024" (when meaning the full calendar year)
+      MUST use a calendar-year range in UTC, NOT now_minus_days(365):
+        Two filters on the relevant date column, ANDed with other filters:
+          op ">=" with {"$relative_date": {"op": "calendar_year_start", "year_offset": -1}}
+          op "<"  with {"$relative_date": {"op": "calendar_year_start", "year_offset": 0}}
+      Use rolling windows (now_minus_days) only when the user clearly means "the past N days" or
+      "last 12 months" as a sliding window, not a named calendar year.
+  - Topic / trade / keyword questions (e.g. "plumbing", "HVAC"): do not filter a single text column
+    unless the question names that column. Prefer matching the keyword with op "contains" on EVERY
+    string column in schema_summary for that table where a description or label could appear, combined
+    with OR in the advanced where clause (or equivalent), so users only describe columns once in
+    schema.yaml and never hand-author SQL patterns.
   - For statistical questions (standard deviation, variance, median, percentile, correlation),
     use the advanced format with the appropriate Postgres function name in a `func` node.
     Do NOT use avg as a proxy for these — use the correct function.
