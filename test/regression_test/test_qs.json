@@ -1233,6 +1233,42 @@
     }
   },
   {
+    "name": "lint_keyword_search_or_and_trap_fires",
+    "question": "How many orders mention widget in the text fields",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [],
+      "metrics": [{ "agg": "count_distinct", "field": "order_id", "alias": "n" }],
+      "filters": [
+        { "field": "title", "op": "contains", "value": "widget" },
+        { "field": "body", "op": "contains", "value": "widget" }
+      ],
+      "limit": 1,
+      "offset": 0
+    },
+    "type": "lint",
+    "lint": {
+      "expect": "fires",
+      "fragment": "AND `contains`",
+      "schema": {
+        "tables": [
+          {
+            "name": "orders",
+            "keyword_search_or": ["title", "body", "notes"],
+            "columns": [
+              { "name": "order_id" },
+              { "name": "title" },
+              { "name": "body" },
+              { "name": "notes" },
+              { "name": "region" }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
     "name": "lint_keyword_search_or_clean",
     "question": "How many open orders mention the widget keyword in any text field",
     "plan": {

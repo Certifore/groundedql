@@ -233,21 +233,30 @@ def _check_keyword_search_or(plan: Dict[str, Any], schema: Dict[str, Any], error
                 continue
             if _or_tree_contains_all_keyword_cols(sub.get("where"), colset):
                 continue
-            legacy_hits = False
+            keyword_fields: List[str] = []
             for f in sub.get("filters") or []:
                 if (f.get("op") or "").lower() != "contains":
                     continue
                 field = (f.get("field") or "").split(".")[-1]
                 if field in colset:
-                    legacy_hits = True
-                    break
-            if not legacy_hits:
+                    keyword_fields.append(field)
+            if not keyword_fields:
                 continue
-            errors.append(
-                f"Lint: table '{name}' declares keyword_search_or {cols!r} in schema.yaml — "
-                "use OR of `contains` on those columns via advanced `where` with `or` of `cmp` nodes; "
-                "legacy filters are ANDed. Omit or narrow keyword_search_or if single-column search is intended."
-            )
+            uniq_kw = set(keyword_fields)
+            if len(uniq_kw) >= 2:
+                errors.append(
+                    f"Lint: table '{name}' keyword_search_or {cols!r}: legacy filters AND "
+                    f"`contains` on {sorted(uniq_kw)!r} — every row must match all of them, "
+                    "which is narrower than OR across keyword columns (and omits OR branches for "
+                    "columns not listed). Use advanced `where` with `or` of `cmp` contains nodes "
+                    f"covering every column in keyword_search_or {cols!r}."
+                )
+            else:
+                errors.append(
+                    f"Lint: table '{name}' declares keyword_search_or {cols!r} in schema.yaml — "
+                    "use OR of `contains` on those columns via advanced `where` with `or` of `cmp` nodes; "
+                    "legacy filters are ANDed. Omit or narrow keyword_search_or if single-column search is intended."
+                )
             return
 
 

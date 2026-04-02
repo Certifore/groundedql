@@ -93,7 +93,7 @@ Optional list of **logical** column names (at least two). When present, it tells
     - ...
 ```
 
-If `keyword_search_or` has two or more names and a plan uses legacy `contains` on any of those columns without an advanced `where` with `or` covering **all** of them, semantic lint flags a retry.
+If `keyword_search_or` has two or more names and a plan uses legacy `contains` on any of those columns without an advanced `where` with `or` covering **all** of them, semantic lint flags a retry. A plan that puts **two or more** legacy `contains` filters on *different* keyword columns is especially wrong: legacy filters are **AND**ed, so each row must satisfy every predicate — narrower than OR and not the usual “keyword in any of these fields” intent.
 
 ---
 
