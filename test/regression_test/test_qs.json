@@ -2217,6 +2217,64 @@
     }
   },
   {
+    "name": "compile_cte_outer_count_distinct",
+    "question": "Outer legacy plan: dataset is CTE name; metric count_distinct on column from CTE",
+    "type": "compile",
+    "compile": {
+      "kind": "cte_outer_count_distinct_compiles",
+      "schema": {
+        "tables": [
+          {
+            "name": "work_orders",
+            "db_table": "work_orders",
+            "columns": [
+              { "name": "work_order_id" },
+              { "name": "edit_date" },
+              { "name": "location_code" },
+              { "name": "work_order_description" }
+            ]
+          }
+        ]
+      },
+      "plan": {
+        "version": "1.0",
+        "with": [
+          {
+            "name": "filtered_work_orders",
+            "plan": {
+              "version": "1.0",
+              "dataset": "work_orders",
+              "dimensions": [
+                { "alias": "edit_date", "field": "edit_date" },
+                { "alias": "room", "field": "location_code" },
+                { "alias": "work_order_description", "field": "work_order_description" },
+                { "alias": "work_order_id", "field": "work_order_id" }
+              ],
+              "metrics": [],
+              "filters": [],
+              "limit": 100,
+              "offset": 0,
+              "order_by": []
+            }
+          }
+        ],
+        "dataset": "filtered_work_orders",
+        "dimensions": [],
+        "metrics": [
+          {
+            "agg": "count_distinct",
+            "alias": "plumbing_work_orders_count",
+            "field": "work_order_id"
+          }
+        ],
+        "filters": [],
+        "limit": 1,
+        "offset": 0,
+        "order_by": [{ "by": "edit_date", "dir": "desc" }]
+      }
+    }
+  },
+  {
     "name": "compile_relative_date_calendar_year",
     "question": "$relative_date calendar_year_start resolution",
     "type": "compile",

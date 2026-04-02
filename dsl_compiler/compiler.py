@@ -908,6 +908,26 @@ class Compiler:
                     raise AmbiguousColumnError(c, outer_matches, path)
                 if len(outer_matches) == 1:
                     return _resolve_column(outer_alias_map, outer_matches[0])
+            # CTE / dynamic FROM (not in schema tables): unqualified refs must resolve to tbl.c
+            dyn_matches = [
+                tname
+                for tname, tbl in inner_alias_map.items()
+                if tname not in self.tables and c in tbl.c
+            ]
+            if len(dyn_matches) > 1:
+                raise AmbiguousColumnError(c, dyn_matches, path)
+            if len(dyn_matches) == 1:
+                return _resolve_column(inner_alias_map, dyn_matches[0])
+            if outer_alias_map:
+                dyn_outer = [
+                    tname
+                    for tname, tbl in outer_alias_map.items()
+                    if tname not in self.tables and c in tbl.c
+                ]
+                if len(dyn_outer) > 1:
+                    raise AmbiguousColumnError(c, dyn_outer, path)
+                if len(dyn_outer) == 1:
+                    return _resolve_column(outer_alias_map, dyn_outer[0])
             raise QueryPlanError(
                 f"Unknown unqualified column '{c}' for current scope.",
                 code="UNKNOWN_COLUMN",

@@ -286,6 +286,29 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         except Exception as e:
             return False, f"compound plan validate_query_plan_dict: {e}"
 
+    if kind == "cte_outer_count_distinct_compiles":
+        schema = spec.get("schema")
+        plan = spec.get("plan")
+        if not isinstance(schema, dict) or not isinstance(plan, dict):
+            return False, "cte_outer_count_distinct_compiles requires compile.schema and compile.plan"
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                sp2 = P(td) / "schema.yaml"
+                sp2.write_text(yaml.safe_dump(schema), encoding="utf-8")
+                _, verr = validate_query_plan_dict(plan, str(sp2))
+                if verr:
+                    return False, f"cte outer metric validation: {verr}"
+            c = Compiler(schema)
+            sql, _ = c.compile(plan)
+            sql_l = sql.lower()
+            if "with" not in sql_l or "filtered_work_orders" not in sql_l:
+                return False, f"expected WITH CTE in SQL: {sql[:240]}"
+            if "count(distinct" not in sql_l.replace(" ", ""):
+                return False, f"expected COUNT(DISTINCT ...) in SQL: {sql[:240]}"
+            return True, None
+        except Exception as e:
+            return False, f"cte outer count_distinct compile: {e}"
+
     if kind == "relative_date_calendar_year":
         import datetime as dt
 
