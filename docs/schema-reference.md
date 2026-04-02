@@ -78,6 +78,23 @@ The `primary_id` field names the primary key column's **logical name**. It is us
 
 It is not required, but recommended for any table you expect users to ask "how many X" questions about.
 
+### `keyword_search_or` (optional)
+
+Optional list of **logical** column names (at least two). When present, it tells the LLM and **semantic lint** that keyword-style questions should use **OR** (`ILIKE`-style `contains` on each column), not a single column. Declare only the columns that should participate in that OR; omit this key (or list a single column) if searches are intentionally one-column.
+
+```yaml
+- name: work_orders
+  db_table: finalWorkOrder
+  keyword_search_or:
+    - work_order_description
+    - long_desc
+    - shop_name
+  columns:
+    - ...
+```
+
+If `keyword_search_or` has two or more names and a plan uses legacy `contains` on any of those columns without an advanced `where` with `or` covering **all** of them, semantic lint flags a retry.
+
 ---
 
 ## Links

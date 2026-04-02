@@ -1197,6 +1197,83 @@
     }
   },
   {
+    "name": "lint_keyword_search_or_fires",
+    "question": "How many open orders mention the widget keyword in any text field",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [],
+      "metrics": [{ "agg": "count_distinct", "field": "order_id", "alias": "n" }],
+      "filters": [
+        { "field": "region", "op": "contains", "value": "EU" },
+        { "field": "title", "op": "contains", "value": "widget" }
+      ],
+      "limit": 1,
+      "offset": 0
+    },
+    "type": "lint",
+    "lint": {
+      "expect": "fires",
+      "fragment": "keyword_search_or",
+      "schema": {
+        "tables": [
+          {
+            "name": "orders",
+            "keyword_search_or": ["title", "body", "notes"],
+            "columns": [
+              { "name": "order_id" },
+              { "name": "title" },
+              { "name": "body" },
+              { "name": "notes" },
+              { "name": "region" }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "lint_keyword_search_or_clean",
+    "question": "How many open orders mention the widget keyword in any text field",
+    "plan": {
+      "version": "1.0",
+      "dataset": "orders",
+      "dimensions": [],
+      "metrics": [{ "agg": "count_distinct", "field": "order_id", "alias": "n" }],
+      "filters": [
+        { "field": "region", "op": "contains", "value": "EU" }
+      ],
+      "where": {
+        "or": [
+          { "cmp": { "left": { "col": "title" }, "op": "contains", "right": "widget" } },
+          { "cmp": { "left": { "col": "body" }, "op": "contains", "right": "widget" } },
+          { "cmp": { "left": { "col": "notes" }, "op": "contains", "right": "widget" } }
+        ]
+      },
+      "limit": 1,
+      "offset": 0
+    },
+    "type": "lint",
+    "lint": {
+      "expect": "clean",
+      "schema": {
+        "tables": [
+          {
+            "name": "orders",
+            "keyword_search_or": ["title", "body", "notes"],
+            "columns": [
+              { "name": "order_id" },
+              { "name": "title" },
+              { "name": "body" },
+              { "name": "notes" },
+              { "name": "region" }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
     "name": "lint_grain_fires",
     "question": "How many customers are there?",
     "plan": {

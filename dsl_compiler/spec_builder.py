@@ -211,14 +211,21 @@ def _semantics_rules(tables: list) -> str:
         "- Do NOT map trade names onto order_type/order_category unless the schema says so;",
         "  those columns are usually workflow (PLANNED, HOUSING, PREVENTIVE, …), not crafts.",
     ]
-    # Per-table grain rules
+    # Per-table grain rules + optional keyword_search_or hints
     for t in tables:
-        pid = t.get("primary_id")
         name = t.get("name")
+        pid = t.get("primary_id")
         if pid and name:
             lines.append(
                 f"- For '{name}': when counting distinct {name}, "
                 f"use count_distinct('{pid}') — '{pid}' is the primary identifier."
+            )
+        kso = t.get("keyword_search_or")
+        if name and isinstance(kso, list) and len(kso) >= 2:
+            cols = ", ".join(str(c) for c in kso if isinstance(c, str))
+            lines.append(
+                f"- Table '{name}' declares keyword_search_or [{cols}]: use advanced `where.or` of "
+                f"`contains` on those columns for keyword search; legacy filters are ANDed."
             )
     return "\n".join(lines)
 

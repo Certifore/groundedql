@@ -257,6 +257,10 @@ semantics_rules: |
     columns such as order_type or order_category unless schema.yaml explicitly documents that those
     literals appear there. In CMMS-style data, order_type is often PLANNED / HOUSING / SUPPORT; trade
     names appear in work descriptions, component, shop_name, long text fields, etc.
+  - Optional per table in schema.yaml: `keyword_search_or: [logical_col, ...]` (≥2 names). When set,
+    keyword-style matching should use OR (advanced `where` with `or` of `cmp` contains nodes) across
+    those columns — not legacy filters on one column only (legacy ANDs filters). Omit the key or list
+    a single column if searches are intentionally single-column. Do not confuse LIMIT with total COUNT.
   - For statistical questions (standard deviation, variance, median, percentile, correlation),
     use the advanced format with the appropriate Postgres function name in a `func` node.
     Do NOT use avg as a proxy for these — use the correct function.

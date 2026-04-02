@@ -11,7 +11,7 @@ waste one retry but don't break anything.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 
 # Helpers
@@ -82,6 +82,7 @@ def semantic_lint(
 
     if schema is not None:
         _check_grain(q, plan, schema, errors)
+        _check_keyword_search_or(plan, schema, errors)
 
     return errors
 
@@ -182,6 +183,72 @@ def _check_compound_outer_uses_filtered_cte(q: str, plan: Dict[str, Any], errors
         f"'{ds}' with empty filters. Point the outer FROM at the CTE that applies the same "
         "building/keyword/date filters, or repeat those filters on the outer query."
     )
+
+
+def _or_tree_contains_all_keyword_cols(where: Any, cols: Set[str]) -> bool:
+    """True if `where` has an `or` branch whose children are `contains` on each logical column in cols."""
+    if not isinstance(where, dict):
+        return False
+    if "or" in where:
+        found: set[str] = set()
+        for item in where.get("or") or []:
+            if not isinstance(item, dict) or "cmp" not in item:
+                continue
+            c = item["cmp"]
+            left = c.get("left") or {}
+            col = left.get("col") if isinstance(left, dict) else None
+            if isinstance(col, str):
+                col = col.split(".")[-1]
+            op = (c.get("op") or "").lower()
+            if col in cols and op == "contains":
+                found.add(col)
+        if cols.issubset(found):
+            return True
+    if "and" in where:
+        for item in where.get("and") or []:
+            if _or_tree_contains_all_keyword_cols(item, cols):
+                return True
+    return False
+
+
+def _check_keyword_search_or(plan: Dict[str, Any], schema: Dict[str, Any], errors: List[str]) -> None:
+    """
+    Optional schema.yaml per table: keyword_search_or: [col, ...] (>=2 logical columns).
+    If set, legacy `contains` on any of those columns requires advanced `where.or` across all of them
+    for OR semantics; otherwise the model often emits a single column only.
+    """
+    for t in schema.get("tables", []) or []:
+        name = t.get("name")
+        if not isinstance(name, str):
+            continue
+        kso = t.get("keyword_search_or")
+        if not isinstance(kso, list) or len(kso) < 2:
+            continue
+        cols = [c for c in kso if isinstance(c, str)]
+        if len(cols) < 2:
+            continue
+        colset = set(cols)
+        for sub in _iter_plans_depth_first(plan):
+            if sub.get("dataset") != name:
+                continue
+            if _or_tree_contains_all_keyword_cols(sub.get("where"), colset):
+                continue
+            legacy_hits = False
+            for f in sub.get("filters") or []:
+                if (f.get("op") or "").lower() != "contains":
+                    continue
+                field = (f.get("field") or "").split(".")[-1]
+                if field in colset:
+                    legacy_hits = True
+                    break
+            if not legacy_hits:
+                continue
+            errors.append(
+                f"Lint: table '{name}' declares keyword_search_or {cols!r} in schema.yaml — "
+                "use OR of `contains` on those columns via advanced `where` with `or` of `cmp` nodes; "
+                "legacy filters are ANDed. Omit or narrow keyword_search_or if single-column search is intended."
+            )
+            return
 
 
 # ---------------------------------------------------------------------------

@@ -79,6 +79,22 @@ def validate_schema(schema: Dict[str, Any]) -> List[str]:
                     f"Available columns: {sorted(column_names)}"
                 )
 
+        kso = t.get("keyword_search_or")
+        if kso is not None:
+            if not isinstance(kso, list) or len(kso) < 1:
+                raise SchemaError(
+                    f"{loc} ('{name}'): 'keyword_search_or' must be a non-empty list of column names."
+                )
+            for ki, col in enumerate(kso):
+                if not isinstance(col, str) or not col:
+                    raise SchemaError(
+                        f"{loc}.keyword_search_or[{ki}]: must be a non-empty string."
+                    )
+                if col not in column_names:
+                    raise SchemaError(
+                        f"{loc} ('{name}'): keyword_search_or references unknown column {col!r}."
+                    )
+
     # Validate links
     known_table_names = {t["name"] for t in tables if isinstance(t, dict) and t.get("name")}
     for i, link in enumerate(schema.get("links", []) or []):

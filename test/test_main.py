@@ -509,14 +509,17 @@ print(f"[test] Mode={MODE}  Tests={len(suite)}  Schema={SCHEMA_PATH}\n")
 results = []
 errors = 0
 
-def _lint_fires(question: str, plan: dict, fragment: str) -> tuple[bool, str]:
-    errors = semantic_lint(question, plan, _schema_for_lint)   # <-- pass schema
+def _lint_fires(question: str, plan: dict, fragment: str, schema: dict | None = None) -> tuple[bool, str]:
+    sch = schema if schema is not None else _schema_for_lint
+    errors = semantic_lint(question, plan, sch)
     matched = any(fragment.lower() in e.lower() for e in errors)
     msg = errors[0][:100] if errors else "(no errors)"
     return matched, msg
 
-def _lint_clean(question: str, plan: dict) -> tuple[bool, str]:
-    errors = semantic_lint(question, plan, _schema_for_lint)   # <-- pass schema
+
+def _lint_clean(question: str, plan: dict, schema: dict | None = None) -> tuple[bool, str]:
+    sch = schema if schema is not None else _schema_for_lint
+    errors = semantic_lint(question, plan, sch)
     return (not errors), (str(errors) if errors else "clean")
 
 
@@ -626,9 +629,10 @@ for i, test in enumerate(suite):
         lint_spec = test.get("lint", {})
         expect = lint_spec.get("expect")        # "fires" or "clean"
         fragment = lint_spec.get("fragment", "")
+        lint_schema = lint_spec.get("schema")
 
         if expect == "fires":
-            ok, msg = _lint_fires(question, plan, fragment)
+            ok, msg = _lint_fires(question, plan, fragment, lint_schema)
             result_entry = {
                 "name": name,
                 "question": question,
@@ -641,7 +645,7 @@ for i, test in enumerate(suite):
                 "error": None if ok else f"Expected lint to fire with fragment '{fragment}' but got: {msg}",
             }
         else:  # "clean"
-            ok, msg = _lint_clean(question, plan)
+            ok, msg = _lint_clean(question, plan, lint_schema)
             result_entry = {
                 "name": name,
                 "question": question,
