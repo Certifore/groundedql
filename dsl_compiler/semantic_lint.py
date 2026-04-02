@@ -148,6 +148,24 @@ def _check_trade_on_workflow_columns(q: str, plan: Dict[str, Any], errors: List[
         return
 
 
+def _substantive_outer_filters(filters: List[Any]) -> List[Dict[str, Any]]:
+    """
+    Filters that actually restrict rows (building, dates, text search).
+    LLMs often add `work_order_id is_not_null` on the outer query to satisfy linters
+    while still selecting from an unfiltered base table — treat those as non-substantive.
+    """
+    out: List[Dict[str, Any]] = []
+    for f in filters or []:
+        if not isinstance(f, dict):
+            continue
+        op = (f.get("op") or "").lower()
+        field = (f.get("field") or "").split(".")[-1]
+        if op in {"is_null", "is_not_null"} and field.endswith("id"):
+            continue
+        out.append(f)
+    return out
+
+
 def _check_compound_outer_uses_filtered_cte(q: str, plan: Dict[str, Any], errors: List[str]) -> None:
     """
     Fire when a multi-deliverable question uses WITH, a CTE applies filters, but the outer
@@ -171,7 +189,7 @@ def _check_compound_outer_uses_filtered_cte(q: str, plan: Dict[str, Any], errors
             inner_has_filters = True
     if not inner_has_filters:
         return
-    if plan.get("filters"):
+    if _substantive_outer_filters(plan.get("filters") or []):
         return
     ds = plan.get("dataset")
     if not isinstance(ds, str):
