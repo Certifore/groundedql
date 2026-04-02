@@ -263,12 +263,21 @@ def _check_keyword_search_or(plan: Dict[str, Any], schema: Dict[str, Any], error
                     legacy_kw.append(field)
 
             if has_correct_or and legacy_kw:
+                keep = []
+                for f in sub.get("filters") or []:
+                    field = (f.get("field") or "").split(".")[-1]
+                    if field not in colset or (f.get("op") or "").lower() != "contains":
+                        keep.append(f)
+                keep_desc = ", ".join(
+                    f"{f['field']} {f['op']} {f.get('value','')!r}" for f in keep
+                ) or "(none)"
                 errors.append(
                     f"Lint: table '{name}' keyword_search_or {cols!r}: the `where` OR tree is correct "
-                    f"but filters also contain AND-ed `contains` on {sorted(set(legacy_kw))!r}. "
-                    "Those legacy filters require ALL columns to match (AND), defeating the OR intent. "
-                    "Remove keyword `contains` filters from the `filters` array — the `where.or` "
-                    "already handles the keyword search correctly."
+                    f"but `filters` also contain AND-ed `contains` on {sorted(set(legacy_kw))!r}. "
+                    "Those AND filters defeat the OR intent. "
+                    f"Remove ONLY these fields from `filters`: {sorted(set(legacy_kw))!r}. "
+                    f"KEEP all other filters unchanged: [{keep_desc}]. "
+                    "The `where.or` already handles the keyword search correctly."
                 )
                 return
 
