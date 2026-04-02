@@ -4,8 +4,8 @@ decompose.py — Detect and split compound natural-language questions.
 A "compound" question asks for multiple deliverables at different grains
 in one sentence, e.g.:
 
-    "How many plumbing work orders were in Page House last year
-     and list the most recent 10 and which rooms?"
+    "How many items match a keyword in Building X last year
+     and list the most recent 10 and which locations?"
 
 This requires a global COUNT *and* a detail LIST — two incompatible query
 shapes.  Rather than forcing the LLM planner to produce a single plan that

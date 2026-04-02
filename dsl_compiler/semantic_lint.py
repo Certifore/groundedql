@@ -73,7 +73,6 @@ def semantic_lint(
     errors: List[str] = []
 
     _check_multi_part_compound(q, plan, errors)
-    _check_trade_on_workflow_columns(q, plan, errors)
     _check_compound_outer_uses_filtered_cte(q, plan, errors)
     _check_distinct(q, plan, errors)
     _check_grouping(q, plan, errors)
@@ -83,23 +82,14 @@ def semantic_lint(
     if schema is not None:
         _check_grain(q, plan, schema, errors)
         _check_keyword_search_or(plan, schema, errors)
+        _check_keyword_on_enum_columns(q, plan, schema, errors)
 
     return errors
 
 
 # ---------------------------------------------------------------------------
-# Trade keywords vs workflow columns (order_type / order_category)
+# Keyword values placed on enum columns (schema-driven)
 # ---------------------------------------------------------------------------
-
-_TRADE_IN_QUESTION = re.compile(
-    r"\b(plumbing|plumb|hvac|electrical|electric|mechanical|carpentry|steam|pipefit)\b",
-    re.I,
-)
-
-_WORKFLOW_ENUM_FIELDS = frozenset({"order_type", "order_category"})
-
-# Values that look like a trade/craft encoded as a filter (not PLANNED / PREVENTIVE / …)
-_TRADE_VALUE_HINT = re.compile(r"plumb|hvac|electric|carpent|mechanic|steamfit|pipe", re.I)
 
 
 def _iter_plans_depth_first(plan: Dict[str, Any]):
@@ -117,33 +107,47 @@ def _collect_filters_from_plan_tree(plan: Dict[str, Any]) -> List[Dict[str, Any]
     return out
 
 
-def _check_trade_on_workflow_columns(q: str, plan: Dict[str, Any], errors: List[str]) -> None:
+def _check_keyword_on_enum_columns(
+    q: str, plan: Dict[str, Any], schema: Dict[str, Any], errors: List[str],
+) -> None:
     """
-    Fire when the question mentions a trade but filters order_type/order_category with a
-    trade-shaped value — common LLM mistake; trades usually live in free-text fields.
+    Schema-driven check: if a table declares ``enum_columns`` and
+    ``keyword_search_or``, catch when the LLM puts keyword-style values
+    into enum columns (a common mistake — enum columns hold categorical
+    values, not free-text search terms).
     """
-    if not _TRADE_IN_QUESTION.search(q):
+    dataset = plan.get("dataset") or ""
+    for t in schema.get("tables") or []:
+        if t.get("name") != dataset:
+            continue
+        enum_cols = t.get("enum_columns")
+        kso = t.get("keyword_search_or")
+        if not enum_cols or not kso:
+            return
+        enum_set = frozenset(c if isinstance(c, str) else "" for c in enum_cols)
+        kso_set = frozenset(c if isinstance(c, str) else "" for c in kso)
+        break
+    else:
         return
+
     for f in _collect_filters_from_plan_tree(plan):
         field = f.get("field")
         if not isinstance(field, str):
             continue
         field = field.split(".")[-1]
-        if field not in _WORKFLOW_ENUM_FIELDS:
+        if field not in enum_set:
             continue
         val = f.get("value")
-        if not isinstance(val, str) or not _TRADE_VALUE_HINT.search(val):
+        if not isinstance(val, str):
             continue
         op = (f.get("op") or "").lower()
         if op not in ("contains", "=", "starts_with", "ends_with"):
             continue
         errors.append(
-            "Lint: question mentions a trade/skill; "
-            f"filter on '{field}' with value {val!r} looks like a trade term. "
-            "Columns like order_type and order_category usually hold workflow values "
-            "(PLANNED, HOUSING, PREVENTIVE, …), not trade names. "
-            "Use op 'contains' on description/component/shop free-text columns (often OR several), "
-            "unless the schema states that trade appears in this column."
+            f"Lint: filter on enum column '{field}' with value {val!r} "
+            f"looks like a keyword search term. Columns {sorted(enum_set)!r} hold "
+            "categorical/workflow values, not free-text keywords. "
+            f"Use keyword_search_or columns {sorted(kso_set)!r} with op 'contains' instead."
         )
         return
 
@@ -151,7 +155,7 @@ def _check_trade_on_workflow_columns(q: str, plan: Dict[str, Any], errors: List[
 def _substantive_outer_filters(filters: List[Any]) -> List[Dict[str, Any]]:
     """
     Filters that actually restrict rows (building, dates, text search).
-    LLMs often add `work_order_id is_not_null` on the outer query to satisfy linters
+    LLMs often add `primary_id is_not_null` on the outer query to satisfy linters
     while still selecting from an unfiltered base table — treat those as non-substantive.
     """
     out: List[Dict[str, Any]] = []

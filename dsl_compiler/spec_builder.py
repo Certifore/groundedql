@@ -219,10 +219,10 @@ def _semantics_rules(tables: list) -> str:
         "    last calendar year (two filters on the date column, AND):",
         "      >= {\"$relative_date\": {\"op\": \"calendar_year_start\", \"year_offset\": -1}}",
         "      <  {\"$relative_date\": {\"op\": \"calendar_year_start\", \"year_offset\": 0}}",
-        "- Topic/trade keywords (plumbing, etc.): OR \"contains\" across all plausible string columns",
+        "- Free-text keyword searches: OR \"contains\" across all plausible string columns",
         "  for that table from schema_summary — do not use only one column unless the question names it.",
-        "- Do NOT map trade names onto order_type/order_category unless the schema says so;",
-        "  those columns are usually workflow (PLANNED, HOUSING, PREVENTIVE, …), not crafts.",
+        "- If the schema declares enum_columns, do NOT put free-text search terms into those columns;",
+        "  they hold categorical values, not keywords.",
     ]
     # Per-table grain rules + optional keyword_search_or hints
     for t in tables:
@@ -425,17 +425,40 @@ def _build_examples(tables: list) -> List[Dict[str, Any]]:
             continue
         tname = t.get("name")
         pid = t.get("primary_id") or "id"
-        kw = "keyword"  # placeholder — replace with trade/symptom term from the question
+        kw = "keyword"
+
+        # Pick example filter columns dynamically from the table's own columns
+        table_cols = t.get("columns") or []
+        kso_set = frozenset(cols)
+        str_col = None
+        date_col = None
+        for c in table_cols:
+            cname = c.get("name", "")
+            ctype = (c.get("type") or "").lower()
+            if cname in kso_set or cname == pid:
+                continue
+            if str_col is None and ctype in ("varchar", "text", "string"):
+                str_col = cname
+            if date_col is None and ctype in ("date", "timestamp", "datetime", "timestamptz"):
+                date_col = cname
+
+        example_filters = []
+        if str_col:
+            example_filters.append({"field": str_col, "op": "contains", "value": "EXAMPLE VALUE"})
+        if date_col:
+            example_filters.append({"field": date_col, "op": ">=", "value": "2025-01-01T00:00:00+00:00"})
+            example_filters.append({"field": date_col, "op": "<", "value": "2026-01-01T00:00:00+00:00"})
+
         or_branch = []
         for col in cols:
             or_branch.append({"cmp": {"left": {"col": col}, "op": "contains", "right": kw}})
         examples.append({
             "question": (
-                f"How many {tname} in a building last year matching a free-text trade/symptom "
+                f"How many {tname} matching a free-text keyword last year "
                 f"(search across {cols} with OR, not AND on one column)?"
             ),
             "note": (
-                f"Table '{tname}' has keyword_search_or {cols!r}: use legacy filters for building/dates "
+                f"Table '{tname}' has keyword_search_or {cols!r}: use legacy filters for other constraints "
                 "and a top-level `where` with `or` of `cmp` contains for the keyword across ALL listed columns."
             ),
             "plan": {
@@ -443,11 +466,7 @@ def _build_examples(tables: list) -> List[Dict[str, Any]]:
                 "dataset": tname,
                 "dimensions": [],
                 "metrics": [{"agg": "count_distinct", "field": pid, "alias": f"total_{tname}"}],
-                "filters": [
-                    {"field": "building_name", "op": "contains", "value": "BUILDING NAME"},
-                    {"field": "entry_date", "op": ">=", "value": "2025-01-01T00:00:00+00:00"},
-                    {"field": "entry_date", "op": "<", "value": "2026-01-01T00:00:00+00:00"},
-                ],
+                "filters": example_filters,
                 "where": {"or": or_branch},
                 "order_by": [],
                 "limit": 1,
