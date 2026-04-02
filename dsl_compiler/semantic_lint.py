@@ -519,7 +519,14 @@ def _check_grain(q: str, plan: Dict[str, Any], schema: Dict[str, Any], errors: L
         field = m.get("field", "*")
         alias = m.get("alias", field)
 
-        if agg in {"count", "count_distinct"} and field not in {"*", primary_id}:
+        if agg in {"count", "count_distinct"} and field == "*":
+            errors.append(
+                f"Lint: question implies counting {dataset} entities ('{_first_match(_COUNT_QUESTION_PATTERNS, q)}') "
+                f"but metric '{alias}' uses count(*) which counts rows, not distinct entities. "
+                f"The declared primary identifier for '{dataset}' is '{primary_id}'. "
+                f"Use agg='count_distinct', field='{primary_id}' for an accurate entity count."
+            )
+        elif agg in {"count", "count_distinct"} and field != primary_id:
             errors.append(
                 f"Lint: question implies counting {dataset} entities ('{_first_match(_COUNT_QUESTION_PATTERNS, q)}') "
                 f"but metric '{alias}' counts '{field}' — "
@@ -554,7 +561,13 @@ def _check_grain_expr(
 
     args = expr.get("args") or []
     if not args:
-        return  # count() with no args = count(*) — fine
+        errors.append(
+            f"Lint: question implies counting {dataset} entities ('{_first_match(_COUNT_QUESTION_PATTERNS, q)}') "
+            f"but advanced select '{alias}' uses count() with no args (= count(*)). "
+            f"The declared primary identifier for '{dataset}' is '{primary_id}'. "
+            f"Use count_distinct('{primary_id}') for an accurate entity count."
+        )
+        return
 
     # Extract the column reference from the first arg
     first_arg = args[0] if args else {}
@@ -568,7 +581,16 @@ def _check_grain_expr(
     # Strip table prefix if present (e.g. "work_orders.phase_id" -> "phase_id")
     col_name = col_ref.split(".")[-1] if "." in col_ref else col_ref
 
-    if col_name not in {"*", primary_id}:
+    if col_name == "*":
+        errors.append(
+            f"Lint: question implies counting {dataset} entities ('{_first_match(_COUNT_QUESTION_PATTERNS, q)}') "
+            f"but advanced select '{alias}' uses count(*) which counts rows. "
+            f"The declared primary identifier for '{dataset}' is '{primary_id}'. "
+            f"Use count_distinct('{primary_id}') for an accurate entity count."
+        )
+        return
+
+    if col_name != primary_id:
         errors.append(
             f"Lint: question implies counting {dataset} entities ('{_first_match(_COUNT_QUESTION_PATTERNS, q)}') "
             f"but advanced select '{alias}' counts '{col_name}' — "
