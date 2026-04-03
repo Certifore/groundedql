@@ -1228,8 +1228,9 @@ class Compiler:
                 _require(not isinstance(right_node, dict), "INVALID_PLAN", "IN requires literal list.", f"{path}.cmp.right")
                 _require(isinstance(right_node, list), "INVALID_PLAN", "IN requires list value.", f"{path}.cmp.right")
                 _require(len(right_node) > 0, "INVALID_PLAN", "IN list must be non-empty.", f"{path}.cmp.right")
-                bp = sa.bindparam(self._new_param("in"), value=right_node, expanding=True)
-                expr = left.in_(bp)
+                upper_vals = [v.upper() if isinstance(v, str) else v for v in right_node]
+                bp = sa.bindparam(self._new_param("in"), value=upper_vals, expanding=True)
+                expr = sa.func.upper(left).in_(bp)
                 return sa.not_(expr) if op == "not_in" else expr
 
             if op in {"contains", "not_contains", "starts_with", "ends_with"}:
@@ -1288,8 +1289,9 @@ class Compiler:
         if op in {"in", "not_in"}:
             _require(isinstance(value, list), "INVALID_PLAN", "IN ops require list value.", f"{path}.value")
             _require(len(value) > 0, "INVALID_PLAN", "IN list must be non-empty.", f"{path}.value")
-            bp = sa.bindparam(self._new_param("rin"), value=value, expanding=True)
-            expr = col.in_(bp)
+            upper_vals = [v.upper() if isinstance(v, str) else v for v in value]
+            bp = sa.bindparam(self._new_param("rin"), value=upper_vals, expanding=True)
+            expr = sa.func.upper(col).in_(bp)
             return sa.not_(expr) if op == "not_in" else expr
 
         bp = sa.bindparam(self._new_param("rv"), value=value)

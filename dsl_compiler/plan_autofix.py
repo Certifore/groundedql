@@ -64,7 +64,86 @@ def _fix_all_subplans(plan: Dict[str, Any], table_meta: Dict[str, Dict[str, Any]
             continue
         meta = table_meta[ds]
         _fix_count_to_count_distinct(sub, meta)
+        _fix_multi_contains_same_column(sub)
         _fix_duplicate_keyword_filters(sub, meta)
+
+
+def _fix_multi_contains_same_column(plan: Dict[str, Any]) -> None:
+    """Convert multiple AND-ed `contains` filters on the same column into a where.or.
+
+    When the LLM generates e.g.:
+      filters: [{field: building_name, op: contains, value: "page house"},
+                {field: building_name, op: contains, value: "loyd house"}]
+    these are AND-ed (impossible).  This fix moves them into an OR tree.
+    """
+    filters = plan.get("filters")
+    if not isinstance(filters, list) or len(filters) < 2:
+        return
+
+    from collections import defaultdict
+    contains_by_col: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    eq_by_col: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for f in filters:
+        if not isinstance(f, dict):
+            continue
+        op = (f.get("op") or "").lower()
+        field = (f.get("field") or "").split(".")[-1]
+        if not field:
+            continue
+        if op == "contains":
+            contains_by_col[field].append(f)
+        elif op == "=":
+            eq_by_col[field].append(f)
+
+    cols_to_fix = {col: flist for col, flist in contains_by_col.items() if len(flist) >= 2}
+    eq_cols_to_fix = {col: flist for col, flist in eq_by_col.items() if len(flist) >= 2}
+    if not cols_to_fix and not eq_cols_to_fix:
+        return
+
+    filters_to_remove: set = set()
+    or_groups: List[Dict[str, Any]] = []
+
+    for col, flist in cols_to_fix.items():
+        or_branches = []
+        for f in flist:
+            or_branches.append(
+                {"cmp": {"left": {"col": col}, "op": "contains", "right": f["value"]}}
+            )
+            filters_to_remove.add(id(f))
+        or_groups.append({"or": or_branches})
+
+        print(
+            f"[QCE autofix] Converted {len(flist)} AND-ed contains filters on '{col}' → where.or",
+            file=sys.stderr,
+        )
+
+    for col, flist in eq_cols_to_fix.items():
+        values = [f["value"] for f in flist]
+        for f in flist:
+            filters_to_remove.add(id(f))
+        or_branches = [
+            {"cmp": {"left": {"col": col}, "op": "=", "right": v}}
+            for v in values
+        ]
+        or_groups.append({"or": or_branches})
+        print(
+            f"[QCE autofix] Converted {len(flist)} AND-ed '=' filters on '{col}' → where.or",
+            file=sys.stderr,
+        )
+
+    cleaned = [f for f in filters if id(f) not in filters_to_remove]
+    plan["filters"] = cleaned
+
+    where = plan.get("where")
+    new_clauses = or_groups if len(or_groups) == 1 else or_groups
+    if where is None:
+        if len(new_clauses) == 1:
+            plan["where"] = new_clauses[0]
+        else:
+            plan["where"] = {"and": new_clauses}
+    else:
+        existing = [where] if not isinstance(where, list) else where
+        plan["where"] = {"and": existing + new_clauses}
 
 
 def _fix_count_to_count_distinct(plan: Dict[str, Any], meta: Dict[str, Any]) -> None:
