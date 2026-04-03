@@ -191,8 +191,14 @@ def _plan_construction_procedure() -> str:
         "3) Decide output shape:\n"
         "   - List of entities: dimensions + optional metrics.\n"
         "   - Single scalar: metrics only (no dimensions), or dimensions + rollup.\n"
-        "4) Decide grouping: if question says 'by X' / 'per X' / 'for each X', "
+        "4) Decide grouping:\n"
+        "   - If question says 'by X' / 'per X' / 'for each X' / 'total for each X', "
         "put X in dimensions.\n"
+        "   - CRITICAL: if the question names multiple specific values of a column "
+        "(e.g. 'for building A, building B, building C') AND asks for "
+        "'a total for each' / 'count per' / 'breakdown', you MUST include that column "
+        "in dimensions so the result has one row per value. "
+        "Also use op='in' with the list of values as the filter.\n"
         "5) Decide metrics: use exactly the aggregations requested. "
         "Always give each metric an alias.\n"
         "6) Two-step aggregation (e.g. 'average per building'):\n"
@@ -378,6 +384,31 @@ def _build_examples(tables: list) -> List[Dict[str, Any]]:
                 },
             })
 
+    # Multi-value filter + dimension example (IN + GROUP BY)
+    if group_table and cat_col:
+        pid = group_table["primary_id"]
+        examples.append({
+            "question": (
+                f"How many {group_table['name']} for value_A, value_B, value_C? "
+                f"Give a total for each."
+            ),
+            "note": (
+                "When the user lists specific values and asks 'for each' / 'total for each', "
+                "use op='in' with the list AND include the column in dimensions "
+                "so the result has one row per value."
+            ),
+            "plan": {
+                "version": "1.0",
+                "dataset": group_table["name"],
+                "dimensions": [{"field": cat_col["name"], "alias": cat_col["name"]}],
+                "metrics": [{"agg": "count_distinct", "field": pid, "alias": f"total_{group_table['name']}"}],
+                "filters": [{"field": cat_col["name"], "op": "in", "value": ["value_A", "value_B", "value_C"]}],
+                "order_by": [{"by": f"total_{group_table['name']}", "dir": "desc"}],
+                "limit": 100,
+                "offset": 0,
+            },
+        })
+
     # Rollup example: pick a table with a primary_id and a grouping column
     rollup_table = next(
         (t for t in tables if t.get("primary_id") and len(t.get("columns", [])) >= 2),
@@ -473,6 +504,33 @@ def _build_examples(tables: list) -> List[Dict[str, Any]]:
                 "offset": 0,
             },
         })
+        # Combined example: keyword OR + multi-value IN filter + dimension
+        if str_col:
+            examples.append({
+                "question": (
+                    f"How many {tname} matching '{kw}' for value_A, value_B, value_C "
+                    f"of {str_col}? Give a total for each."
+                ),
+                "note": (
+                    f"Combines keyword_search_or with a multi-value IN filter. "
+                    f"Use op='in' on {str_col} AND include it in dimensions, "
+                    f"plus where.or for the keyword search."
+                ),
+                "plan": {
+                    "version": "1.0",
+                    "dataset": tname,
+                    "dimensions": [{"field": str_col, "alias": str_col}],
+                    "metrics": [{"agg": "count_distinct", "field": pid, "alias": f"total_{tname}"}],
+                    "filters": [
+                        {"field": str_col, "op": "in", "value": ["value_A", "value_B", "value_C"]},
+                    ],
+                    "where": {"or": or_branch},
+                    "order_by": [{"by": f"total_{tname}", "dir": "desc"}],
+                    "limit": 100,
+                    "offset": 0,
+                },
+            })
+
         break  # one generic example is enough
 
     return examples

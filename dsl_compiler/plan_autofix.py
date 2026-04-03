@@ -66,6 +66,7 @@ def _fix_all_subplans(plan: Dict[str, Any], table_meta: Dict[str, Dict[str, Any]
         _fix_count_to_count_distinct(sub, meta)
         _fix_multi_contains_same_column(sub)
         _fix_duplicate_keyword_filters(sub, meta)
+    _fix_missing_dimension_for_multi_value(plan, table_meta)
 
 
 def _fix_multi_contains_same_column(plan: Dict[str, Any]) -> None:
@@ -237,8 +238,6 @@ def _fix_duplicate_keyword_filters(plan: Dict[str, Any], meta: Dict[str, Any]) -
         correct_or = _build_keyword_or(kso, keyword_value)
         if where is None:
             plan["where"] = correct_or
-        elif isinstance(where, dict) and "or" in where:
-            plan["where"] = correct_or
         else:
             plan["where"] = {"and": [where, correct_or]}
         print(
@@ -269,3 +268,90 @@ def _fix_duplicate_keyword_filters(plan: Dict[str, Any], meta: Dict[str, Any]) -
             file=sys.stderr,
         )
         plan["filters"] = cleaned
+
+
+def _where_or_multi_value_columns(where: Any, kso: Set[str]) -> Set[str]:
+    """Find columns in where that have multiple OR-ed values (excluding keyword_search_or cols)."""
+    cols_with_multi: Set[str] = set()
+    if not isinstance(where, dict):
+        return cols_with_multi
+
+    if "or" in where:
+        from collections import Counter
+        col_counter: Counter = Counter()
+        for item in where.get("or") or []:
+            if not isinstance(item, dict) or "cmp" not in item:
+                continue
+            c = item["cmp"]
+            left = c.get("left") or {}
+            col = left.get("col") if isinstance(left, dict) else None
+            if isinstance(col, str):
+                col_counter[col.split(".")[-1]] += 1
+        for col, cnt in col_counter.items():
+            if cnt >= 2 and col not in kso:
+                cols_with_multi.add(col)
+
+    if "and" in where:
+        for item in where.get("and") or []:
+            cols_with_multi.update(_where_or_multi_value_columns(item, kso))
+
+    return cols_with_multi
+
+
+def _fix_missing_dimension_for_multi_value(
+    plan: Dict[str, Any], table_meta: Dict[str, Dict[str, Any]]
+) -> None:
+    """Add missing dimension when plan filters by multiple values of a column without grouping.
+
+    When the user asks "how many X for A, B, C — give a total for each",
+    the LLM often produces dimensions: [] with a where.or on the entity column.
+    This fix detects that pattern and adds the column as a dimension so the
+    result includes per-value breakdowns.
+
+    Only runs on the outermost plan (not CTE sub-plans).
+    """
+    ds = plan.get("dataset")
+    if not isinstance(ds, str):
+        return
+
+    meta = table_meta.get(ds, {})
+    kso = meta.get("keyword_search_or") or set()
+
+    existing_dims = set()
+    for d in plan.get("dimensions") or []:
+        if isinstance(d, dict):
+            existing_dims.add((d.get("field") or "").split(".")[-1])
+
+    multi_val_cols: Set[str] = set()
+
+    for f in plan.get("filters") or []:
+        if not isinstance(f, dict):
+            continue
+        op = (f.get("op") or "").lower()
+        field = (f.get("field") or "").split(".")[-1]
+        if op == "in" and field and field not in kso:
+            val = f.get("value")
+            if isinstance(val, list) and len(val) >= 2:
+                multi_val_cols.add(field)
+
+    where = plan.get("where")
+    if where:
+        multi_val_cols.update(_where_or_multi_value_columns(where, kso))
+
+    has_metrics = bool(plan.get("metrics"))
+    if not has_metrics:
+        return
+
+    for col in sorted(multi_val_cols):
+        if col not in existing_dims:
+            dims = plan.get("dimensions")
+            if dims is None:
+                dims = []
+                plan["dimensions"] = dims
+            dims.append({"field": col, "alias": col})
+            if plan.get("limit") == 1:
+                plan["limit"] = 100
+            print(
+                f"[QCE autofix] Added missing dimension '{col}' for multi-value filter",
+                file=sys.stderr,
+            )
