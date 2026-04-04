@@ -186,8 +186,12 @@ def _structural_invariants() -> str:
 def _plan_construction_procedure() -> str:
     return (
         "1) Choose dataset: the ONE table that contains the needed information.\n"
-        "2) Extract filters: convert constraints to filter objects using logical field names.\n"
+        "2) Extract filters: convert ALL constraints to filter objects using logical field names.\n"
         "   Use op='contains' for fuzzy text matching (building names, keywords, etc.).\n"
+        "   IMPORTANT: if the question mentions a time period ('last year', 'this year',\n"
+        "   'past month', 'last 30 days', 'in 2025', etc.) you MUST add date filters\n"
+        "   on the date column. NEVER omit date filters when a time period is stated.\n"
+        "   Use $relative_date sentinels (see Semantics rules) for dynamic dates.\n"
         "3) Decide output shape:\n"
         "   - List of entities: dimensions + optional metrics.\n"
         "   - Single scalar: metrics only (no dimensions), or dimensions + rollup.\n"

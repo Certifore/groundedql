@@ -7,6 +7,7 @@ extra LLM retries.  Each fix is driven by schema declarations
 """
 from __future__ import annotations
 
+import re
 import sys
 from typing import Any, Dict, List, Optional, Set
 
@@ -24,6 +25,7 @@ def autofix_plan(
     2. Duplicate keyword_search_or columns in both filters AND where.or → strip from filters.
     3. Multiple contains on same column → where.or.
     4. Missing dimension for multi-value IN/OR filters.
+    5. Missing date filter when question mentions a temporal phrase.
     """
     table_meta = _build_table_meta(schema)
     _fix_all_subplans(plan, table_meta, question)
@@ -35,7 +37,7 @@ def autofix_plan(
 # ---------------------------------------------------------------------------
 
 def _build_table_meta(schema: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    """Build a lookup of primary_id and keyword_search_or by table name."""
+    """Build a lookup of primary_id, keyword_search_or, and date columns by table name."""
     meta: Dict[str, Dict[str, Any]] = {}
     for t in schema.get("tables", []):
         name = t.get("name")
@@ -48,6 +50,15 @@ def _build_table_meta(schema: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         kso = t.get("keyword_search_or")
         if isinstance(kso, list) and len(kso) >= 2:
             entry["keyword_search_or"] = set(c for c in kso if isinstance(c, str))
+        pdate = t.get("primary_date")
+        if pdate:
+            entry["primary_date"] = pdate
+        else:
+            for col in t.get("columns", []):
+                ctype = (col.get("type") or "").lower()
+                if ctype in ("date", "timestamp", "datetime", "timestamptz"):
+                    entry["primary_date"] = col.get("name")
+                    break
         meta[name] = entry
     return meta
 
@@ -69,6 +80,7 @@ def _fix_all_subplans(plan: Dict[str, Any], table_meta: Dict[str, Dict[str, Any]
         _fix_count_to_count_distinct(sub, meta)
         _fix_multi_contains_same_column(sub)
         _fix_duplicate_keyword_filters(sub, meta, question)
+        _fix_missing_date_filter(sub, meta, question)
     _fix_missing_dimension_for_multi_value(plan, table_meta)
 
 
@@ -264,6 +276,12 @@ _QUESTION_STOP_WORDS = frozenset({
     "last", "year", "years", "month", "months", "week", "day", "date",
     "issue", "issues", "order", "orders", "work", "request", "requests",
     "building", "buildings", "house", "center", "hall", "lab",
+    "break", "down", "across", "among", "between", "within", "through",
+    "detail", "details", "detailed", "specific", "separately", "individual",
+    "individually", "respective", "respectively",
+    "during", "since", "until", "past", "previous", "recent", "recently",
+    "annual", "annually", "quarterly", "monthly", "weekly", "daily",
+    "maintenance", "repair", "service", "facility", "facilities",
 })
 
 
@@ -393,6 +411,61 @@ def _fix_duplicate_keyword_filters(plan: Dict[str, Any], meta: Dict[str, Any], q
             file=sys.stderr,
         )
         plan["filters"] = cleaned
+
+
+_TEMPORAL_PATTERNS = [
+    (re.compile(r"\blast\s+year\b", re.I), {"year_offset": -1}),
+    (re.compile(r"\bprevious\s+year\b", re.I), {"year_offset": -1}),
+    (re.compile(r"\bthis\s+year\b", re.I), {"year_offset": 0}),
+    (re.compile(r"\bcurrent\s+year\b", re.I), {"year_offset": 0}),
+    (re.compile(r"\bin\s+(\d{4})\b", re.I), "explicit_year"),
+    (re.compile(r"\bfor\s+(\d{4})\b", re.I), "explicit_year"),
+    (re.compile(r"\bduring\s+(\d{4})\b", re.I), "explicit_year"),
+]
+
+
+def _fix_missing_date_filter(plan: Dict[str, Any], meta: Dict[str, Any], question: str) -> None:
+    """Add date filters when the question mentions a time period but the plan has none."""
+    if not question:
+        return
+    date_col = meta.get("primary_date")
+    if not date_col:
+        return
+
+    filters = plan.get("filters") or []
+    for f in filters:
+        if isinstance(f, dict) and (f.get("field") or "").split(".")[-1] == date_col:
+            return
+
+    year_offset = None
+    explicit_year = None
+    for pattern, info in _TEMPORAL_PATTERNS:
+        m = pattern.search(question)
+        if m:
+            if info == "explicit_year":
+                explicit_year = int(m.group(1))
+            else:
+                year_offset = info["year_offset"]
+            break
+
+    if year_offset is not None:
+        gte = {"$relative_date": {"op": "calendar_year_start", "year_offset": year_offset}}
+        lt = {"$relative_date": {"op": "calendar_year_start", "year_offset": year_offset + 1}}
+    elif explicit_year is not None:
+        gte = f"{explicit_year}-01-01T00:00:00+00:00"
+        lt = f"{explicit_year + 1}-01-01T00:00:00+00:00"
+    else:
+        return
+
+    if not isinstance(filters, list):
+        filters = []
+        plan["filters"] = filters
+    filters.append({"field": date_col, "op": ">=", "value": gte})
+    filters.append({"field": date_col, "op": "<", "value": lt})
+    print(
+        f"[QCE autofix] Added missing date filter on '{date_col}' from question",
+        file=sys.stderr,
+    )
 
 
 def _where_or_multi_value_columns(where: Any, kso: Set[str]) -> Set[str]:
