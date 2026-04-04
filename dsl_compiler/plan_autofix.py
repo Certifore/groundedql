@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Set
 def autofix_plan(
     plan: Dict[str, Any],
     schema: Dict[str, Any],
+    question: str = "",
 ) -> Dict[str, Any]:
     """
     Apply all deterministic fixes to *plan* in-place and return it.
@@ -21,9 +22,11 @@ def autofix_plan(
     Fixes applied:
     1. count/count(*) → count_distinct(primary_id) when primary_id is declared.
     2. Duplicate keyword_search_or columns in both filters AND where.or → strip from filters.
+    3. Multiple contains on same column → where.or.
+    4. Missing dimension for multi-value IN/OR filters.
     """
     table_meta = _build_table_meta(schema)
-    _fix_all_subplans(plan, table_meta)
+    _fix_all_subplans(plan, table_meta, question)
     return plan
 
 
@@ -57,7 +60,7 @@ def _iter_subplans(plan: Dict[str, Any]):
             yield from _iter_subplans(w["plan"])
 
 
-def _fix_all_subplans(plan: Dict[str, Any], table_meta: Dict[str, Dict[str, Any]]) -> None:
+def _fix_all_subplans(plan: Dict[str, Any], table_meta: Dict[str, Dict[str, Any]], question: str = "") -> None:
     for sub in _iter_subplans(plan):
         ds = sub.get("dataset")
         if not isinstance(ds, str) or ds not in table_meta:
@@ -65,7 +68,7 @@ def _fix_all_subplans(plan: Dict[str, Any], table_meta: Dict[str, Dict[str, Any]
         meta = table_meta[ds]
         _fix_count_to_count_distinct(sub, meta)
         _fix_multi_contains_same_column(sub)
-        _fix_duplicate_keyword_filters(sub, meta)
+        _fix_duplicate_keyword_filters(sub, meta, question)
     _fix_missing_dimension_for_multi_value(plan, table_meta)
 
 
@@ -193,7 +196,7 @@ def _or_tree_columns(where: Any) -> Set[str]:
 
 
 def _extract_keyword_value(plan: Dict[str, Any], kso: Set[str]) -> Optional[str]:
-    """Find the search term from filters or where.or that targets keyword_search_or columns."""
+    """Find the search term from filters or where tree that targets keyword_search_or columns."""
     for f in plan.get("filters") or []:
         if not isinstance(f, dict):
             continue
@@ -203,13 +206,31 @@ def _extract_keyword_value(plan: Dict[str, Any], kso: Set[str]) -> Optional[str]
                 return str(f["value"])
 
     where = plan.get("where")
-    if isinstance(where, dict) and "or" in where:
+    val = _extract_keyword_from_where(where, kso)
+    if val:
+        return val
+    return None
+
+
+def _extract_keyword_from_where(where: Any, kso: Set[str]) -> Optional[str]:
+    """Recursively search where tree for a keyword value targeting kso columns."""
+    if not isinstance(where, dict):
+        return None
+    if "or" in where:
         for item in where.get("or") or []:
             if not isinstance(item, dict) or "cmp" not in item:
                 continue
             c = item["cmp"]
-            if (c.get("op") or "").lower() == "contains" and c.get("right"):
-                return str(c["right"])
+            left = c.get("left") or {}
+            col = left.get("col") if isinstance(left, dict) else None
+            if isinstance(col, str) and col.split(".")[-1] in kso:
+                if (c.get("op") or "").lower() == "contains" and c.get("right"):
+                    return str(c["right"])
+    if "and" in where:
+        for item in where.get("and") or []:
+            val = _extract_keyword_from_where(item, kso)
+            if val:
+                return val
     return None
 
 
@@ -221,13 +242,68 @@ def _build_keyword_or(kso: Set[str], value: str) -> Dict[str, Any]:
     ]}
 
 
-def _fix_duplicate_keyword_filters(plan: Dict[str, Any], meta: Dict[str, Any]) -> None:
+_QUESTION_STOP_WORDS = frozenset({
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "shall",
+    "should", "may", "might", "must", "can", "could",
+    "i", "me", "my", "we", "our", "you", "your", "he", "she", "it",
+    "they", "them", "their", "its", "this", "that", "these", "those",
+    "and", "or", "but", "not", "no", "nor", "if", "then", "than",
+    "of", "in", "on", "at", "to", "for", "with", "by", "from",
+    "up", "out", "about", "into", "over", "after", "before",
+    "how", "many", "much", "what", "which", "who", "where", "when",
+    "each", "every", "all", "any", "both", "few", "more", "most",
+    "give", "get", "got", "show", "list", "tell", "find", "look",
+    "count", "number", "total", "per", "breakdown", "summary",
+    "last", "year", "years", "month", "months", "week", "day",
+    "issue", "issues", "order", "orders", "work", "request", "requests",
+})
+
+
+def _extract_keyword_from_question(question: str, plan: Dict[str, Any]) -> Optional[str]:
+    """Try to find a keyword from the question that isn't a value already in the plan.
+
+    Extracts the first substantive word from the question that is not a stop word
+    and not already used as a filter value.  This allows the autofix to inject
+    a keyword_search_or filter when the LLM forgot to include one.
+    """
+    if not question:
+        return None
+    q_lower = question.lower()
+    existing_values: set = set()
+    for f in plan.get("filters") or []:
+        if isinstance(f, dict) and f.get("value"):
+            val = f["value"]
+            if isinstance(val, str):
+                for part in val.lower().split():
+                    existing_values.add(part.strip(",.?!;:'\""))
+            elif isinstance(val, list):
+                for v in val:
+                    if isinstance(v, str):
+                        for part in v.lower().split():
+                            existing_values.add(part.strip(",.?!;:'\""))
+
+    for word in q_lower.split():
+        clean = word.strip(",.?!;:'\"")
+        if len(clean) < 3:
+            continue
+        if clean in _QUESTION_STOP_WORDS:
+            continue
+        if clean in existing_values:
+            continue
+        return clean
+    return None
+
+
+def _fix_duplicate_keyword_filters(plan: Dict[str, Any], meta: Dict[str, Any], question: str = "") -> None:
     """Ensure keyword_search_or columns use where.or (not filters) with all columns covered."""
     kso: Optional[Set[str]] = meta.get("keyword_search_or")
     if not kso:
         return
 
     keyword_value = _extract_keyword_value(plan, kso)
+    if not keyword_value:
+        keyword_value = _extract_keyword_from_question(question, plan)
     if not keyword_value:
         return
 

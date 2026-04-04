@@ -88,7 +88,7 @@ def _auto_fix_plan(plan_dict: dict, question: str = "", schema: Optional[Dict[st
     # Schema-aware fixes: count→count_distinct, keyword OR completion, etc.
     if schema is not None:
         plan_body = {k: v for k, v in plan_dict.items() if k != "meta"}
-        _schema_autofix(plan_body, schema)
+        _schema_autofix(plan_body, schema, question=question)
         for k, v in plan_body.items():
             plan_dict[k] = v
 
