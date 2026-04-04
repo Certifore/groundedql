@@ -21,6 +21,13 @@ from .intent import QueryIntent, intent_json_schema
 from .llm_adapters import make_llm_client
 from .plan_canonical import canonicalize_query_plan
 from .api.api import _resolve_relative_dates
+from .value_index import (
+    format_value_index_for_prompt,
+    resolve_intent_values,
+    validate_intent_against_index,
+)
+from .intent_normalize import normalize_intent
+from .intent_memory import IntentMemory
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +95,11 @@ Rules:
   use column "building_name" — never "asset_tag".
   CRITICAL: if the question names specific entities (buildings, workers, etc.),
   you MUST include them as filter values.  Never omit explicit entity names.
+  CRITICAL: if a KNOWN DATABASE VALUES list is provided, you MUST pick values
+  from that list.  Map user input to the closest matching known value.
+  For example, if the user says "bechtel" and the known building names include
+  "BECHTEL RESIDENCE", use "BECHTEL RESIDENCE".  If a user says "page house"
+  and the list has "PAGE HOUSE", use "PAGE HOUSE" exactly.
 - time_range: pick from the enum if the question mentions a time period.
   "last year" → "last_year", "this year" → "this_year", etc.
 - aggregation: "count" for "how many / total / tally / numbers / breakdown /
@@ -110,16 +122,43 @@ def extract_intent(
     question: str,
     schema: Dict[str, Any],
     temperature: float = 0.0,
+    value_index: Optional[Dict[str, Dict[str, List[str]]]] = None,
+    feedback: Optional[str] = None,
+    few_shot_prompt: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Call the LLM to extract a QueryIntent dict from *question*."""
+    """Call the LLM to extract a QueryIntent dict from *question*.
+
+    Args:
+        value_index: If provided, known DB values are injected into the prompt
+            so the LLM picks from real values instead of guessing.
+        feedback: If provided (on retry), appended as a correction hint.
+        few_shot_prompt: If provided, similar past examples injected into prompt.
+    """
     client = make_llm_client(llm) if not hasattr(llm, "generate_json") else llm
 
     schema_text = _schema_summary_for_prompt(schema)
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "system", "content": f"DATABASE SCHEMA:\n{schema_text}"},
-        {"role": "user", "content": question},
     ]
+
+    if value_index:
+        vi_text = format_value_index_for_prompt(value_index)
+        messages.append({"role": "system", "content": vi_text})
+
+    if few_shot_prompt:
+        messages.append({"role": "system", "content": few_shot_prompt})
+
+    if feedback:
+        messages.append({
+            "role": "system",
+            "content": (
+                f"CORRECTION — your previous extraction had issues:\n{feedback}\n"
+                "Please fix these issues in your response."
+            ),
+        })
+
+    messages.append({"role": "user", "content": question})
 
     raw = client.generate_json(
         json_schema=intent_json_schema(),
@@ -174,12 +213,18 @@ _DATE_RANGE_MAP: Dict[str, Dict[str, Any]] = {
 def build_plan_from_intent(
     intent: Dict[str, Any],
     schema: Dict[str, Any],
+    value_index: Optional[Dict[str, Dict[str, List[str]]]] = None,
 ) -> Dict[str, Any]:
     """Deterministically convert an intent dict into a QueryPlan dict.
 
     Every structural decision (keyword OR, date sentinel, count_distinct on
     primary_id, etc.) is made here based on schema metadata — not by the LLM.
+    If *value_index* is provided, filter values are fuzzy-matched against
+    known DB values before plan construction.
     """
+    if value_index:
+        intent = resolve_intent_values(intent, value_index)
+
     dataset = intent.get("dataset", "")
     table = _table_meta(schema, dataset)
     valid_cols = _column_names(table)
@@ -214,6 +259,8 @@ def build_plan_from_intent(
             plan["filters"].append({"field": col, "op": "in", "value": vals})
 
     # --- keyword search (OR across keyword_search_or columns) ---
+    # Normalization already removed any redundant keyword filters on kso columns,
+    # so we always generate the keyword OR clause if a keyword is present.
     keyword = intent.get("keyword")
     if keyword and kso_cols:
         plan["where"] = {
@@ -223,12 +270,13 @@ def build_plan_from_intent(
             ]
         }
     elif keyword:
-        # no keyword_search_or declared — best-effort contains on dataset
+        filter_cols = {f.get("column", "") for f in intent.get("filters") or []}
         text_cols = [
             c["name"]
             for c in table.get("columns", [])
             if (c.get("type") or "").lower() == "varchar"
             and c["name"] != primary_id
+            and c["name"] not in filter_cols
         ]
         if text_cols:
             plan["where"] = {
@@ -292,6 +340,20 @@ def build_plan_from_intent(
                     file=sys.stderr,
                 )
 
+    # --- safety: exclude null/empty values on group-by columns ---
+    # When grouping by a column (e.g. asset_tag to find "which asset has the most"),
+    # null/empty values form a giant catch-all bucket that dominates the results.
+    existing_filter_fields = {f.get("field") for f in plan["filters"]}
+    for dim in plan["dimensions"]:
+        dim_field = dim.get("field", "")
+        if dim_field and dim_field not in existing_filter_fields and dim_field != primary_date:
+            plan["filters"].append({"field": dim_field, "op": "!=", "value": ""})
+            plan["filters"].append({"field": dim_field, "op": "is_not_null", "value": True})
+            print(
+                f"[DSL intent] Auto-added null/empty exclusion for group-by column '{dim_field}'",
+                file=sys.stderr,
+            )
+
     # --- sort & limit ---
     sort_dir = intent.get("sort_direction")
     if sort_dir and plan["metrics"]:
@@ -315,7 +377,16 @@ def build_plan_from_intent(
 # ---------------------------------------------------------------------------
 
 class IntentPlanner:
-    """Two-stage planner: LLM intent extraction → deterministic plan builder."""
+    """Two-stage planner: LLM intent extraction → deterministic plan builder.
+
+    Pipeline:
+    1. Retrieve similar past questions from memory (few-shot examples)
+    2. LLM extracts intent (with value index + few-shot examples in prompt)
+    3. Normalize intent (absorb redundant keyword filters, fix group_by, etc.)
+    4. Validate intent against value index, retry with feedback if needed
+    5. Fuzzy-resolve values and build QueryPlan deterministically
+    6. Store successful (question, intent) pair in memory for future use
+    """
 
     def __init__(
         self,
@@ -324,33 +395,82 @@ class IntentPlanner:
         schema_path: str,
         temperature: float = 0.0,
         model: Optional[str] = None,
+        value_index: Optional[Dict[str, Dict[str, List[str]]]] = None,
+        max_intent_retries: int = 2,
+        memory: Optional[IntentMemory] = None,
     ):
         self.llm = make_llm_client(llm, model=model)
         self.schema_path = schema_path
         self.temperature = temperature
+        self.value_index = value_index
+        self.max_intent_retries = max_intent_retries
+        self.memory = memory
 
     def _read_schema(self) -> Dict[str, Any]:
         return yaml.safe_load(Path(self.schema_path).read_text()) or {}
 
     def plan(self, question: str) -> Dict[str, Any]:
-        """Extract intent and build a QueryPlan deterministically."""
+        """Extract intent and build a QueryPlan deterministically.
+
+        Uses few-shot memory for consistency and validates extracted intent
+        values against the value index with retry.
+        """
         schema = self._read_schema()
-        intent = extract_intent(
-            llm=self.llm,
-            question=question,
-            schema=schema,
-            temperature=self.temperature,
-        )
-        plan = build_plan_from_intent(intent, schema)
+        retry_count = 0
+        feedback = None
+
+        # Step 1: Retrieve similar past examples for few-shot prompting
+        few_shot_prompt = None
+        if self.memory:
+            examples = self.memory.retrieve(question)
+            if examples:
+                few_shot_prompt = self.memory.format_few_shot_examples(examples)
+
+        for attempt in range(1 + self.max_intent_retries):
+            # Step 2: LLM extracts intent
+            intent = extract_intent(
+                llm=self.llm,
+                question=question,
+                schema=schema,
+                temperature=self.temperature,
+                value_index=self.value_index,
+                feedback=feedback,
+                few_shot_prompt=few_shot_prompt,
+            )
+
+            # Step 3: Deterministic normalization
+            intent = normalize_intent(intent, schema)
+
+            # Step 4: Validate against value index
+            if self.value_index:
+                issues = validate_intent_against_index(intent, self.value_index)
+                if issues and attempt < self.max_intent_retries:
+                    feedback = "\n".join(issues)
+                    retry_count += 1
+                    print(
+                        f"[DSL] Intent validation issues (attempt {attempt + 1}), "
+                        f"retrying: {feedback}",
+                        file=sys.stderr,
+                    )
+                    continue
+
+            break
+
+        # Step 5: Build plan deterministically
+        plan = build_plan_from_intent(intent, schema, value_index=self.value_index)
 
         plan["meta"] = {
             "pipeline": "intent",
             "intent": intent,
-            "retry_count": 0,
+            "retry_count": retry_count,
             "auto_fixes_applied": [],
             "validation_errors": [],
             "lint_errors": [],
         }
+
+        # Step 6: Store successful example in memory
+        if self.memory:
+            self.memory.store(question, intent)
 
         print(f"[DSL] Built plan from intent: {plan}", file=sys.stderr)
         return plan

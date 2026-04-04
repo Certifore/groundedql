@@ -14,6 +14,8 @@ from .api.api import execute_query_plan
 from .llm_adapters import make_llm_client
 from .semantic_lint import semantic_lint
 from .decompose import is_compound, split_compound, SubQuestion
+from .value_index import build_value_index
+from .intent_memory import IntentMemory
 
 
 class QueryAgent:
@@ -52,9 +54,26 @@ class QueryAgent:
             schema_path=schema_path,
             spec_path=spec_path,
         )
+
+        self.value_index = {}
+        try:
+            self.value_index = build_value_index(engine, schema_path)
+            print(
+                f"[DSL] Value index built: "
+                f"{sum(len(cols) for cols in self.value_index.values())} columns indexed",
+                file=sys.stderr,
+            )
+        except Exception as exc:
+            print(f"[DSL] Value index build failed ({exc}), continuing without it.", file=sys.stderr)
+
+        memory_path = str(Path(schema_path).parent / ".intent_memory.json")
+        self.intent_memory = IntentMemory(persist_path=memory_path)
+
         self.intent_planner = IntentPlanner(
             llm=llm_client,
             schema_path=schema_path,
+            value_index=self.value_index or None,
+            memory=self.intent_memory,
         )
 
     def ask(self, question: str) -> Dict[str, Any]:
