@@ -8,6 +8,7 @@ import yaml
 from sqlalchemy.engine import Engine
 
 from .planner import QueryPlanPlanner
+from .intent_planner import IntentPlanner
 from .validation import validate_query_plan_dict
 from .api.api import execute_query_plan
 from .llm_adapters import make_llm_client
@@ -25,6 +26,7 @@ class QueryAgent:
         llm: Any,
         max_plan_retries: int = 2,
         enforce_semantic_lint: bool = True,
+        use_intent_pipeline: bool = True,
     ):
         """
         Args:
@@ -34,20 +36,59 @@ class QueryAgent:
             enforce_semantic_lint: If True (default), do not execute when
                 :func:`semantic_lint` still reports errors after retries. Set False only
                 for debugging or custom callers that handle ``meta`` themselves.
+            use_intent_pipeline: If True (default), use the two-stage intent
+                extraction + deterministic plan builder instead of direct LLM
+                QueryPlan generation.  Falls back to legacy pipeline on error.
         """
         self.engine = engine
         self.schema_path = schema_path
         self.spec_path = spec_path
         self.max_plan_retries = max_plan_retries
         self.enforce_semantic_lint = enforce_semantic_lint
-        llm_client = make_llm_client(llm)  # auto-picks OpenAI/LangChain/callable adapter
+        self.use_intent_pipeline = use_intent_pipeline
+        llm_client = make_llm_client(llm)
         self.planner = QueryPlanPlanner(
             llm=llm_client,
             schema_path=schema_path,
             spec_path=spec_path,
         )
+        self.intent_planner = IntentPlanner(
+            llm=llm_client,
+            schema_path=schema_path,
+        )
 
     def ask(self, question: str) -> Dict[str, Any]:
+        if self.use_intent_pipeline:
+            return self._ask_intent(question)
+        return self._ask_legacy(question)
+
+    def _ask_intent(self, question: str) -> Dict[str, Any]:
+        """Two-stage pipeline: intent extraction → deterministic plan builder."""
+        try:
+            plan_dict = self.intent_planner.plan(question)
+        except Exception as exc:
+            print(
+                f"[DSL] Intent pipeline failed ({exc}), falling back to legacy.",
+                file=sys.stderr,
+            )
+            return self._ask_legacy(question)
+
+        parsed, errors = validate_query_plan_dict(plan_dict, self.schema_path)
+        if errors:
+            print(
+                f"[DSL] Intent plan failed validation, falling back to legacy.",
+                file=sys.stderr,
+            )
+            return self._ask_legacy(question)
+
+        return execute_query_plan(
+            engine=self.engine,
+            schema_path=self.schema_path,
+            query_plan=plan_dict,
+        )
+
+    def _ask_legacy(self, question: str) -> Dict[str, Any]:
+        """Original full-plan LLM generation with retries + autofix."""
         plan_dict = self.planner.plan_with_retry(question, max_retries=self.max_plan_retries)
 
         parsed, errors = validate_query_plan_dict(plan_dict, self.schema_path)
