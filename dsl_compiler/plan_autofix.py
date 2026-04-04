@@ -253,10 +253,17 @@ _QUESTION_STOP_WORDS = frozenset({
     "up", "out", "about", "into", "over", "after", "before",
     "how", "many", "much", "what", "which", "who", "where", "when",
     "each", "every", "all", "any", "both", "few", "more", "most",
+    "some", "such", "than", "too", "very", "just", "also",
     "give", "get", "got", "show", "list", "tell", "find", "look",
-    "count", "number", "total", "per", "breakdown", "summary",
-    "last", "year", "years", "month", "months", "week", "day",
+    "display", "fetch", "pull", "query", "search", "check", "see",
+    "provide", "report", "reported", "report", "tally", "log", "logged",
+    "need", "want", "like", "know", "compare", "submit", "submitted",
+    "create", "created", "open", "opened", "place", "placed", "raise",
+    "raised", "file", "filed", "record", "recorded", "happen", "happened",
+    "count", "number", "total", "per", "breakdown", "summary", "volume",
+    "last", "year", "years", "month", "months", "week", "day", "date",
     "issue", "issues", "order", "orders", "work", "request", "requests",
+    "building", "buildings", "house", "center", "hall", "lab",
 })
 
 
