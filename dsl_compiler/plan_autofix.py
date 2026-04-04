@@ -302,6 +302,44 @@ def _extract_keyword_from_question(question: str, plan: Dict[str, Any]) -> Optio
     return None
 
 
+def _strip_partial_keyword_ors(where: Any, kso: Set[str]) -> Any:
+    """Remove OR nodes from the where tree that only reference keyword_search_or columns.
+
+    When the LLM produces a partial keyword OR (e.g. 2 of 3 kso columns) AND the autofix
+    is about to add a complete one, the partial becomes redundant and makes the query
+    incorrectly restrictive.  Returns the cleaned where, or None if nothing remains.
+    """
+    if not isinstance(where, dict):
+        return where
+
+    if "or" in where:
+        or_cols = set()
+        for item in where.get("or") or []:
+            if isinstance(item, dict) and "cmp" in item:
+                c = item["cmp"]
+                left = c.get("left") or {}
+                col = left.get("col") if isinstance(left, dict) else None
+                if isinstance(col, str):
+                    or_cols.add(col.split(".")[-1])
+        if or_cols and or_cols.issubset(kso):
+            return None
+        return where
+
+    if "and" in where:
+        cleaned = []
+        for item in where.get("and") or []:
+            result = _strip_partial_keyword_ors(item, kso)
+            if result is not None:
+                cleaned.append(result)
+        if not cleaned:
+            return None
+        if len(cleaned) == 1:
+            return cleaned[0]
+        return {"and": cleaned}
+
+    return where
+
+
 def _fix_duplicate_keyword_filters(plan: Dict[str, Any], meta: Dict[str, Any], question: str = "") -> None:
     """Ensure keyword_search_or columns use where.or (not filters) with all columns covered."""
     kso: Optional[Set[str]] = meta.get("keyword_search_or")
@@ -322,7 +360,11 @@ def _fix_duplicate_keyword_filters(plan: Dict[str, Any], meta: Dict[str, Any], q
         if where is None:
             plan["where"] = correct_or
         else:
-            plan["where"] = {"and": [where, correct_or]}
+            cleaned_where = _strip_partial_keyword_ors(where, kso)
+            if cleaned_where is None:
+                plan["where"] = correct_or
+            else:
+                plan["where"] = {"and": [cleaned_where, correct_or]}
         print(
             f"[QCE autofix] Built/completed where.or for keyword_search_or columns: {sorted(kso)}",
             file=sys.stderr,
@@ -425,6 +467,16 @@ def _fix_missing_dimension_for_multi_value(
     if not has_metrics:
         return
 
+    if not multi_val_cols:
+        return
+
+    filter_cols = set()
+    for f in plan.get("filters") or []:
+        if isinstance(f, dict):
+            fc = (f.get("field") or "").split(".")[-1]
+            if fc:
+                filter_cols.add(fc)
+
     for col in sorted(multi_val_cols):
         if col not in existing_dims:
             dims = plan.get("dimensions")
@@ -436,5 +488,26 @@ def _fix_missing_dimension_for_multi_value(
                 plan["limit"] = 100
             print(
                 f"[QCE autofix] Added missing dimension '{col}' for multi-value filter",
+                file=sys.stderr,
+            )
+
+    dims = plan.get("dimensions") or []
+    if len(dims) > 1 and multi_val_cols:
+        keep = []
+        removed_names = []
+        for d in dims:
+            if not isinstance(d, dict):
+                keep.append(d)
+                continue
+            field = (d.get("field") or "").split(".")[-1]
+            if field in multi_val_cols or field in filter_cols:
+                keep.append(d)
+            else:
+                removed_names.append(field)
+        if removed_names:
+            plan["dimensions"] = keep
+            print(
+                f"[QCE autofix] Removed unneeded dimensions {removed_names} "
+                f"(not in filters/multi-value columns)",
                 file=sys.stderr,
             )
