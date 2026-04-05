@@ -2328,6 +2328,14 @@
     }
   },
   {
+    "name": "compile_intent_phase1_strip_work_token_from_work_orders_phrase",
+    "question": "which asset has the most work orders?",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_strip_work_token_from_work_orders_phrase"
+    }
+  },
+  {
     "name": "compile_intent_phase1_list_filter_id_uses_equality_and_cap",
     "question": "List work order WO999",
     "type": "compile",

@@ -103,6 +103,8 @@ Rules:
   and the list has "PAGE HOUSE", use "PAGE HOUSE" exactly.
   If the user names a specific record ID, put it in filters on the table's
   primary_id column — do not rely on list mode alone.
+  Never use the substring "WORK" or similar as a primary_id value just because
+  the user said "work orders" — that names the entity type, not a row id.
 - time_range: pick from the enum if the question mentions a time period.
   "last year" → "last_year", "this year" → "this_year",
   "last 3 years" / "past three years" → "last_3_years",

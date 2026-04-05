@@ -415,6 +415,26 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
             return False, f"expected primary_id filter on normalize, got filters={out.get('filters')}"
         return True, None
 
+    if kind == "intent_phase1_strip_work_token_from_work_orders_phrase":
+        from intentql.intent_normalize import normalize_intent
+
+        schema = _schema_intent_phase1()
+        intent = {
+            "dataset": "work_orders",
+            "aggregation": "count",
+            "group_by": ["asset_tag"],
+            "filters": [{"column": "work_order_id", "values": ["WORK"]}],
+        }
+        out = normalize_intent(
+            intent,
+            schema,
+            question="which asset has the most work orders?",
+        )
+        for f in out.get("filters") or []:
+            if f.get("column") == "work_order_id":
+                return False, f"expected WORK filter stripped, got {out.get('filters')}"
+        return True, None
+
     if kind == "intent_phase1_normalize_work_word_no_inject":
         from intentql.intent_normalize import normalize_intent
 

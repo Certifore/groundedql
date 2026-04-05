@@ -32,6 +32,7 @@ def normalize_intent(
 
     intent = _absorb_keyword_filters(intent, kso_cols)
     intent = _ensure_group_by_is_list(intent)
+    intent = _strip_spurious_work_token_as_primary_id(intent, question, schema)
     intent = _inject_primary_id_from_question(intent, question, schema)
     intent = _infer_time_bucket_for_trends(intent, question, schema)
     intent = _maybe_coerce_list_for_detail_lookup(intent, question, schema)
@@ -121,6 +122,45 @@ def _normalize_group_by_for_multi_value_filters(
 
 
 # --- Phase 1: optional ID hints from question, trend bucketing ----------------
+
+
+def _strip_spurious_work_token_as_primary_id(
+    intent: Dict[str, Any],
+    question: Optional[str],
+    schema: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Remove primary_id filter value WORK when the user said 'work order(s)'.
+
+    This is a common structured-output mistake: the model treats the word **work**
+    as a literal ID. Not domain-specific to WO formats — English phrase guard only.
+    """
+    if not question:
+        return intent
+    q = question.lower()
+    if "work order" not in q:
+        return intent
+    dataset = intent.get("dataset") or ""
+    table = _table_meta(schema, dataset)
+    pid = table.get("primary_id")
+    if not pid:
+        return intent
+    kept: List[Dict[str, Any]] = []
+    for f in intent.get("filters") or []:
+        if f.get("column") != pid:
+            kept.append(f)
+            continue
+        vals = f.get("values") or []
+        if len(vals) == 1 and str(vals[0]).strip().upper() == "WORK":
+            print(
+                "[Normalize] Dropped spurious primary_id filter WORK "
+                "(misread from 'work order(s)' in the question).",
+                file=sys.stderr,
+            )
+            continue
+        kept.append(f)
+    intent["filters"] = kept
+    return intent
+
 
 def _compiled_intent_id_patterns(table: Dict[str, Any]) -> List[re.Pattern]:
     """Optional per-table regex list from schema (`intent_id_patterns`). Domain-agnostic."""
