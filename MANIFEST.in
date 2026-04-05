@@ -1,6 +1,9 @@
 include README.md
-include config/queryplan_spec.yaml
+include LICENSE
 
 exclude config/schema.yaml
+exclude config/queryplan_spec.yaml
+exclude config/queryplan_spec_generated.yaml
+prune config
 prune test
 prune tests

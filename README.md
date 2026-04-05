@@ -6,8 +6,24 @@ Instead of letting an LLM generate free-form SQL, the LLM extracts a lightweight
 ## Install
 
 ```bash
-pip install intentql @ git+ssh://git@github.com/Certifore/intentql.git
+pip install intentql
 ```
+
+With optional few-shot memory (recommended for production):
+
+```bash
+pip install "intentql[memory]"
+```
+
+<details>
+<summary>Install from source</summary>
+
+```bash
+git clone https://github.com/Certifore/intentql
+cd intentql
+pip install -e ".[dev]"
+```
+</details>
 
 ## Quick Start
 

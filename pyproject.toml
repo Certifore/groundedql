@@ -8,15 +8,22 @@ description = "IntentQL — Intent-driven, deterministic natural language to SQL
 version = "0.2.0"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [
   { name = "Alexander Abakah" }
 ]
 keywords = ["sql", "intent", "postgres", "sqlalchemy", "llm", "analytics", "natural-language"]
 classifiers = [
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
+  "Topic :: Database",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Typing :: Typed",
 ]
 
 dependencies = [
@@ -24,10 +31,10 @@ dependencies = [
   "psycopg2-binary",
   "pydantic>=2.0",
   "pyyaml",
-  "python-dotenv",
 ]
 
 [project.optional-dependencies]
+memory = ["chromadb>=0.4"]
 google = ["google-generativeai>=0.5.0"]
 benchmark = [
   "langchain-openai>=0.2",
@@ -35,13 +42,14 @@ benchmark = [
   "langchain-community>=0.3",
   "python-dotenv",
 ]
-dev = ["ruff>=0.6.0", "build>=1.2.0", "twine>=5.0.0"]
+dev = ["ruff>=0.6.0", "build>=1.2.0", "twine>=5.0.0", "python-dotenv"]
 
 [project.scripts]
 intentql = "intentql.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Certifore/intentql"
+Documentation = "https://certifore.github.io/intentql_docs"
 Repository = "https://github.com/Certifore/intentql"
 Issues = "https://github.com/Certifore/intentql/issues"
 
@@ -52,6 +60,3 @@ exclude = ["test*", "tests*"]
 
 [tool.setuptools]
 include-package-data = true
-
-[tool.setuptools.data-files]
-"config" = ["config/queryplan_spec.yaml"]

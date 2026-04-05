@@ -1,3 +1,10 @@
+from importlib.metadata import version as _version, PackageNotFoundError
+
+try:
+    __version__ = _version("intentql")
+except PackageNotFoundError:
+    __version__ = "0.0.0-dev"
+
 from .api.api import execute_query_plan, validate_query_plan, load_and_validate_schema
 from .planner import QueryPlanPlanner
 from .validation import validate_query_plan_dict, ValidationErrorItem
