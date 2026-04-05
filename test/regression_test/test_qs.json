@@ -2319,6 +2319,15 @@
     }
   },
   {
+    "name": "compile_intent_phase1_normalize_work_orders_no_false_wo_id",
+    "question": "What percentage of work orders are plumbing?",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_normalize_work_word_no_inject",
+      "question": "What percentage of work orders are plumbing?"
+    }
+  },
+  {
     "name": "compile_intent_phase1_list_filter_id_uses_equality_and_cap",
     "question": "List work order WO999",
     "type": "compile",
@@ -2340,6 +2349,14 @@
     "type": "compile",
     "compile": {
       "kind": "intent_phase1_time_bucket_legacy_compiles"
+    }
+  },
+  {
+    "name": "compile_intent_phase1_time_bucket_dimension_validates",
+    "question": "Intent plan with time_bucket on dimension passes QueryPlan validation",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_time_bucket_plan_validates"
     }
   },
   {

@@ -410,6 +410,24 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
             return False, f"expected primary_id filter on normalize, got filters={out.get('filters')}"
         return True, None
 
+    if kind == "intent_phase1_normalize_work_word_no_inject":
+        from intentql.intent_normalize import normalize_intent
+
+        q = spec.get("question") or test.get("question") or ""
+        schema = _schema_intent_phase1()
+        intent = {
+            "dataset": "work_orders",
+            "aggregation": "ratio",
+            "keyword": "plumbing",
+            "filters": [],
+            "group_by": [],
+        }
+        out = normalize_intent(intent, schema, question=q)
+        for f in out.get("filters") or []:
+            if f.get("column") == "work_order_id":
+                return False, f"must not inject work_order_id from 'work' in 'work orders', got {out.get('filters')}"
+        return True, None
+
     if kind == "intent_phase1_build_plan_id_equals_and_list_limit":
         from intentql.intent_planner import build_plan_from_intent
 
@@ -475,7 +493,11 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         return True, None
 
     if kind == "intent_phase1_ratio_plan_compiles":
+        import tempfile
+        from pathlib import Path as TmpPath
+
         from intentql.intent_planner import build_plan_from_intent
+        from intentql.validation import validate_query_plan_dict
 
         schema = _schema_intent_phase1()
         plan = build_plan_from_intent(
@@ -492,6 +514,13 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
             return False, f"ratio plan expected select list, got keys={list(plan.keys())}"
         if plan["select"][0].get("alias") != "pct":
             return False, f"ratio plan expected pct alias, got {plan['select'][0]!r}"
+        with tempfile.TemporaryDirectory() as td:
+            sp = TmpPath(td) / "schema.yaml"
+            sp.write_text(yaml.safe_dump(schema), encoding="utf-8")
+            body = {k: v for k, v in plan.items() if k != "meta"}
+            _parsed, errs = validate_query_plan_dict(body, str(sp))
+            if errs:
+                return False, f"ratio plan pydantic validation: {errs}"
         try:
             c = Compiler(schema)
             sql, _ = c.compile(plan)
@@ -499,6 +528,32 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
                 return False, f"ratio SQL unexpected: {sql[:200]!r}"
         except Exception as e:
             return False, f"ratio plan compile: {e}"
+        return True, None
+
+    if kind == "intent_phase1_time_bucket_plan_validates":
+        import tempfile
+        from pathlib import Path as TmpPath
+
+        from intentql.validation import validate_query_plan_dict
+
+        schema = _schema_intent_phase1()
+        plan = {
+            "version": "1.0",
+            "dataset": "work_orders",
+            "dimensions": [
+                {"field": "entry_date", "alias": "entry_date_month", "time_bucket": "month"},
+            ],
+            "metrics": [
+                {"agg": "count_distinct", "field": "work_order_id", "alias": "total"},
+            ],
+            "filters": [],
+        }
+        with tempfile.TemporaryDirectory() as td:
+            sp = TmpPath(td) / "schema.yaml"
+            sp.write_text(yaml.safe_dump(schema), encoding="utf-8")
+            _parsed, errs = validate_query_plan_dict(plan, str(sp))
+            if errs:
+                return False, f"time_bucket dimension validation: {errs}"
         return True, None
 
     return False, f"unknown compile.kind {kind!r}"

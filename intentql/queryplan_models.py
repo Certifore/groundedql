@@ -18,6 +18,8 @@ Operator = Literal[
 
 Agg = Literal["count", "count_distinct", "sum", "avg", "min", "max"]
 
+TimeBucket = Literal["day", "month", "quarter", "year"]
+
 
 class QueryFilter(BaseModel):
     model_config = STRICT
@@ -32,6 +34,10 @@ class QueryDimension(BaseModel):
 
     field: str = Field(..., description="Logical column name (snake_case) from schema.yaml")
     alias: Optional[str] = Field(None, description="Optional alias for output column name")
+    time_bucket: Optional[TimeBucket] = Field(
+        None,
+        description="If set, compiler groups by date_trunc(bucket, field) instead of raw timestamp.",
+    )
 
 
 class QueryMetric(BaseModel):
@@ -98,6 +104,12 @@ class QueryPlan(BaseModel):
     offset: int = 0
 
     rollup: Optional[Rollup] = None
+
+    # Non-legacy top-level select (e.g. ratio = scalar exprs); compiler lowers when present.
+    select: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Direct select list (expr/alias); used when dimensions/metrics are empty.",
+    )
 
     # JSON key "with" — SQL CTEs, composed before the main dataset query (see compiler _build_selectable).
     ctes: Optional[List[CteDef]] = Field(

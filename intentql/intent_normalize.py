@@ -118,7 +118,8 @@ def _normalize_group_by_for_multi_value_filters(
 
 # --- Phase 1: lookup IDs, trend bucketing ------------------------------------
 
-_WO_ID = re.compile(r"\bWO[-\s]?([A-Z0-9]+)\b", re.IGNORECASE)
+# WO + at least one digit (WO12345, WO-123). Avoids matching ordinary words like "work" (wo+rk).
+_WO_ID = re.compile(r"\bWO[-\s]?\d[A-Z0-9-]*\b", re.IGNORECASE)
 _LONG_ALNUM = re.compile(r"\b([A-Z][A-Z0-9\-]{10,})\b")
 
 
