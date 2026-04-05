@@ -12,6 +12,7 @@ builder that cannot produce structurally wrong plans.
 """
 from __future__ import annotations
 
+import re
 import sys
 import yaml
 from pathlib import Path
@@ -100,16 +101,28 @@ Rules:
   For example, if the user says "bechtel" and the known building names include
   "BECHTEL RESIDENCE", use "BECHTEL RESIDENCE".  If a user says "page house"
   and the list has "PAGE HOUSE", use "PAGE HOUSE" exactly.
+  If the user names a work order / record ID (e.g. WO12345), put it in filters
+  on the table's primary_id column — do not rely on list mode alone.
 - time_range: pick from the enum if the question mentions a time period.
-  "last year" → "last_year", "this year" → "this_year", etc.
+  "last year" → "last_year", "this year" → "this_year",
+  "last 3 years" / "past three years" → "last_3_years",
+  "last 2 years" → "last_2_years",
+  "last 6 months" / "past half year" → "last_6_months", etc.
 - aggregation: "count" for "how many / total / tally / numbers / breakdown /
   report / summary / give me".  Use "list" ONLY when the user explicitly asks
   to see individual records, details, or specific IDs.  When in doubt and
   the question names multiple entities, prefer "count".
+  Use "ratio" for "what percent / what % / proportion / share" of rows match
+  a keyword (e.g. "what % of work orders are plumbing?") — set keyword to the
+  topic and aggregation to "ratio".
 - group_by: if the question says "per X", "for each X", "by X", or lists
   multiple specific values and wants a total for each, put X's column here.
   IMPORTANT: when the question names multiple specific values of a column
   (e.g. "for house A, house B, house C"), ALWAYS put that column in group_by.
+  For trends ("trend over …", "over time", "by month"), include the primary
+  date column in group_by; normalization may add time_bucket (month/year).
+- time_bucket: optional — "month", "year", "quarter", or "day" when bucketing
+  a trend over the primary date (usually inferred from the question).
 - sort_direction: "desc" for most/highest, "asc" for least/lowest.
 - limit: integer if "top N" or "first N", otherwise null.
 - output_columns: for "list" queries, which columns to show.
@@ -200,6 +213,15 @@ _DATE_RANGE_MAP: Dict[str, Dict[str, Any]] = {
     "last_12_months": {
         "gte": {"$relative_date": {"op": "now_minus_days", "days": 365}},
     },
+    "last_6_months": {
+        "gte": {"$relative_date": {"op": "now_minus_days", "days": 182}},
+    },
+    "last_2_years": {
+        "gte": {"$relative_date": {"op": "now_minus_days", "days": 730}},
+    },
+    "last_3_years": {
+        "gte": {"$relative_date": {"op": "now_minus_days", "days": 1095}},
+    },
     "yesterday": {
         "gte": {"$relative_date": {"op": "now_minus_days", "days": 1}},
         "lt":  {"$relative_date": {"op": "today"}},
@@ -208,6 +230,78 @@ _DATE_RANGE_MAP: Dict[str, Dict[str, Any]] = {
         "gte": {"$relative_date": {"op": "today"}},
     },
 }
+
+
+def _should_use_equals_filter(
+    col: str,
+    vals: List[str],
+    primary_id: Optional[str],
+) -> bool:
+    """Single-value filters on IDs or id-shaped tokens use equality, not substring match."""
+    if len(vals) != 1:
+        return False
+    v = str(vals[0]).strip()
+    if primary_id and col == primary_id:
+        return True
+    if col.endswith("_id"):
+        return True
+    if len(v) >= 8 and re.match(r"^[A-Z0-9\-_]+$", v, re.I):
+        return True
+    if re.match(r"^WO[-\s]?[A-Z0-9]+$", v, re.I):
+        return True
+    return False
+
+
+def _ratio_percentage_plan(
+    dataset: str,
+    primary_id: str,
+    base_filters: List[Dict[str, Any]],
+    keyword_where: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Scalar subqueries: count with keyword OR vs count overall, then pct = num/den*100."""
+    num_sub: Dict[str, Any] = {
+        "dataset": dataset,
+        "metrics": [{"agg": "count_distinct", "field": primary_id, "alias": "c"}],
+        "filters": list(base_filters),
+        "dimensions": [],
+        "where": keyword_where,
+        "limit": 1,
+        "offset": 0,
+    }
+    den_sub: Dict[str, Any] = {
+        "dataset": dataset,
+        "metrics": [{"agg": "count_distinct", "field": primary_id, "alias": "c"}],
+        "filters": list(base_filters),
+        "dimensions": [],
+        "limit": 1,
+        "offset": 0,
+    }
+    pct_expr: Dict[str, Any] = {
+        "op": "/",
+        "args": [
+            {
+                "op": "*",
+                "args": [
+                    {"scalar_subquery": {"plan": num_sub}},
+                    {"lit": 100.0},
+                ],
+            },
+            {
+                "func": "nullif",
+                "args": [
+                    {"scalar_subquery": {"plan": den_sub}},
+                    {"lit": 0},
+                ],
+            },
+        ],
+    }
+    return {
+        "version": "1.0",
+        "dataset": dataset,
+        "select": [{"expr": pct_expr, "alias": "pct"}],
+        "limit": 1,
+        "offset": 0,
+    }
 
 
 def build_plan_from_intent(
@@ -254,7 +348,10 @@ def build_plan_from_intent(
             )
             continue
         if len(vals) == 1:
-            plan["filters"].append({"field": col, "op": "contains", "value": vals[0]})
+            if _should_use_equals_filter(col, vals, primary_id):
+                plan["filters"].append({"field": col, "op": "=", "value": vals[0]})
+            else:
+                plan["filters"].append({"field": col, "op": "contains", "value": vals[0]})
         else:
             plan["filters"].append({"field": col, "op": "in", "value": vals})
 
@@ -295,8 +392,32 @@ def build_plan_from_intent(
             if "lt" in dr:
                 plan["filters"].append({"field": primary_date, "op": "<", "value": dr["lt"]})
 
-    # --- aggregation + metrics ---
+    # --- ratio (% with keyword as numerator) → scalar subquery plan ---
     agg = intent.get("aggregation", "count")
+    if agg == "ratio":
+        if not primary_id:
+            print(
+                "[DSL intent] aggregation=ratio requires primary_id; using count instead",
+                file=sys.stderr,
+            )
+            agg = "count"
+        elif not plan.get("where"):
+            print(
+                "[DSL intent] aggregation=ratio requires a keyword search; using count instead",
+                file=sys.stderr,
+            )
+            agg = "count"
+        else:
+            ratio_plan = _ratio_percentage_plan(
+                dataset,
+                primary_id,
+                plan["filters"],
+                plan["where"],
+            )
+            ratio_plan = _resolve_relative_dates(ratio_plan)
+            return canonicalize_query_plan(ratio_plan)
+
+    # --- aggregation + metrics ---
     if agg == "count":
         field = primary_id or "*"
         agg_func = "count_distinct" if primary_id else "count"
@@ -315,8 +436,14 @@ def build_plan_from_intent(
     group_by = intent.get("group_by") or []
     if isinstance(group_by, str):
         group_by = [group_by]
+    tb = intent.get("time_bucket")
     for col in group_by:
-        if col in valid_cols:
+        if col not in valid_cols:
+            continue
+        if primary_date and col == primary_date and tb:
+            dim_alias = f"{col}_{tb}"
+            plan["dimensions"].append({"field": col, "alias": dim_alias, "time_bucket": tb})
+        else:
             plan["dimensions"].append({"field": col, "alias": col})
 
     # --- output columns (for list queries) ---
@@ -358,12 +485,23 @@ def build_plan_from_intent(
     sort_dir = intent.get("sort_direction")
     if sort_dir and plan["metrics"]:
         plan["order_by"] = [{"by": plan["metrics"][0]["alias"], "dir": sort_dir}]
+    elif any(d.get("time_bucket") for d in plan["dimensions"]) and plan["metrics"]:
+        for d in plan["dimensions"]:
+            if d.get("time_bucket"):
+                plan["order_by"] = [{"by": d["alias"], "dir": "asc"}]
+                break
 
     user_limit = intent.get("limit")
     if user_limit:
         plan["limit"] = user_limit
     elif agg == "count" and not plan["dimensions"]:
         plan["limit"] = 1
+
+    if agg == "list" and primary_id:
+        for f in plan["filters"]:
+            if f.get("field") == primary_id and f.get("op") == "=":
+                plan["limit"] = min(int(plan.get("limit", 100)), 25)
+                break
 
     # --- resolve $relative_date sentinels ---
     plan = _resolve_relative_dates(plan)
@@ -439,7 +577,7 @@ class IntentPlanner:
             )
 
             # Step 3: Deterministic normalization
-            intent = normalize_intent(intent, schema)
+            intent = normalize_intent(intent, schema, question=question)
 
             # Step 4: Validate against value index
             if self.value_index:

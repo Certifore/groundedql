@@ -17,11 +17,15 @@ TimeRange = Literal[
     "last_month", "this_month",
     "last_7_days", "last_30_days", "last_90_days",
     "last_12_months",
+    "last_6_months",
+    "last_2_years",
+    "last_3_years",
     "yesterday", "today",
 ]
 
-AggType = Literal["count", "list", "sum", "avg", "min", "max"]
+AggType = Literal["count", "list", "sum", "avg", "min", "max", "ratio"]
 SortDir = Literal["asc", "desc"]
+TimeBucket = Literal["day", "month", "quarter", "year"]
 
 
 class IntentFilter(BaseModel):
@@ -58,7 +62,8 @@ class QueryIntent(BaseModel):
         "count",
         description=(
             "'count' for how many / total; 'list' for show/display/enumerate; "
-            "'sum'/'avg'/'min'/'max' for numeric aggregation."
+            "'sum'/'avg'/'min'/'max' for numeric aggregation; "
+            "'ratio' for percentages ('what % of X are Y?') — requires keyword and uses count/total."
         ),
     )
     aggregation_field: Optional[str] = Field(
@@ -71,6 +76,13 @@ class QueryIntent(BaseModel):
             "Columns to group results by. "
             "If the question says 'per building', 'for each house', 'by month' etc., "
             "put the column name here."
+        ),
+    )
+    time_bucket: Optional[TimeBucket] = Field(
+        None,
+        description=(
+            "For trends over time: bucket the primary date column by day/month/quarter/year "
+            "(compiler uses date_trunc). Set when the user asks for a trend, over time, or by month/year."
         ),
     )
     sort_direction: Optional[SortDir] = Field(

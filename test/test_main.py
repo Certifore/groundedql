@@ -9,7 +9,7 @@ Modes (set via TEST_MODE env var or command-line arg):
   lint    — No DB: lint + canonical + compile rows from test_qs.json
 
 Usage:
-  python test/test_main.py              # full suite (default)
+  python test/test_main.py              # full suite (default); repo root is on sys.path (no pip install -e . required)
   python test/test_main.py update       # overwrite baseline
   python test/test_main.py check        # regression check (for CI)
   python test/test_main.py pipeline     # compile preflight + pipeline benchmark
@@ -29,6 +29,13 @@ import os
 import sys
 from pathlib import Path
 
+# Repo root (parent of test/): so `python test/test_main.py` works without `pip install -e .`
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
+_rp = str(ROOT)
+if _rp not in sys.path:
+    sys.path.insert(0, _rp)
+
 from dotenv import load_dotenv
 import psycopg2
 from sqlalchemy import create_engine, text
@@ -41,11 +48,8 @@ from intentql.plan_canonical import canonicalize_query_plan, plan_fingerprint
 from intentql.semantic_lint import semantic_lint
 
 # ---------------------------------------------------------------------------
-# Paths
+# Paths (HERE, ROOT set at top for intentql import path)
 # ---------------------------------------------------------------------------
-HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
-
 ENV_PATH = ROOT / ".env"
 SCHEMA_PATH = ROOT / "config" / "schema.yaml"
 REG_DIR = HERE / "regression_test"
@@ -96,6 +100,28 @@ def _minimal_schema_for_compile(*, bad_link_join_type: str | None = None) -> dic
     if bad_link_join_type is not None:
         schema["links"][0]["join_type"] = bad_link_join_type
     return schema
+
+
+def _schema_intent_phase1() -> dict:
+    """Minimal schema for intent pipeline compile tests (Phase 1)."""
+    return {
+        "tables": [
+            {
+                "name": "work_orders",
+                "db_table": "work_orders",
+                "primary_id": "work_order_id",
+                "primary_date": "entry_date",
+                "keyword_search_or": ["description", "trade"],
+                "columns": [
+                    {"name": "work_order_id", "db_column": "work_order_id", "type": "varchar"},
+                    {"name": "entry_date", "db_column": "entry_date", "type": "timestamp"},
+                    {"name": "description", "db_column": "description", "type": "varchar"},
+                    {"name": "trade", "db_column": "trade", "type": "varchar"},
+                    {"name": "building_name", "db_column": "building_name", "type": "varchar"},
+                ],
+            }
+        ],
+    }
 
 
 def _run_compile_test(test: dict) -> tuple[bool, str | None]:
@@ -364,6 +390,115 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
                 False,
                 f"calendar_year_start default year_offset: got {z!r} want {expected_default!r}",
             )
+        return True, None
+
+    # --- Intent pipeline (Phase 1): normalize + build_plan_from_intent + compile ---
+    if kind == "intent_phase1_normalize_injects_primary_id":
+        from intentql.intent_normalize import normalize_intent
+
+        q = spec.get("question") or test.get("question") or ""
+        schema = _schema_intent_phase1()
+        intent = {
+            "dataset": "work_orders",
+            "aggregation": "list",
+            "filters": [],
+            "group_by": [],
+        }
+        out = normalize_intent(intent, schema, question=q)
+        cols = {f.get("column") for f in out.get("filters") or []}
+        if "work_order_id" not in cols:
+            return False, f"expected primary_id filter on normalize, got filters={out.get('filters')}"
+        return True, None
+
+    if kind == "intent_phase1_build_plan_id_equals_and_list_limit":
+        from intentql.intent_planner import build_plan_from_intent
+
+        schema = _schema_intent_phase1()
+        plan = build_plan_from_intent(
+            {
+                "dataset": "work_orders",
+                "aggregation": "list",
+                "filters": [{"column": "work_order_id", "values": ["WO999"]}],
+                "group_by": [],
+            },
+            schema,
+        )
+        id_f = next((f for f in plan["filters"] if f.get("field") == "work_order_id"), None)
+        if not id_f or id_f.get("op") != "=":
+            return False, f"expected = filter on work_order_id, got {id_f!r}"
+        if plan.get("limit") != 25:
+            return False, f"expected list+id limit 25, got {plan.get('limit')}"
+        return True, None
+
+    if kind == "intent_phase1_last_3_years_filter":
+        from intentql.intent_planner import build_plan_from_intent
+
+        schema = _schema_intent_phase1()
+        plan = build_plan_from_intent(
+            {
+                "dataset": "work_orders",
+                "aggregation": "count",
+                "time_range": "last_3_years",
+                "filters": [],
+                "group_by": [],
+            },
+            schema,
+        )
+        date_filters = [f for f in plan["filters"] if f.get("field") == "entry_date"]
+        if not any(f.get("op") == ">=" for f in date_filters):
+            return False, f"expected >= on entry_date for last_3_years, got {date_filters!r}"
+        return True, None
+
+    if kind == "intent_phase1_time_bucket_legacy_compiles":
+        from intentql.intent_planner import build_plan_from_intent
+
+        schema = _schema_intent_phase1()
+        plan = build_plan_from_intent(
+            {
+                "dataset": "work_orders",
+                "aggregation": "count",
+                "time_range": "last_3_years",
+                "group_by": ["entry_date"],
+                "time_bucket": "month",
+                "filters": [],
+            },
+            schema,
+        )
+        dim = plan["dimensions"][0] if plan.get("dimensions") else {}
+        if dim.get("time_bucket") != "month":
+            return False, f"expected time_bucket month on dimension, got {dim!r}"
+        try:
+            c = Compiler(schema)
+            c.compile(plan)
+        except Exception as e:
+            return False, f"time_bucket plan compile: {e}"
+        return True, None
+
+    if kind == "intent_phase1_ratio_plan_compiles":
+        from intentql.intent_planner import build_plan_from_intent
+
+        schema = _schema_intent_phase1()
+        plan = build_plan_from_intent(
+            {
+                "dataset": "work_orders",
+                "aggregation": "ratio",
+                "keyword": "plumbing",
+                "filters": [],
+                "group_by": [],
+            },
+            schema,
+        )
+        if "select" not in plan or not plan["select"]:
+            return False, f"ratio plan expected select list, got keys={list(plan.keys())}"
+        if plan["select"][0].get("alias") != "pct":
+            return False, f"ratio plan expected pct alias, got {plan['select'][0]!r}"
+        try:
+            c = Compiler(schema)
+            sql, _ = c.compile(plan)
+            if "select" not in sql.lower():
+                return False, f"ratio SQL unexpected: {sql[:200]!r}"
+        except Exception as e:
+            return False, f"ratio plan compile: {e}"
         return True, None
 
     return False, f"unknown compile.kind {kind!r}"

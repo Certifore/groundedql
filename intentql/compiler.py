@@ -696,8 +696,14 @@ class Compiler:
             field = d.get("field")
             alias = d.get("alias")
             _require(isinstance(field, str), "INVALID_PLAN", "dimension.field must be string.", "$.dimensions")
-            select_items.append({"expr": {"col": field}, "alias": alias})
-            group_by.append({"col": field})
+            tb = (d.get("time_bucket") or "").lower() if isinstance(d.get("time_bucket"), str) else ""
+            if tb in {"day", "month", "quarter", "year"}:
+                trunc_expr = {"func": "date_trunc", "args": [{"lit": tb}, {"col": field}]}
+                select_items.append({"expr": trunc_expr, "alias": alias})
+                group_by.append(trunc_expr)
+            else:
+                select_items.append({"expr": {"col": field}, "alias": alias})
+                group_by.append({"col": field})
 
         for m in mets:
             agg = (m.get("agg") or "").lower()

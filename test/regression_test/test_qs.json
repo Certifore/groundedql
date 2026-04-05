@@ -1154,7 +1154,7 @@
     "type": "lint",
     "lint": {
       "expect": "fires",
-      "fragment": "workflow values"
+      "fragment": "CTE with filters"
     }
   },
   {
@@ -2307,6 +2307,47 @@
     "type": "compile",
     "compile": {
       "kind": "relative_date_calendar_year"
+    }
+  },
+  {
+    "name": "compile_intent_phase1_normalize_injects_work_order_id",
+    "question": "Show details for WO12345",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_normalize_injects_primary_id",
+      "question": "Show details for WO12345"
+    }
+  },
+  {
+    "name": "compile_intent_phase1_list_filter_id_uses_equality_and_cap",
+    "question": "List work order WO999",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_build_plan_id_equals_and_list_limit"
+    }
+  },
+  {
+    "name": "compile_intent_phase1_last_3_years_entry_date",
+    "question": "How many work orders in the last 3 years?",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_last_3_years_filter"
+    }
+  },
+  {
+    "name": "compile_intent_phase1_trend_month_bucket_compiles",
+    "question": "Trend of work orders by month over the last 3 years",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_time_bucket_legacy_compiles"
+    }
+  },
+  {
+    "name": "compile_intent_phase1_ratio_percentage_compiles",
+    "question": "What percent of work orders are plumbing?",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_ratio_plan_compiles"
     }
   }
 ]

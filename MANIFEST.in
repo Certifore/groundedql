@@ -1,5 +1,6 @@
 include README.md
 include LICENSE
+include ROADMAP.md
 
 exclude config/schema.yaml
 exclude config/queryplan_spec.yaml
