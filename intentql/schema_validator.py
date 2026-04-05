@@ -6,6 +6,7 @@ or query execution. Raises SchemaError with a clear message on misconfiguration.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
 from .exceptions import SchemaError
@@ -94,6 +95,24 @@ def validate_schema(schema: Dict[str, Any]) -> List[str]:
                     raise SchemaError(
                         f"{loc} ('{name}'): keyword_search_or references unknown column {col!r}."
                     )
+
+        iip = t.get("intent_id_patterns")
+        if iip is not None:
+            if not isinstance(iip, list):
+                raise SchemaError(
+                    f"{loc} ('{name}'): 'intent_id_patterns' must be a list of regex strings (or omitted)."
+                )
+            for j, pat in enumerate(iip):
+                if not isinstance(pat, str) or not pat.strip():
+                    raise SchemaError(
+                        f"{loc}.intent_id_patterns[{j}]: must be a non-empty regex string."
+                    )
+                try:
+                    re.compile(pat)
+                except re.error as err:
+                    raise SchemaError(
+                        f"{loc}.intent_id_patterns[{j}]: invalid regex {pat!r}: {err}"
+                    ) from err
 
     # Validate links
     known_table_names = {t["name"] for t in tables if isinstance(t, dict) and t.get("name")}

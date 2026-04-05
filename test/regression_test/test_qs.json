@@ -2310,7 +2310,7 @@
     }
   },
   {
-    "name": "compile_intent_phase1_normalize_injects_work_order_id",
+    "name": "compile_intent_phase1_normalize_injects_when_schema_has_intent_id_patterns",
     "question": "Show details for WO12345",
     "type": "compile",
     "compile": {

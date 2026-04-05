@@ -101,8 +101,8 @@ Rules:
   For example, if the user says "bechtel" and the known building names include
   "BECHTEL RESIDENCE", use "BECHTEL RESIDENCE".  If a user says "page house"
   and the list has "PAGE HOUSE", use "PAGE HOUSE" exactly.
-  If the user names a work order / record ID (e.g. WO12345), put it in filters
-  on the table's primary_id column — do not rely on list mode alone.
+  If the user names a specific record ID, put it in filters on the table's
+  primary_id column — do not rely on list mode alone.
 - time_range: pick from the enum if the question mentions a time period.
   "last year" → "last_year", "this year" → "this_year",
   "last 3 years" / "past three years" → "last_3_years",
@@ -246,8 +246,6 @@ def _should_use_equals_filter(
     if col.endswith("_id"):
         return True
     if len(v) >= 8 and re.match(r"^[A-Z0-9\-_]+$", v, re.I):
-        return True
-    if re.match(r"^WO[-\s]?[A-Z0-9]+$", v, re.I):
         return True
     return False
 

@@ -4,6 +4,10 @@ intent_normalize.py — Deterministic normalization of extracted intents.
 No matter how the LLM structures the intent, this module canonicalizes it
 so that semantically equivalent questions always produce the same intent
 structure.  This eliminates a major source of inconsistency.
+
+Optional ``intent_id_patterns`` on a table in schema.yaml (list of regex strings)
+may be used to add a primary_id filter from the user question; patterns are
+application-defined — IntentQL does not ship domain-specific ID heuristics.
 """
 from __future__ import annotations
 
@@ -116,23 +120,37 @@ def _normalize_group_by_for_multi_value_filters(
     return intent
 
 
-# --- Phase 1: lookup IDs, trend bucketing ------------------------------------
+# --- Phase 1: optional ID hints from question, trend bucketing ----------------
 
-# WO + at least one digit (WO12345, WO-123). Avoids matching ordinary words like "work" (wo+rk).
-_WO_ID = re.compile(r"\bWO[-\s]?\d[A-Z0-9-]*\b", re.IGNORECASE)
-_LONG_ALNUM = re.compile(r"\b([A-Z][A-Z0-9\-]{10,})\b")
+def _compiled_intent_id_patterns(table: Dict[str, Any]) -> List[re.Pattern]:
+    """Optional per-table regex list from schema (`intent_id_patterns`). Domain-agnostic."""
+    raw = table.get("intent_id_patterns") or []
+    if not isinstance(raw, list):
+        return []
+    out: List[re.Pattern] = []
+    for pat in raw:
+        if not isinstance(pat, str) or not pat.strip():
+            continue
+        try:
+            out.append(re.compile(pat, re.IGNORECASE))
+        except re.error:
+            continue
+    return out
 
 
-def _extract_id_candidates(text: str) -> List[str]:
-    """Heuristic tokens that look like work-order or external record IDs."""
-    if not text:
+def _match_value_from_regex(m: re.Match) -> str:
+    if m.lastindex and m.lastindex >= 1:
+        return m.group(1).strip()
+    return m.group(0).strip()
+
+
+def _extract_id_candidates_from_question(text: str, patterns: List[re.Pattern]) -> List[str]:
+    if not text or not patterns:
         return []
     out: List[str] = []
-    for m in _WO_ID.finditer(text):
-        raw = m.group(0).replace(" ", "").replace("-", "")
-        out.append(raw.upper())
-    for m in _LONG_ALNUM.finditer(text):
-        out.append(m.group(1))
+    for pat in patterns:
+        for m in pat.finditer(text):
+            out.append(_match_value_from_regex(m))
     return out
 
 
@@ -141,7 +159,7 @@ def _inject_primary_id_from_question(
     question: Optional[str],
     schema: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """If the question names an ID-like token, add an equality filter on primary_id."""
+    """If schema declares ``intent_id_patterns`` for this table, add a primary_id filter from the first match."""
     if not question:
         return intent
     dataset = intent.get("dataset") or ""
@@ -149,13 +167,16 @@ def _inject_primary_id_from_question(
     pid = table.get("primary_id")
     if not pid:
         return intent
+    patterns = _compiled_intent_id_patterns(table)
+    if not patterns:
+        return intent
     existing_cols = {f.get("column") for f in intent.get("filters") or []}
     if pid in existing_cols:
         return intent
-    for cand in _extract_id_candidates(question):
+    for cand in _extract_id_candidates_from_question(question, patterns):
         intent.setdefault("filters", []).append({"column": pid, "values": [cand]})
         print(
-            f"[Normalize] Injected primary_id filter {pid}={cand} from question text",
+            f"[Normalize] Injected primary_id filter {pid}={cand} from question text (intent_id_patterns)",
             file=sys.stderr,
         )
         break
@@ -239,19 +260,16 @@ def _maybe_coerce_list_for_detail_lookup(
     pid = table.get("primary_id")
     if not pid:
         return intent
-    id_cands = {c.upper() for c in _extract_id_candidates(question)}
     for f in intent.get("filters") or []:
         if f.get("column") != pid:
             continue
         vals = f.get("values") or []
         if not vals:
             continue
-        v0 = str(vals[0]).strip()
-        if v0.upper() in id_cands or _WO_ID.search(v0):
-            intent["aggregation"] = "list"
-            print(
-                "[Normalize] Coerced aggregation to 'list' for detail-style question with primary_id filter",
-                file=sys.stderr,
-            )
-            return intent
+        intent["aggregation"] = "list"
+        print(
+            "[Normalize] Coerced aggregation to 'list' for detail-style question with primary_id filter",
+            file=sys.stderr,
+        )
+        return intent
     return intent

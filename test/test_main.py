@@ -102,26 +102,29 @@ def _minimal_schema_for_compile(*, bad_link_join_type: str | None = None) -> dic
     return schema
 
 
-def _schema_intent_phase1() -> dict:
-    """Minimal schema for intent pipeline compile tests (Phase 1)."""
-    return {
-        "tables": [
-            {
-                "name": "work_orders",
-                "db_table": "work_orders",
-                "primary_id": "work_order_id",
-                "primary_date": "entry_date",
-                "keyword_search_or": ["description", "trade"],
-                "columns": [
-                    {"name": "work_order_id", "db_column": "work_order_id", "type": "varchar"},
-                    {"name": "entry_date", "db_column": "entry_date", "type": "timestamp"},
-                    {"name": "description", "db_column": "description", "type": "varchar"},
-                    {"name": "trade", "db_column": "trade", "type": "varchar"},
-                    {"name": "building_name", "db_column": "building_name", "type": "varchar"},
-                ],
-            }
+def _schema_intent_phase1(*, intent_id_patterns: list[str] | None = None) -> dict:
+    """Minimal schema for intent pipeline compile tests (Phase 1).
+
+    Optional *intent_id_patterns* mimics an app declaring regexes in schema.yaml
+    (IntentQL has no built-in domain ID formats).
+    """
+    row: dict = {
+        "name": "work_orders",
+        "db_table": "work_orders",
+        "primary_id": "work_order_id",
+        "primary_date": "entry_date",
+        "keyword_search_or": ["description", "trade"],
+        "columns": [
+            {"name": "work_order_id", "db_column": "work_order_id", "type": "varchar"},
+            {"name": "entry_date", "db_column": "entry_date", "type": "timestamp"},
+            {"name": "description", "db_column": "description", "type": "varchar"},
+            {"name": "trade", "db_column": "trade", "type": "varchar"},
+            {"name": "building_name", "db_column": "building_name", "type": "varchar"},
         ],
     }
+    if intent_id_patterns is not None:
+        row["intent_id_patterns"] = intent_id_patterns
+    return {"tables": [row]}
 
 
 def _run_compile_test(test: dict) -> tuple[bool, str | None]:
@@ -397,7 +400,9 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         from intentql.intent_normalize import normalize_intent
 
         q = spec.get("question") or test.get("question") or ""
-        schema = _schema_intent_phase1()
+        schema = _schema_intent_phase1(
+            intent_id_patterns=[r"\bWO[-\s]?\d[A-Z0-9-]*\b"],
+        )
         intent = {
             "dataset": "work_orders",
             "aggregation": "list",

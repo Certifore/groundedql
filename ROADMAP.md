@@ -19,7 +19,7 @@ Fix the failure modes users hit first when moving beyond “how many X per Y”:
 
 **Deliverable:** Tests + few-shot examples per family so rephrasings stay stable.
 
-**Status (implemented in library):** `QueryIntent` gains `time_bucket` and `aggregation: ratio`; `TimeRange` includes `last_2_years`, `last_3_years`, `last_6_months`. Normalization injects WO-/ID-like tokens onto `primary_id`, infers monthly/yearly buckets for trend phrasing, and may coerce to `list` for detail questions. `build_plan_from_intent` uses `=` filters on IDs, emits `date_trunc` via dimension `time_bucket`, and builds percentage plans as two scalar subqueries + `pct`. Regression coverage: `compile_intent_phase1_*` entries in `test/regression_test/test_qs.json`, executed via `python test/test_main.py lint` (or default suite).
+**Status (implemented in library):** `QueryIntent` gains `time_bucket` and `aggregation: ratio`; `TimeRange` includes `last_2_years`, `last_3_years`, `last_6_months`. Optional per-table **`intent_id_patterns`** in `schema.yaml` (list of regex strings) can suggest `primary_id` filters from the question text; there are no built-in domain-specific ID formats. Normalization infers monthly/yearly buckets for trend phrasing and may coerce to `list` for detail questions when `primary_id` is already filtered. `build_plan_from_intent` uses `=` filters on IDs, emits `date_trunc` via dimension `time_bucket`, and builds percentage plans as two scalar subqueries + `pct`. Regression coverage: `compile_intent_phase1_*` entries in `test/regression_test/test_qs.json`, executed via `python test/test_main.py lint` (or default suite).
 
 ---
 

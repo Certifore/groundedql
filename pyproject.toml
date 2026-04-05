@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "intentql"
 description = "IntentQL — Intent-driven, deterministic natural language to SQL for Postgres."
-version = "0.2.2"
+version = "0.2.3"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
