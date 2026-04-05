@@ -14,8 +14,38 @@ from .api.api import execute_query_plan
 from .llm_adapters import make_llm_client
 from .semantic_lint import semantic_lint
 from .decompose import is_compound, split_compound, SubQuestion
+from .spec_builder import build_spec, write_spec
 from .value_index import build_value_index
 from .intent_memory import IntentMemory
+
+
+def _ensure_spec(schema_path: str, spec_path: Optional[str]) -> str:
+    """Auto-generate the spec file from schema.yaml if not provided or missing."""
+    if spec_path:
+        p = Path(spec_path)
+        if p.exists():
+            return spec_path
+        print(
+            f"[IntentQL] Spec file not found at {spec_path}, generating from schema...",
+            file=sys.stderr,
+        )
+    else:
+        p = Path(schema_path).parent / "queryplan_spec_generated.yaml"
+        spec_path = str(p)
+
+    if p.exists():
+        schema_mtime = Path(schema_path).stat().st_mtime
+        spec_mtime = p.stat().st_mtime
+        if spec_mtime >= schema_mtime:
+            return spec_path
+        print(
+            "[IntentQL] Spec is older than schema.yaml, regenerating...",
+            file=sys.stderr,
+        )
+
+    spec = build_spec(schema_path)
+    write_spec(spec, spec_path)
+    return spec_path
 
 
 class QueryAgent:
@@ -24,7 +54,7 @@ class QueryAgent:
         *,
         engine: Engine,
         schema_path: str,
-        spec_path: str,
+        spec_path: Optional[str] = None,
         llm: Any,
         max_plan_retries: int = 2,
         enforce_semantic_lint: bool = True,
@@ -32,19 +62,20 @@ class QueryAgent:
     ):
         """
         Args:
+            schema_path: Path to your schema.yaml — the only required config file.
+            spec_path: Path to the LLM spec file. If omitted or missing, it is
+                auto-generated from schema.yaml at startup.
             max_plan_retries: Extra LLM attempts after the first plan when structural
-                or semantic checks fail. Default 2 so multi-step fixes (compound CTE + filters)
-                can succeed after feedback.
+                or semantic checks fail.
             enforce_semantic_lint: If True (default), do not execute when
-                :func:`semantic_lint` still reports errors after retries. Set False only
-                for debugging or custom callers that handle ``meta`` themselves.
+                :func:`semantic_lint` still reports errors after retries.
             use_intent_pipeline: If True (default), use the two-stage intent
                 extraction + deterministic plan builder instead of direct LLM
-                QueryPlan generation.  Falls back to legacy pipeline on error.
+                QueryPlan generation. Falls back to legacy pipeline on error.
         """
         self.engine = engine
         self.schema_path = schema_path
-        self.spec_path = spec_path
+        self.spec_path = _ensure_spec(schema_path, spec_path)
         self.max_plan_retries = max_plan_retries
         self.enforce_semantic_lint = enforce_semantic_lint
         self.use_intent_pipeline = use_intent_pipeline
@@ -52,19 +83,19 @@ class QueryAgent:
         self.planner = QueryPlanPlanner(
             llm=llm_client,
             schema_path=schema_path,
-            spec_path=spec_path,
+            spec_path=self.spec_path,
         )
 
         self.value_index = {}
         try:
             self.value_index = build_value_index(engine, schema_path)
             print(
-                f"[DSL] Value index built: "
+                f"[IntentQL] Value index built: "
                 f"{sum(len(cols) for cols in self.value_index.values())} columns indexed",
                 file=sys.stderr,
             )
         except Exception as exc:
-            print(f"[DSL] Value index build failed ({exc}), continuing without it.", file=sys.stderr)
+            print(f"[IntentQL] Value index build failed ({exc}), continuing without it.", file=sys.stderr)
 
         memory_dir = str(Path(schema_path).parent / ".intent_memory")
         self.intent_memory = IntentMemory(persist_directory=memory_dir)
@@ -87,7 +118,7 @@ class QueryAgent:
             plan_dict = self.intent_planner.plan(question)
         except Exception as exc:
             print(
-                f"[DSL] Intent pipeline failed ({exc}), falling back to legacy.",
+                f"[IntentQL] Intent pipeline failed ({exc}), falling back to legacy.",
                 file=sys.stderr,
             )
             return self._ask_legacy(question)
@@ -95,7 +126,7 @@ class QueryAgent:
         parsed, errors = validate_query_plan_dict(plan_dict, self.schema_path)
         if errors:
             print(
-                f"[DSL] Intent plan failed validation, falling back to legacy.",
+                f"[IntentQL] Intent plan failed validation, falling back to legacy.",
                 file=sys.stderr,
             )
             return self._ask_legacy(question)
