@@ -38,7 +38,7 @@ class IntentMemory:
             from chromadb.config import Settings
 
             persist_dir = persist_directory or str(
-                Path.home() / ".dsl_compiler" / "intent_memory"
+                Path.home() / ".intentql" / "intent_memory"
             )
             Path(persist_dir).mkdir(parents=True, exist_ok=True)
 

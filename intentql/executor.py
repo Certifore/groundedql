@@ -1,4 +1,4 @@
-# dsl_compiler/executor.py
+# intentql/executor.py
 from __future__ import annotations
 
 from typing import Any, Dict

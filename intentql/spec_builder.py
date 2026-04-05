@@ -6,12 +6,12 @@ containing only the tables, columns, operators, and auto-generated examples
 relevant to that schema.
 
 Usage (CLI):
-    python -m dsl_compiler.spec_builder \
+    python -m intentql.spec_builder \
         --schema config/schema.yaml \
         --output config/queryplan_spec_generated.yaml
 
 Usage (programmatic):
-    from dsl_compiler.spec_builder import build_spec, write_spec
+    from intentql.spec_builder import build_spec, write_spec
     spec = build_spec("config/schema.yaml")
     write_spec(spec, "config/queryplan_spec_generated.yaml")
 """
@@ -40,10 +40,10 @@ def build_spec(schema_path: str | Path) -> Dict[str, Any]:
     spec: Dict[str, Any] = {}
 
     spec["version"] = 1
-    spec["name"] = "QCE QueryPlan Spec (auto-generated)"
+    spec["name"] = "IntentQL QueryPlan Spec (auto-generated)"
     spec["description"] = (
         "Auto-generated from schema.yaml. "
-        "Instructions for generating QueryPlan JSON for the QCE compiler. "
+        "Instructions for generating QueryPlan JSON for the IntentQL compiler. "
         "Output MUST be valid JSON only (no markdown, no prose, no SQL)."
     )
 

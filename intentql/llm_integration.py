@@ -1,4 +1,4 @@
-# dsl_compiler/llm_integration.py
+# intentql/llm_integration.py
 from abc import ABC, abstractmethod
 
 class BaseLLMClient(ABC):

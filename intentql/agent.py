@@ -165,7 +165,7 @@ class QueryAgent:
 
         subs = split_compound(question)
         print(
-            f"[QCE] Compound question detected — splitting into {len(subs)} sub-questions.",
+            f"[IntentQL] Compound question detected — splitting into {len(subs)} sub-questions.",
             file=sys.stderr,
         )
 
@@ -173,7 +173,7 @@ class QueryAgent:
         has_success = False
 
         for sq in subs:
-            print(f"[QCE]   {sq.role}: {sq.text!r}", file=sys.stderr)
+            print(f"[IntentQL]   {sq.role}: {sq.text!r}", file=sys.stderr)
             try:
                 r = self.ask(sq.text)
                 is_error = isinstance(r, dict) and bool(r.get("error"))
@@ -185,7 +185,7 @@ class QueryAgent:
                     "result": r,
                 })
             except Exception as exc:
-                print(f"[QCE]   {sq.role} failed: {exc}", file=sys.stderr)
+                print(f"[IntentQL]   {sq.role} failed: {exc}", file=sys.stderr)
                 parts.append({
                     "role": sq.role,
                     "question": sq.text,

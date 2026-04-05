@@ -1,5 +1,5 @@
 """
-Regression test runner for dsl_compiler.
+Regression test runner for IntentQL.
 
 Modes (set via TEST_MODE env var or command-line arg):
   run     — Full regression suite from test_qs.json (default)
@@ -35,10 +35,10 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 import yaml
 
-from dsl_compiler import execute_query_plan
-from dsl_compiler.join_planner import auto_inject_joins
-from dsl_compiler.plan_canonical import canonicalize_query_plan, plan_fingerprint
-from dsl_compiler.semantic_lint import semantic_lint
+from intentql import execute_query_plan
+from intentql.join_planner import auto_inject_joins
+from intentql.plan_canonical import canonicalize_query_plan, plan_fingerprint
+from intentql.semantic_lint import semantic_lint
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -103,10 +103,10 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
     import tempfile
     from pathlib import Path as P
 
-    from dsl_compiler.compiler import Compiler, QueryPlanError
-    from dsl_compiler.exceptions import SchemaError
-    from dsl_compiler.schema_validator import validate_schema
-    from dsl_compiler.validation import validate_query_plan_dict
+    from intentql.compiler import Compiler, QueryPlanError
+    from intentql.exceptions import SchemaError
+    from intentql.schema_validator import validate_schema
+    from intentql.validation import validate_query_plan_dict
 
     spec = test.get("compile") or {}
     kind = spec.get("kind", "")
@@ -338,7 +338,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
     if kind == "relative_date_calendar_year":
         import datetime as dt
 
-        from dsl_compiler.api.api import _resolve_relative_dates
+        from intentql.api.api import _resolve_relative_dates
 
         lo = _resolve_relative_dates(
             {"$relative_date": {"op": "calendar_year_start", "year_offset": -1}}
@@ -438,8 +438,8 @@ def _run_pipeline_mode() -> None:
     db_url = _db_url()
 
     if not openai_key and gemini_key:
-        print("\n[setup] OPENAI_API_KEY not set — running QCE full pipeline with Gemini only.")
-        print(f"\n[1/1] QCE full pipeline ({len(pipeline_questions)} questions)...")
+        print("\n[setup] OPENAI_API_KEY not set — running IntentQL full pipeline with Gemini only.")
+        print(f"\n[1/1] IntentQL full pipeline ({len(pipeline_questions)} questions)...")
         qce = bench_pipeline_qce(schema, pipeline_questions, db_url)
         pipe = [qce]
     else:
@@ -447,7 +447,7 @@ def _run_pipeline_mode() -> None:
         gpt4_client = make_client(openai_key)
         langchain_agent = make_agent(db_url, openai_key)
 
-        print(f"\n[1/3] QCE full pipeline ({len(pipeline_questions)} questions)...")
+        print(f"\n[1/3] IntentQL full pipeline ({len(pipeline_questions)} questions)...")
         qce = bench_pipeline_qce(schema, pipeline_questions, db_url)
 
         print(f"\n[2/3] LangChain full pipeline ({len(pipeline_questions)} questions)...")

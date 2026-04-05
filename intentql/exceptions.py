@@ -1,9 +1,9 @@
 """
-Public exception hierarchy for dsl_compiler.
+Public exception hierarchy for IntentQL.
 
 Consuming code should catch these explicitly:
 
-    from dsl_compiler.exceptions import QueryPlanError, DatabaseExecutionError
+    from intentql.exceptions import QueryPlanError, DatabaseExecutionError
 
     try:
         result = execute_query_plan(...)
@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 
 
 class DSLCompilerError(Exception):
-    """Base class for all dsl_compiler errors."""
+    """Base class for all IntentQL errors."""
 
 
 class SchemaError(DSLCompilerError):

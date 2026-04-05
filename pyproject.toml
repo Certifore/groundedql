@@ -3,16 +3,16 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "qce"
-description = "QCE — Query Compiler Engine: deterministic, schema-validated JSON → SQL for Postgres."
-version = "0.1.0"
+name = "intentql"
+description = "IntentQL — Intent-driven, deterministic natural language to SQL for Postgres."
+version = "0.2.0"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
   { name = "Alexander Abakah" }
 ]
-keywords = ["sql", "dsl", "postgres", "sqlalchemy", "llm", "analytics"]
+keywords = ["sql", "intent", "postgres", "sqlalchemy", "llm", "analytics", "natural-language"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
@@ -30,7 +30,6 @@ dependencies = [
 [project.optional-dependencies]
 openai = ["openai>=1.0.0"]
 google = ["google-generativeai>=0.5.0"]
-# Comparison / pipeline benchmarks (LangChain chat models + DB)
 benchmark = [
   "langchain-openai>=0.2",
   "langchain-google-genai>=2.0",
@@ -40,17 +39,15 @@ benchmark = [
 dev = ["ruff>=0.6.0", "build>=1.2.0", "twine>=5.0.0"]
 
 [project.urls]
-Homepage = "https://github.com/Certifore/dsl_compiler"
-Repository = "https://github.com/Certifore/dsl_compiler"
-Issues = "https://github.com/Certifore/dsl_compiler/issues"
+Homepage = "https://github.com/Certifore/intentql"
+Repository = "https://github.com/Certifore/intentql"
+Issues = "https://github.com/Certifore/intentql/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["dsl_compiler*"]
+include = ["intentql*"]
 exclude = ["test*", "tests*"]
 
-# Include your YAML files in source distributions AND wheels.
-# Easiest approach without moving files:
 [tool.setuptools]
 include-package-data = true
 

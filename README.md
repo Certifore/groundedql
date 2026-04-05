@@ -1,12 +1,12 @@
-# QCE — Query Compiler Engine
+# IntentQL
 
-Deterministic, schema-validated JSON → SQL for Postgres.  
-Instead of letting an LLM generate free-form SQL, the LLM extracts a lightweight **QueryIntent**, and QCE deterministically compiles it into parameterized SQL and executes it safely.
+Intent-driven, deterministic natural language to SQL for Postgres.  
+Instead of letting an LLM generate free-form SQL, the LLM extracts a lightweight **QueryIntent**, and IntentQL deterministically compiles it into parameterized SQL and executes it safely.
 
 ## Quick Start
 
 ```python
-from dsl_compiler.agent import QueryAgent
+from intentql.agent import QueryAgent
 
 agent = QueryAgent(
     engine=your_sqlalchemy_engine,
@@ -25,5 +25,5 @@ Full documentation, benchmarks, and guides are in the [qce_docs](https://github.
 ## Install
 
 ```bash
-pip install qce @ git+ssh://git@github.com/Certifore/dsl_compiler.git
+pip install intentql @ git+ssh://git@github.com/Certifore/intentql.git
 ```

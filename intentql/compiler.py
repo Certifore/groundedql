@@ -1,4 +1,4 @@
-# dsl_compiler/compiler.py
+# intentql/compiler.py
 from __future__ import annotations
 
 from dataclasses import dataclass
