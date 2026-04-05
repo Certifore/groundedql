@@ -32,6 +32,7 @@ def normalize_intent(
 
     intent = _absorb_keyword_filters(intent, kso_cols)
     intent = _ensure_group_by_is_list(intent)
+    intent = _coerce_work_order_volume_dataset(intent, question, schema)
     intent = _strip_spurious_work_token_as_primary_id(intent, question, schema)
     intent = _inject_primary_id_from_question(intent, question, schema)
     intent = _infer_time_bucket_for_trends(intent, question, schema)
@@ -47,6 +48,14 @@ def _table_meta(schema: Dict[str, Any], dataset: str) -> Dict[str, Any]:
         if t.get("name") == dataset:
             return t
     return {}
+
+
+def _column_names_set(table: Dict[str, Any]) -> Set[str]:
+    out: Set[str] = set()
+    for c in table.get("columns", []) or []:
+        if isinstance(c, dict) and c.get("name"):
+            out.add(c["name"])
+    return out
 
 
 def _absorb_keyword_filters(
@@ -94,6 +103,73 @@ def _ensure_group_by_is_list(intent: Dict[str, Any]) -> Dict[str, Any]:
         intent["group_by"] = []
     elif isinstance(gb, str):
         intent["group_by"] = [gb]
+    return intent
+
+
+def _coerce_work_order_volume_dataset(
+    intent: Dict[str, Any],
+    question: Optional[str],
+    schema: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Use the work-order fact table for counts per asset, not a dimension/catalog table.
+
+    LLMs often pick a table whose *name* matches the word \"asset\" (e.g. ``assets``) and
+    run COUNT(*) there — that does **not** count work orders. When the user explicitly
+    mentions work orders and groups by ``asset_tag``, redirect to the table that holds
+    work order rows.
+
+    Optional per-table schema key ``alternate_dataset_for_work_order_counts`` (string table
+    name) names the target dataset. If unset, and the current dataset is ``assets`` and a
+    table named ``work_orders`` exists with the same ``group_by`` columns, use
+    ``work_orders``.
+    """
+    if not question:
+        return intent
+    if not re.search(r"\bwork orders?\b", question, re.I):
+        return intent
+
+    group_by = intent.get("group_by") or []
+    if isinstance(group_by, str):
+        group_by = [group_by]
+    if "asset_tag" not in group_by:
+        return intent
+
+    ds = intent.get("dataset") or ""
+    table = _table_meta(schema, ds)
+    if not table:
+        return intent
+
+    target = table.get("alternate_dataset_for_work_order_counts")
+    if isinstance(target, str) and target.strip():
+        target = target.strip()
+    else:
+        target = ""
+        if ds == "assets" and _table_meta(schema, "work_orders"):
+            wo_cols = _column_names_set(_table_meta(schema, "work_orders"))
+            if "asset_tag" in wo_cols:
+                target = "work_orders"
+
+    if not target:
+        return intent
+
+    tgt_table = _table_meta(schema, target)
+    if not tgt_table:
+        return intent
+    tgt_cols = _column_names_set(tgt_table)
+    if not all(c in tgt_cols for c in group_by):
+        return intent
+
+    if ds == target:
+        return intent
+
+    print(
+        f"[Normalize] Switched dataset {ds!r} → {target!r} "
+        f"(work order volume grouped by {group_by}; not the catalog/dimension table).",
+        file=sys.stderr,
+    )
+    intent["dataset"] = target
+    if intent.get("sort_column") == "asset_tag":
+        intent["sort_column"] = None
     return intent
 
 

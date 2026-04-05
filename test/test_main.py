@@ -127,6 +127,33 @@ def _schema_intent_phase1(*, intent_id_patterns: list[str] | None = None) -> dic
     return {"tables": [row]}
 
 
+def _schema_assets_and_work_orders() -> dict:
+    """Two-table schema: LLM wrongly picks *assets* for work-order volume per asset_tag."""
+    return {
+        "tables": [
+            {
+                "name": "assets",
+                "db_table": "assets",
+                "columns": [
+                    {"name": "asset_tag", "db_column": "asset_tag", "type": "varchar"},
+                ],
+            },
+            {
+                "name": "work_orders",
+                "db_table": "work_orders",
+                "primary_id": "work_order_id",
+                "primary_date": "entry_date",
+                "keyword_search_or": ["description"],
+                "columns": [
+                    {"name": "work_order_id", "db_column": "work_order_id", "type": "varchar"},
+                    {"name": "asset_tag", "db_column": "asset_tag", "type": "varchar"},
+                    {"name": "entry_date", "db_column": "entry_date", "type": "timestamp"},
+                ],
+            },
+        ],
+    }
+
+
 def _run_compile_test(test: dict) -> tuple[bool, str | None]:
     """Dispatch compile.kind from test_qs.json (no DB)."""
     import tempfile
@@ -433,6 +460,25 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         for f in out.get("filters") or []:
             if f.get("column") == "work_order_id":
                 return False, f"expected WORK filter stripped, got {out.get('filters')}"
+        return True, None
+
+    if kind == "intent_phase1_coerce_work_order_volume_to_fact_table":
+        from intentql.intent_normalize import normalize_intent
+
+        schema = _schema_assets_and_work_orders()
+        intent = {
+            "dataset": "assets",
+            "aggregation": "count",
+            "group_by": ["asset_tag"],
+            "filters": [],
+        }
+        out = normalize_intent(
+            intent,
+            schema,
+            question="which asset has the most work orders?",
+        )
+        if out.get("dataset") != "work_orders":
+            return False, f"expected dataset work_orders after normalize, got {out.get('dataset')!r}"
         return True, None
 
     if kind == "intent_phase1_normalize_work_word_no_inject":
