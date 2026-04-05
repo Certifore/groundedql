@@ -249,19 +249,60 @@ def _sample_values(engine: Engine, db_table: str, db_column: str, limit: int = 5
         return []
 
 
+_DEFAULT_BASE_URL = "https://api.openai.com/v1"
+_DEFAULT_MODEL = "gpt-4o-mini"
+
+
+def _chat_completion(
+    prompt: str,
+    *,
+    api_key: str,
+    base_url: str = _DEFAULT_BASE_URL,
+    model: str = _DEFAULT_MODEL,
+) -> str:
+    """Call any OpenAI-compatible chat completions endpoint via raw HTTP."""
+    import urllib.request
+    import json as _json
+
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    body = _json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0,
+        "max_tokens": 1500,
+    }).encode()
+
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = _json.loads(resp.read())
+
+    return data["choices"][0]["message"]["content"].strip()
+
+
 def describe_schema(
     schema_path: str,
     db_url: Optional[str] = None,
+    api_key: Optional[str] = None,
+    base_url: str = _DEFAULT_BASE_URL,
+    model: str = _DEFAULT_MODEL,
 ) -> None:
     """Enrich schema.yaml with LLM-generated descriptions using sample data."""
-    import openai
-
-    api_key = os.getenv("OPENAI_API_KEY", "")
+    api_key = api_key or os.getenv("LLM_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
     if not api_key:
-        print("Error: OPENAI_API_KEY environment variable not set.", file=sys.stderr)
+        print(
+            "Error: No API key found. Set LLM_API_KEY (or OPENAI_API_KEY) "
+            "environment variable, or pass --api-key.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-    client = openai.OpenAI(api_key=api_key)
     schema = yaml.safe_load(Path(schema_path).read_text()) or {}
 
     engine = None
@@ -311,13 +352,9 @@ def describe_schema(
         print(f"Describing table: {tname}...", file=sys.stderr)
 
         try:
-            resp = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0,
-                max_tokens=1500,
+            raw = _chat_completion(
+                prompt, api_key=api_key, base_url=base_url, model=model,
             )
-            raw = resp.choices[0].message.content.strip()
             raw = raw.replace("```yaml", "").replace("```", "").strip()
             descriptions = yaml.safe_load(raw) or {}
         except Exception as exc:
@@ -392,6 +429,21 @@ def main():
         default=None,
         help="Database URL for sampling values (optional, improves descriptions)",
     )
+    desc_parser.add_argument(
+        "--api-key",
+        default=None,
+        help="LLM API key (default: reads LLM_API_KEY or OPENAI_API_KEY env var)",
+    )
+    desc_parser.add_argument(
+        "--base-url",
+        default=_DEFAULT_BASE_URL,
+        help=f"OpenAI-compatible API base URL (default: {_DEFAULT_BASE_URL})",
+    )
+    desc_parser.add_argument(
+        "--model",
+        default=_DEFAULT_MODEL,
+        help=f"Model name (default: {_DEFAULT_MODEL})",
+    )
 
     args = parser.parse_args()
 
@@ -411,6 +463,9 @@ def main():
         describe_schema(
             schema_path=args.schema,
             db_url=args.db,
+            api_key=args.api_key,
+            base_url=args.base_url,
+            model=args.model,
         )
 
     else:

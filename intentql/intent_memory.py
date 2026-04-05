@@ -7,11 +7,14 @@ This is what makes the LLM produce consistent intents across rephrasings.
 
 Uses ChromaDB for persistent, embedding-indexed storage with fast
 similarity search.  Falls back gracefully if ChromaDB is unavailable.
+
+Embeddings are computed locally by ChromaDB's default embedding function
+(all-MiniLM-L6-v2 via sentence-transformers).  No API key or external
+service required.
 """
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -22,6 +25,8 @@ class IntentMemory:
 
     Persists to a ChromaDB collection so examples survive restarts
     and similarity search is indexed (not brute-force).
+
+    Embeddings are computed locally — no API key needed.
     """
 
     def __init__(
@@ -51,7 +56,29 @@ class IntentMemory:
                 metadata={"hnsw:space": "cosine"},
             )
 
+            # Detect embedding dimension mismatch (e.g. migrating from
+            # OpenAI 1536-dim to local 384-dim).  If mismatched, delete
+            # and recreate so queries don't crash at runtime.
             count = self._collection.count()
+            if count > 0:
+                try:
+                    self._collection.query(query_texts=["test"], n_results=1)
+                except Exception as dim_exc:
+                    if "dimension" in str(dim_exc).lower():
+                        print(
+                            f"[IntentMemory] Embedding dimension changed, "
+                            f"resetting collection ({count} old examples removed).",
+                            file=sys.stderr,
+                        )
+                        self._client.delete_collection(collection_name)
+                        self._collection = self._client.get_or_create_collection(
+                            name=collection_name,
+                            metadata={"hnsw:space": "cosine"},
+                        )
+                        count = 0
+                    else:
+                        raise
+
             if count > 0:
                 print(
                     f"[IntentMemory] Loaded {count} examples from ChromaDB",
@@ -68,26 +95,9 @@ class IntentMemory:
                 file=sys.stderr,
             )
 
-    def _get_embedding(self, text: str) -> Optional[List[float]]:
-        try:
-            import openai
-            client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
-            resp = client.embeddings.create(
-                input=text,
-                model="text-embedding-3-small",
-            )
-            return resp.data[0].embedding
-        except Exception as exc:
-            print(f"[IntentMemory] Embedding failed: {exc}", file=sys.stderr)
-            return None
-
     def store(self, question: str, intent: Dict[str, Any]) -> None:
         """Store a successful (question, intent) pair."""
         if self._collection is None:
-            return
-
-        embedding = self._get_embedding(question)
-        if embedding is None:
             return
 
         import hashlib
@@ -99,7 +109,6 @@ class IntentMemory:
 
         self._collection.add(
             ids=[doc_id],
-            embeddings=[embedding],
             documents=[question],
             metadatas=[{"intent": json.dumps(intent, default=str)}],
         )
@@ -130,12 +139,8 @@ class IntentMemory:
         if self._collection is None or self._collection.count() == 0:
             return []
 
-        embedding = self._get_embedding(question)
-        if embedding is None:
-            return []
-
         results = self._collection.query(
-            query_embeddings=[embedding],
+            query_texts=[question],
             n_results=min(top_k, self._collection.count()),
         )
 

@@ -21,7 +21,7 @@ intentql init --db "postgresql://user:pass@host/db"
 ### 2. Enrich with LLM-generated descriptions (optional, recommended)
 
 ```bash
-export OPENAI_API_KEY=sk-...
+export LLM_API_KEY=sk-...   # works with any OpenAI-compatible provider
 intentql describe --schema config/schema.yaml --db "postgresql://user:pass@host/db"
 # → Adds table + column descriptions using sample data for context
 ```
