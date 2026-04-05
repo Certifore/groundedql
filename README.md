@@ -20,7 +20,7 @@ result = agent.ask("how many plumbing issues last year?")
 
 ## Documentation
 
-Full documentation, benchmarks, and guides are in the [qce_docs](https://github.com/Certifore/qce_docs) repository.
+Full documentation, benchmarks, and guides are in the [intentql_docs](https://github.com/Certifore/intentql_docs) repository.
 
 ## Install
 
