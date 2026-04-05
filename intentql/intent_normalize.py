@@ -36,6 +36,7 @@ def normalize_intent(
     intent = _inject_primary_id_from_question(intent, question, schema)
     intent = _infer_time_bucket_for_trends(intent, question, schema)
     intent = _maybe_coerce_list_for_detail_lookup(intent, question, schema)
+    intent = _coerce_latest_row_intent(intent, question, schema)
     intent = _normalize_group_by_for_multi_value_filters(intent)
 
     return intent
@@ -267,6 +268,75 @@ def _infer_time_bucket_for_trends(
     intent["time_bucket"] = bucket
     print(
         f"[Normalize] Set time_bucket={bucket} for trend on {pd}",
+        file=sys.stderr,
+    )
+    return intent
+
+
+def _looks_like_latest_single_row_question(question_lower: str) -> bool:
+    """True when the user wants the single latest/most recent row (not a time-window phrase)."""
+    if re.search(r"\blast\s+\d+\s+(?:day|days|week|weeks|month|months|year|years)\b", question_lower):
+        return False
+    if any(
+        p in question_lower
+        for p in ("last year", "last month", "last week", "last quarter", "past year", "past month")
+    ):
+        return False
+    if re.search(
+        r"\b(?:most\s+recent|latest|newest)\b.*\b(?:work\s+)?orders?\b",
+        question_lower,
+    ):
+        return True
+    if re.search(
+        r"\bwhat(?:'s|s| is)\s+the\s+(?:most\s+recent|latest|newest)\b",
+        question_lower,
+    ):
+        return True
+    if re.search(r"\b(?:the\s+)?last\s+(?:work\s+)?order\b", question_lower):
+        return True
+    return False
+
+
+def _coerce_latest_row_intent(
+    intent: Dict[str, Any],
+    question: Optional[str],
+    schema: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Turn mistaken count+group_by(primary_id) into list ordered by primary_date desc.
+
+    The LLM often copies the 'top 1 by count' template; 'most recent' needs ORDER BY date.
+    """
+    if not question:
+        return intent
+    q = question.lower()
+    if not _looks_like_latest_single_row_question(q):
+        return intent
+
+    dataset = intent.get("dataset") or ""
+    table = _table_meta(schema, dataset)
+    primary_id = table.get("primary_id")
+    primary_date = table.get("primary_date")
+    if not primary_id or not primary_date:
+        return intent
+
+    if intent.get("aggregation") != "count":
+        return intent
+
+    group_by = intent.get("group_by") or []
+    if isinstance(group_by, str):
+        group_by = [group_by]
+    if group_by != [primary_id]:
+        return intent
+
+    intent["aggregation"] = "list"
+    intent["group_by"] = []
+    intent["sort_column"] = primary_date
+    intent["sort_direction"] = "desc"
+    if not intent.get("limit"):
+        intent["limit"] = 1
+    print(
+        "[Normalize] Coerced 'latest/most recent' intent: list ordered by "
+        f"{primary_date} desc (was count grouped by {primary_id})",
         file=sys.stderr,
     )
     return intent

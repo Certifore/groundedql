@@ -15,6 +15,7 @@ service required.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -37,6 +38,17 @@ class IntentMemory:
     ):
         self.max_examples = max_examples
         self._collection = None
+
+        if os.environ.get("INTENTQL_DISABLE_MEMORY", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            print(
+                "[IntentMemory] Disabled via INTENTQL_DISABLE_MEMORY.",
+                file=sys.stderr,
+            )
+            return
 
         try:
             import chromadb
@@ -129,13 +141,23 @@ class IntentMemory:
         self,
         question: str,
         top_k: int = 3,
-        min_similarity: float = 0.60,
+        min_similarity: Optional[float] = None,
     ) -> List[Dict[str, Any]]:
         """Find the most similar past questions and return their intents.
 
         Returns a list of {"question": str, "intent": dict, "similarity": float}
         sorted by similarity descending.
+
+        Default min_similarity can be overridden with env INTENTQL_MEMORY_MIN_SIMILARITY
+        (e.g. 0.75 to reduce few-shot bleed from loosely related questions).
         """
+        if min_similarity is None:
+            raw = os.environ.get("INTENTQL_MEMORY_MIN_SIMILARITY", "0.60")
+            try:
+                min_similarity = float(raw)
+            except ValueError:
+                min_similarity = 0.60
+
         if self._collection is None or self._collection.count() == 0:
             return []
 

@@ -89,6 +89,13 @@ class QueryIntent(BaseModel):
         None,
         description="'desc' for most/highest first, 'asc' for least/lowest first, null if unspecified.",
     )
+    sort_column: Optional[str] = Field(
+        None,
+        description=(
+            "For list queries: ORDER BY this column (e.g. primary_date for 'most recent work order'). "
+            "Use with sort_direction."
+        ),
+    )
     limit: Optional[int] = Field(
         None,
         description="Number of results if the question says 'top N' or 'first N'. Null otherwise.",

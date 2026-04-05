@@ -126,6 +126,10 @@ Rules:
 - time_bucket: optional — "month", "year", "quarter", or "day" when bucketing
   a trend over the primary date (usually inferred from the question).
 - sort_direction: "desc" for most/highest, "asc" for least/lowest.
+- sort_column: for "most recent / latest / newest" ONE record (e.g. one work order), use
+  aggregation "list", group_by [], the table's primary_date column as sort_column,
+  sort_direction "desc", limit 1. Do NOT use count+group_by(primary_id) for that —
+  that ranks by row count, not by date.
 - limit: integer if "top N" or "first N", otherwise null.
 - output_columns: for "list" queries, which columns to show.
 """
@@ -467,23 +471,31 @@ def build_plan_from_intent(
                     file=sys.stderr,
                 )
 
-    # --- safety: exclude null/empty values on group-by columns ---
+    # --- safety: exclude null/empty values on group-by columns (aggregates only) ---
     # When grouping by a column (e.g. asset_tag to find "which asset has the most"),
     # null/empty values form a giant catch-all bucket that dominates the results.
-    existing_filter_fields = {f.get("field") for f in plan["filters"]}
-    for dim in plan["dimensions"]:
-        dim_field = dim.get("field", "")
-        if dim_field and dim_field not in existing_filter_fields and dim_field != primary_date:
-            plan["filters"].append({"field": dim_field, "op": "!=", "value": ""})
-            plan["filters"].append({"field": dim_field, "op": "is_not_null", "value": True})
-            print(
-                f"[DSL intent] Auto-added null/empty exclusion for group-by column '{dim_field}'",
-                file=sys.stderr,
-            )
+    # Do NOT apply to pure "list" queries: output columns are often optional text fields
+    # that may be null without invalidating the row.
+    if plan["metrics"]:
+        existing_filter_fields = {f.get("field") for f in plan["filters"]}
+        for dim in plan["dimensions"]:
+            dim_field = dim.get("field", "")
+            if dim_field and dim_field not in existing_filter_fields and dim_field != primary_date:
+                plan["filters"].append({"field": dim_field, "op": "!=", "value": ""})
+                plan["filters"].append({"field": dim_field, "op": "is_not_null", "value": True})
+                print(
+                    f"[DSL intent] Auto-added null/empty exclusion for group-by column '{dim_field}'",
+                    file=sys.stderr,
+                )
 
     # --- sort & limit ---
     sort_dir = intent.get("sort_direction")
-    if sort_dir and plan["metrics"]:
+    sort_col = intent.get("sort_column")
+    if agg == "list" and sort_col and sort_col in valid_cols:
+        # Order by primary_date (etc.) without adding it as a dimension — list/detail
+        # rows must not be GROUP BY date buckets; empty dimensions + no metrics → SELECT *.
+        plan["order_by"] = [{"by": sort_col, "dir": sort_dir or "desc"}]
+    elif sort_dir and plan["metrics"]:
         plan["order_by"] = [{"by": plan["metrics"][0]["alias"], "dir": sort_dir}]
     elif any(d.get("time_bucket") for d in plan["dimensions"]) and plan["metrics"]:
         for d in plan["dimensions"]:
