@@ -38,6 +38,9 @@ benchmark = [
 ]
 dev = ["ruff>=0.6.0", "build>=1.2.0", "twine>=5.0.0"]
 
+[project.scripts]
+intentql = "intentql.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/Certifore/intentql"
 Repository = "https://github.com/Certifore/intentql"

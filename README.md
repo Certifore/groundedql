@@ -3,27 +3,58 @@
 Intent-driven, deterministic natural language to SQL for Postgres.  
 Instead of letting an LLM generate free-form SQL, the LLM extracts a lightweight **QueryIntent**, and IntentQL deterministically compiles it into parameterized SQL and executes it safely.
 
-## Quick Start
-
-```python
-from intentql.agent import QueryAgent
-
-agent = QueryAgent(
-    engine=your_sqlalchemy_engine,
-    schema_path="path/to/schema.yaml",
-    spec_path="path/to/queryplan_spec.yaml",
-    llm=your_llm_instance,
-)
-
-result = agent.ask("how many plumbing issues last year?")
-```
-
-## Documentation
-
-Full documentation, benchmarks, and guides are in the [intentql_docs](https://github.com/Certifore/intentql_docs) repository.
-
 ## Install
 
 ```bash
 pip install intentql @ git+ssh://git@github.com/Certifore/intentql.git
 ```
+
+## Quick Start
+
+### 1. Generate your schema from the database
+
+```bash
+intentql init --db "postgresql://user:pass@host/db"
+# → config/schema.yaml  (tables, columns, types, PKs, links — all auto-detected)
+```
+
+### 2. Enrich with LLM-generated descriptions (optional, recommended)
+
+```bash
+export OPENAI_API_KEY=sk-...
+intentql describe --schema config/schema.yaml --db "postgresql://user:pass@host/db"
+# → Adds table + column descriptions using sample data for context
+```
+
+### 3. Ask questions
+
+```python
+from sqlalchemy import create_engine
+from openai import OpenAI
+from intentql.agent import QueryAgent
+
+engine = create_engine("postgresql+psycopg2://user:pass@host/db")
+
+agent = QueryAgent(
+    engine=engine,
+    schema_path="config/schema.yaml",
+    llm=OpenAI(api_key="sk-..."),
+)
+
+result = agent.ask("how many plumbing issues last year?")
+print(result["rows"])
+print(result["sql"])
+```
+
+## CLI Reference
+
+| Command | Description |
+|---|---|
+| `intentql init --db URL` | Introspect Postgres and generate `schema.yaml` |
+| `intentql describe --schema PATH --db URL` | Enrich schema with LLM-generated descriptions |
+
+Run `intentql --help` for full options.
+
+## Documentation
+
+Full documentation, benchmarks, and guides are in the [intentql_docs](https://github.com/Certifore/intentql_docs) repository.

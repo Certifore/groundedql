@@ -7,6 +7,7 @@ from .semantic_lint import semantic_lint
 from .join_planner import auto_inject_joins, build_link_graph, shortest_join_path
 from .plan_canonical import canonicalize_query_plan, plan_fingerprint
 from .spec_builder import build_spec, write_spec
+from .cli import introspect_database
 from .decompose import is_compound, split_compound, SubQuestion
 from .plan_autofix import autofix_plan
 from .exceptions import (
@@ -47,4 +48,5 @@ __all__ = [
     "QueryCostError",
     "build_spec",
     "write_spec",
+    "introspect_database",
 ]
