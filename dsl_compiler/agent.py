@@ -66,8 +66,8 @@ class QueryAgent:
         except Exception as exc:
             print(f"[DSL] Value index build failed ({exc}), continuing without it.", file=sys.stderr)
 
-        memory_path = str(Path(schema_path).parent / ".intent_memory.json")
-        self.intent_memory = IntentMemory(persist_path=memory_path)
+        memory_dir = str(Path(schema_path).parent / ".intent_memory")
+        self.intent_memory = IntentMemory(persist_directory=memory_dir)
 
         self.intent_planner = IntentPlanner(
             llm=llm_client,

@@ -5,8 +5,8 @@ Stores successful (question, normalized_intent) pairs and retrieves
 semantically similar examples to inject into the extraction prompt.
 This is what makes the LLM produce consistent intents across rephrasings.
 
-Uses OpenAI embeddings + cosine similarity for retrieval (no extra DB needed).
-Falls back gracefully if embeddings are unavailable.
+Uses ChromaDB for persistent, embedding-indexed storage with fast
+similarity search.  Falls back gracefully if ChromaDB is unavailable.
 """
 from __future__ import annotations
 
@@ -14,103 +14,105 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-
-import numpy as np
-
-
-def _get_embedding(text: str, _client: Any = None) -> Optional[List[float]]:
-    """Get an embedding vector for *text* using OpenAI's API."""
-    try:
-        import openai
-        client = _client or openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
-        resp = client.embeddings.create(
-            input=text,
-            model="text-embedding-3-small",
-        )
-        return resp.data[0].embedding
-    except Exception as exc:
-        print(f"[IntentMemory] Embedding failed: {exc}", file=sys.stderr)
-        return None
-
-
-def _cosine_similarity(a: List[float], b: List[float]) -> float:
-    va = np.array(a)
-    vb = np.array(b)
-    denom = np.linalg.norm(va) * np.linalg.norm(vb)
-    if denom == 0:
-        return 0.0
-    return float(np.dot(va, vb) / denom)
+from typing import Any, Dict, List, Optional
 
 
 class IntentMemory:
     """Stores and retrieves (question, intent) pairs for few-shot prompting.
 
-    Persists to a JSON file so examples survive restarts.
-    Uses embedding-based similarity for retrieval.
+    Persists to a ChromaDB collection so examples survive restarts
+    and similarity search is indexed (not brute-force).
     """
 
     def __init__(
         self,
-        persist_path: Optional[str] = None,
-        max_examples: int = 200,
+        persist_directory: Optional[str] = None,
+        collection_name: str = "intent_memory",
+        max_examples: int = 500,
     ):
-        self.persist_path = persist_path
         self.max_examples = max_examples
-        self._entries: List[Dict[str, Any]] = []
-        self._openai_client: Any = None
+        self._collection = None
 
-        if persist_path:
-            self._load()
+        try:
+            import chromadb
+            from chromadb.config import Settings
 
-    def _get_client(self) -> Any:
-        if self._openai_client is None:
-            import openai
-            self._openai_client = openai.OpenAI(
-                api_key=os.getenv("OPENAI_API_KEY", ""),
+            persist_dir = persist_directory or str(
+                Path.home() / ".dsl_compiler" / "intent_memory"
             )
-        return self._openai_client
+            Path(persist_dir).mkdir(parents=True, exist_ok=True)
 
-    def _load(self) -> None:
-        if not self.persist_path:
-            return
-        p = Path(self.persist_path)
-        if p.exists():
-            try:
-                self._entries = json.loads(p.read_text()) or []
+            self._client = chromadb.PersistentClient(
+                path=persist_dir,
+                settings=Settings(anonymized_telemetry=False),
+            )
+            self._collection = self._client.get_or_create_collection(
+                name=collection_name,
+                metadata={"hnsw:space": "cosine"},
+            )
+
+            count = self._collection.count()
+            if count > 0:
                 print(
-                    f"[IntentMemory] Loaded {len(self._entries)} examples from {p.name}",
+                    f"[IntentMemory] Loaded {count} examples from ChromaDB",
                     file=sys.stderr,
                 )
-            except Exception as exc:
-                print(f"[IntentMemory] Load failed: {exc}", file=sys.stderr)
-                self._entries = []
+        except ImportError:
+            print(
+                "[IntentMemory] chromadb not installed, memory disabled.",
+                file=sys.stderr,
+            )
+        except Exception as exc:
+            print(
+                f"[IntentMemory] ChromaDB init failed ({exc}), memory disabled.",
+                file=sys.stderr,
+            )
 
-    def _save(self) -> None:
-        if not self.persist_path:
-            return
-        p = Path(self.persist_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(self._entries, indent=2, default=str))
+    def _get_embedding(self, text: str) -> Optional[List[float]]:
+        try:
+            import openai
+            client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+            resp = client.embeddings.create(
+                input=text,
+                model="text-embedding-3-small",
+            )
+            return resp.data[0].embedding
+        except Exception as exc:
+            print(f"[IntentMemory] Embedding failed: {exc}", file=sys.stderr)
+            return None
 
     def store(self, question: str, intent: Dict[str, Any]) -> None:
         """Store a successful (question, intent) pair."""
-        embedding = _get_embedding(question, self._get_client())
+        if self._collection is None:
+            return
+
+        embedding = self._get_embedding(question)
         if embedding is None:
             return
 
-        self._entries.append({
-            "question": question,
-            "intent": intent,
-            "embedding": embedding,
-        })
+        import hashlib
+        doc_id = hashlib.md5(question.lower().strip().encode()).hexdigest()
 
-        if len(self._entries) > self.max_examples:
-            self._entries = self._entries[-self.max_examples:]
+        existing = self._collection.get(ids=[doc_id])
+        if existing and existing["ids"]:
+            return
 
-        self._save()
+        self._collection.add(
+            ids=[doc_id],
+            embeddings=[embedding],
+            documents=[question],
+            metadatas=[{"intent": json.dumps(intent, default=str)}],
+        )
+
+        count = self._collection.count()
+
+        if count > self.max_examples:
+            all_docs = self._collection.get(limit=count - self.max_examples)
+            if all_docs["ids"]:
+                self._collection.delete(ids=all_docs["ids"])
+
         print(
-            f"[IntentMemory] Stored example ({len(self._entries)} total)",
+            f"[IntentMemory] Stored example ({count} total)",
             file=sys.stderr,
         )
 
@@ -118,47 +120,55 @@ class IntentMemory:
         self,
         question: str,
         top_k: int = 3,
-        min_similarity: float = 0.75,
+        min_similarity: float = 0.60,
     ) -> List[Dict[str, Any]]:
         """Find the most similar past questions and return their intents.
 
         Returns a list of {"question": str, "intent": dict, "similarity": float}
         sorted by similarity descending.
         """
-        if not self._entries:
+        if self._collection is None or self._collection.count() == 0:
             return []
 
-        q_embedding = _get_embedding(question, self._get_client())
-        if q_embedding is None:
+        embedding = self._get_embedding(question)
+        if embedding is None:
             return []
 
-        scored: List[Tuple[float, Dict[str, Any]]] = []
-        for entry in self._entries:
-            emb = entry.get("embedding")
-            if not emb:
+        results = self._collection.query(
+            query_embeddings=[embedding],
+            n_results=min(top_k, self._collection.count()),
+        )
+
+        if not results or not results["documents"] or not results["documents"][0]:
+            return []
+
+        matched: List[Dict[str, Any]] = []
+        for i, doc in enumerate(results["documents"][0]):
+            distance = results["distances"][0][i] if results.get("distances") else 1.0
+            similarity = 1.0 - distance
+            if similarity < min_similarity:
                 continue
-            sim = _cosine_similarity(q_embedding, emb)
-            if sim >= min_similarity:
-                scored.append((sim, entry))
 
-        scored.sort(key=lambda x: x[0], reverse=True)
+            meta = results["metadatas"][0][i] if results.get("metadatas") else {}
+            try:
+                intent = json.loads(meta.get("intent", "{}"))
+            except (json.JSONDecodeError, TypeError):
+                continue
 
-        results = []
-        for sim, entry in scored[:top_k]:
-            results.append({
-                "question": entry["question"],
-                "intent": entry["intent"],
-                "similarity": round(sim, 3),
+            matched.append({
+                "question": doc,
+                "intent": intent,
+                "similarity": round(similarity, 3),
             })
 
-        if results:
+        if matched:
             print(
-                f"[IntentMemory] Found {len(results)} similar examples "
-                f"(best: {results[0]['similarity']})",
+                f"[IntentMemory] Found {len(matched)} similar examples "
+                f"(best: {matched[0]['similarity']})",
                 file=sys.stderr,
             )
 
-        return results
+        return matched
 
     def format_few_shot_examples(self, examples: List[Dict[str, Any]]) -> str:
         """Format retrieved examples as a prompt section."""
