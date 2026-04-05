@@ -15,6 +15,9 @@ env_dsl/
 __pycache__/
 *.py[cod]
 
+# --- MkDocs build output ---
+site/
+
 # --- Packaging / builds ---
 build/
 dist/
