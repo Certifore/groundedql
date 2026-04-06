@@ -23,6 +23,7 @@ from sqlalchemy.engine import Engine
 from .exceptions import DatabaseExecutionError
 from .executor import Executor
 from .schema_catalog import SchemaCatalog, load_schema_catalog
+from .sql_canonicalize import canonicalize_sql
 from .sql_guard import apply_row_limit, validate_sql
 
 _SQL_FENCE = re.compile(r"```sql\s*([\s\S]*?)```", re.IGNORECASE)
@@ -138,6 +139,8 @@ def run_guided_sql(
             last_err = "Model did not return a ```sql``` fenced SELECT."
             messages_tail.append(f"Fix: {last_err}")
             continue
+
+        sql = canonicalize_sql(sql, catalog)
 
         vr = validate_sql(sql, catalog)
         if not vr.ok:

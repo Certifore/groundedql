@@ -9,6 +9,7 @@ from .agent import QueryAgent
 from .schema_api import load_and_validate_schema
 from .schema_catalog import SchemaCatalog, load_schema_catalog
 from .sql_guard import SqlGuardResult, apply_row_limit, validate_sql
+from .sql_canonicalize import canonicalize_sql
 from .guided_sql import run_guided_sql
 from .exceptions import DSLCompilerError, SchemaError, DatabaseExecutionError
 
@@ -21,6 +22,7 @@ __all__ = [
     "SqlGuardResult",
     "validate_sql",
     "apply_row_limit",
+    "canonicalize_sql",
     "run_guided_sql",
     "DSLCompilerError",
     "SchemaError",

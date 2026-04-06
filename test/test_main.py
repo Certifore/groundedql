@@ -67,6 +67,26 @@ def run_sql_guard_suite() -> None:
     r3 = validate_sql(sql_alias_order, catalog)
     assert r3.ok, r3.message
 
+    from intentql.schema_catalog import SchemaCatalog
+    from intentql.sql_canonicalize import canonicalize_sql
+
+    mini = SchemaCatalog(
+        dialect="postgres",
+        context="",
+        physical_tables={"finalworkorder"},
+        allowed_table_tokens={"finalworkorder", "work_orders"},
+        columns_by_physical={"finalworkorder": {"assettag"}},
+        logical_to_physical={"work_orders": "finalworkorder"},
+        exact_table={"finalworkorder": "finalWorkOrder"},
+        exact_column={"finalworkorder": {"assettag": "assetTag"}},
+    )
+    fixed = canonicalize_sql(
+        'SELECT "assetTag" FROM "finalworkorder" LIMIT 1',
+        mini,
+    )
+    assert '"finalWorkOrder"' in fixed
+    assert '"assetTag"' in fixed
+
     print("test_main: sql_guard suite OK")
 
 
