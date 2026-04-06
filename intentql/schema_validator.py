@@ -162,13 +162,29 @@ def validate_schema(schema: Dict[str, Any]) -> List[str]:
                 f"{lloc} ('{lname}'): 'on' must be a non-empty list of join conditions."
             )
 
-    # Optional guided-SQL: DISTINCT samples per logical column (see guided_sql value_index)
+    # Optional guided-SQL: value_index (see intentql.guided_sql and intentql.value_index)
     vi = schema.get("value_index")
-    if vi is not None:
+    if vi is not None and vi is not False:
+        if isinstance(vi, str):
+            s = vi.strip().lower()
+            if s in ("auto", "none", "off", "false"):
+                return warnings
+            raise SchemaError(
+                "value_index: if a string, must be one of: auto, none, off, false."
+            )
         if not isinstance(vi, dict):
             raise SchemaError(
-                "value_index must be a mapping: table_name -> [column, ...] or { column: max_distinct }."
+                "value_index must be false, a string (auto|none|off|false), or a mapping."
             )
+        mode = vi.get("mode")
+        if isinstance(mode, str) and mode.strip().lower() == "auto":
+            if len(vi) != 1:
+                raise SchemaError(
+                    "value_index: with `mode: auto`, no other keys are allowed "
+                    "(use explicit table entries instead of auto)."
+                )
+            return warnings
+
         table_columns: Dict[str, Any] = {}
         for t in tables:
             if isinstance(t, dict) and t.get("name"):

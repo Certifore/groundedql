@@ -12,6 +12,11 @@ from .sql_guard import SqlGuardResult, apply_row_limit, validate_sql
 from .sql_canonicalize import canonicalize_sql
 from .guided_sql import run_guided_sql
 from .exceptions import DSLCompilerError, SchemaError, DatabaseExecutionError
+from .value_index import (
+    build_value_index,
+    format_value_index_for_prompt,
+    get_cached_value_index,
+)
 
 __all__ = [
     "__version__",
@@ -27,4 +32,7 @@ __all__ = [
     "DSLCompilerError",
     "SchemaError",
     "DatabaseExecutionError",
+    "build_value_index",
+    "format_value_index_for_prompt",
+    "get_cached_value_index",
 ]

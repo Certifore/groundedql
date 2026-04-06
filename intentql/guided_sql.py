@@ -11,6 +11,12 @@ Environment:
   INTENTQL_DISABLE_VALUE_INDEX — if 1/true, skip loading DISTINCT value lists (default off)
   INTENTQL_VALUE_INDEX_HARD_CAP — max DISTINCT rows per column from DB (default 800)
   INTENTQL_GUIDED_MEMORY_MIN_SIMILARITY — retrieval threshold for prior guided SQL (default 0.62)
+
+``value_index`` in schema.yaml:
+
+- Omit or set ``false`` / ``none`` — no DISTINCT pick-list (smallest prompts).
+- ``auto`` — heuristic string columns + DB DISTINCT (cached; see :mod:`intentql.value_index`).
+- Explicit table → column list — full control.
 """
 
 from __future__ import annotations
@@ -32,6 +38,10 @@ from .executor import Executor
 from .schema_catalog import SchemaCatalog, load_schema_catalog
 from .sql_canonicalize import canonicalize_sql
 from .sql_guard import apply_row_limit, validate_sql
+from .value_index import (
+    format_auto_value_index_for_guided_prompt,
+    get_cached_value_index,
+)
 
 _SQL_FENCE = re.compile(r"```sql\s*([\s\S]*?)```", re.IGNORECASE)
 _READ_START = re.compile(r"(?is)^\s*(WITH|SELECT)\b")
@@ -41,7 +51,7 @@ _GUIDED_SYSTEM = """You are a careful PostgreSQL analyst.
 Rules:
 - Produce exactly ONE read-only query: SELECT or WITH … SELECT. No INSERT/UPDATE/DELETE/DDL.
 - Use ONLY tables and columns from the SCHEMA block.
-- If a VALUE INDEX section lists allowed values for a column, filter using those exact strings only; map user typos or informal names to the closest listed value (e.g. spelling variants for the same building).
+- If a VALUE INDEX section lists allowed values for a column, filter using those exact strings only; map user typos or informal names to the closest listed value.
 - For relative time phrases ("last year", "this month", "YTD", etc.), use the CURRENT DATE (UTC) block in the user message — do not guess years.
 - Quote mixed-case identifiers when required by Postgres.
 - Output ONLY a Markdown fenced block: ```sql ... ``` — no prose outside the fence."""
@@ -93,18 +103,29 @@ def _distinct_column_values(
         return []
 
 
+def _value_index_is_auto_mode(raw: Any) -> bool:
+    if isinstance(raw, str) and raw.strip().lower() == "auto":
+        return True
+    if isinstance(raw, dict):
+        mode = raw.get("mode")
+        if isinstance(mode, str) and mode.strip().lower() == "auto":
+            if len(raw) == 1:
+                return True
+            raise ValueError(
+                "value_index: `mode: auto` must be the only key, or use explicit table entries."
+            )
+    return False
+
+
 def _value_index_block(engine: Engine, schema_path: str) -> str:
     """
-    Optional schema.yaml top-level ``value_index`` — list form (no per-column limits in YAML)::
+    Schema top-level ``value_index``:
 
-        value_index:
-          work_orders:
-            - building_name
+    - **Omit** or ``false`` / ``none`` — no pick-list.
+    - **``auto``** — :func:`intentql.value_index.build_value_index` heuristics + cache.
+    - **Explicit** dict — per-table column lists (list or legacy int limits).
 
-    Or legacy mapping ``column_name: max_distinct``. Row cap is always bounded by
-    ``INTENTQL_VALUE_INDEX_HARD_CAP`` for list form, or ``min(limit, hard_cap)`` for mapping form.
-
-    Runs SELECT DISTINCT ... LIMIT per entry and injects into the prompt.
+    Row caps use ``INTENTQL_VALUE_INDEX_HARD_CAP`` (and env).
     """
     flag = os.environ.get("INTENTQL_DISABLE_VALUE_INDEX", "").strip().lower()
     if flag in ("1", "true", "yes", "on"):
@@ -117,6 +138,28 @@ def _value_index_block(engine: Engine, schema_path: str) -> str:
 
     doc = _load_schema_doc(schema_path)
     raw = doc.get("value_index")
+
+    if raw is False:
+        return ""
+    if isinstance(raw, str) and raw.strip().lower() in ("none", "off", "false"):
+        return ""
+    if raw is None:
+        return ""
+
+    try:
+        if _value_index_is_auto_mode(raw):
+            idx = get_cached_value_index(engine, schema_path, max_distinct=hard_cap)
+            return format_auto_value_index_for_guided_prompt(
+                idx,
+                max_values_per_column=min(80, hard_cap),
+            )
+    except ValueError as e:
+        print(f"[IntentQL] value_index auto: {e}", file=sys.stderr)
+        return ""
+    except Exception as e:
+        print(f"[IntentQL] value_index auto failed: {e}", file=sys.stderr)
+        return ""
+
     if not isinstance(raw, dict) or not raw:
         return ""
 

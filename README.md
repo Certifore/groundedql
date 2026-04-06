@@ -12,6 +12,13 @@ pip install "intentql[guided]"   # sqlglot (required for validation)
 pip install "intentql[memory]"    # optional: ChromaDB few-shot memory
 ```
 
+## Schema: `value_index` (optional)
+
+- Omit or `value_index: false` — no DISTINCT pick-lists (smaller prompts).
+- `value_index: auto` — index likely categorical **string** columns via live `SELECT DISTINCT` (heuristic skips IDs / long text; **cached** per process). Cap: `INTENTQL_VALUE_INDEX_HARD_CAP`.
+- Explicit YAML — list columns per logical table when you want full control.
+- Per-column override in `schema.yaml`: `index_values: true` / `index_values: false` (auto mode only).
+
 ## Quick start
 
 ```python
@@ -23,7 +30,7 @@ engine = create_engine("postgresql+psycopg2://user:pass@host/db")
 
 agent = QueryAgent(
     engine=engine,
-    schema_path="config/schema.yaml",
+    schema_path="config/schema.yaml",  # include `value_index: auto` if you want pick-lists
     llm=ChatOpenAI(model="gpt-4o-mini", temperature=0),
 )
 
