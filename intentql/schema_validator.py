@@ -1,8 +1,7 @@
 """
 schema_validator.py — Load-time validation for schema.yaml.
 
-Validates the schema dict immediately after loading, before any compilation
-or query execution. Raises SchemaError with a clear message on misconfiguration.
+Validates the schema dict immediately after loading. Raises SchemaError on misconfiguration.
 """
 from __future__ import annotations
 

@@ -1,60 +1,22 @@
 # IntentQL
 
-Intent-driven, deterministic natural language to SQL for Postgres.  
-Instead of letting an LLM generate free-form SQL, the LLM extracts a lightweight **QueryIntent**, and IntentQL deterministically compiles it into parameterized SQL and executes it safely.
+Guided natural language to **Postgres SQL**: an LLM proposes a read-only query using **schema.yaml** as the single source of truth; **sqlglot** validates identifiers against that schema; then the query runs with a statement timeout.
+
+There is no QueryPlan compiler or JSON plan layer on this branch — only guided SQL + validation + execution.
 
 ## Install
 
 ```bash
 pip install intentql
+pip install "intentql[guided]"   # sqlglot (required for validation)
+pip install "intentql[memory]"    # optional: ChromaDB few-shot memory
 ```
 
-With optional few-shot memory (recommended for production):
-
-```bash
-pip install "intentql[memory]"
-```
-
-For **guided SQL** (LLM → Postgres with schema-backed validation via sqlglot):
-
-```bash
-pip install "intentql[guided]"
-```
-
-Use `QueryAgent(..., use_guided_sql=True)` with a LangChain chat model (`ChatOpenAI`, etc.). See `intentql/guided_sql.py`.
-
-<details>
-<summary>Install from source</summary>
-
-```bash
-git clone https://github.com/Certifore/intentql
-cd intentql
-pip install -e ".[dev]"
-```
-</details>
-
-## Quick Start
-
-### 1. Generate your schema from the database
-
-```bash
-intentql init --db "postgresql://user:pass@host/db"
-# → config/schema.yaml  (tables, columns, types, PKs, links — all auto-detected)
-```
-
-### 2. Enrich with LLM-generated descriptions (optional, recommended)
-
-```bash
-export LLM_API_KEY=sk-...   # works with any OpenAI-compatible provider
-intentql describe --schema config/schema.yaml --db "postgresql://user:pass@host/db"
-# → Adds table + column descriptions using sample data for context
-```
-
-### 3. Ask questions
+## Quick start
 
 ```python
 from sqlalchemy import create_engine
-from openai import OpenAI
+from langchain_openai import ChatOpenAI
 from intentql.agent import QueryAgent
 
 engine = create_engine("postgresql+psycopg2://user:pass@host/db")
@@ -62,25 +24,28 @@ engine = create_engine("postgresql+psycopg2://user:pass@host/db")
 agent = QueryAgent(
     engine=engine,
     schema_path="config/schema.yaml",
-    llm=OpenAI(api_key="sk-..."),
+    llm=ChatOpenAI(model="gpt-4o-mini", temperature=0),
 )
 
-result = agent.ask("how many plumbing issues last year?")
-print(result["rows"])
-print(result["sql"])
+out = agent.ask("How many customers are in London?")
+print(out["rows"])
+print(out.get("sql"))
 ```
 
-## CLI Reference
+## CLI
 
-| Command | Description |
-|---|---|
-| `intentql init --db URL` | Introspect Postgres and generate `schema.yaml` |
-| `intentql describe --schema PATH --db URL` | Enrich schema with LLM-generated descriptions |
+```bash
+intentql init --db "postgresql://..."   # writes config/schema.yaml
+intentql describe --schema config/schema.yaml  # LLM descriptions (needs API key)
+```
 
-Run `intentql --help` for full options.
+## Tests
+
+```bash
+pip install -e ".[guided]"
+python test/test_main.py
+```
 
 ## Documentation
 
-Full documentation, benchmarks, and guides are in the [intentql_docs](https://github.com/Certifore/intentql_docs) repository.
-
-See [ROADMAP.md](ROADMAP.md) for planned capabilities (lookup, trends, ratios, multi-step NL, and expressiveness goals).
+See the [intentql_docs](https://github.com/Certifore/intentql_docs) repository for broader context (some pages may describe the legacy QueryPlan stack — this branch does not include it).

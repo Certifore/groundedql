@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "intentql"
-description = "IntentQL — Intent-driven, deterministic natural language to SQL for Postgres."
-version = "0.2.5"
+description = "Guided NL→Postgres SQL with schema-backed validation (sqlglot)."
+version = "0.3.0"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [
   { name = "Alexander Abakah" }
 ]
-keywords = ["sql", "intent", "postgres", "sqlalchemy", "llm", "analytics", "natural-language"]
+keywords = ["sql", "postgres", "sqlalchemy", "llm", "analytics", "natural-language"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
@@ -29,20 +29,12 @@ classifiers = [
 dependencies = [
   "sqlalchemy>=2.0",
   "psycopg2-binary",
-  "pydantic>=2.0",
   "pyyaml",
 ]
 
 [project.optional-dependencies]
 guided = ["sqlglot>=23.0"]
 memory = ["chromadb>=0.4"]
-google = ["google-generativeai>=0.5.0"]
-benchmark = [
-  "langchain-openai>=0.2",
-  "langchain-google-genai>=2.0",
-  "langchain-community>=0.3",
-  "python-dotenv",
-]
 dev = ["ruff>=0.6.0", "build>=1.2.0", "twine>=5.0.0", "python-dotenv"]
 
 [project.scripts]

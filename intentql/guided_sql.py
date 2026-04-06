@@ -1,7 +1,7 @@
 """
 Guided SQL — LLM emits Postgres using schema.yaml as context, then :mod:`sql_guard` validates before execution.
 
-Enable via :class:`intentql.agent.QueryAgent` with ``use_guided_sql=True``.
+Used by :class:`intentql.agent.QueryAgent`.
 
 Requires: ``pip install 'intentql[guided]'`` (brings in sqlglot).
 

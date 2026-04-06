@@ -383,7 +383,7 @@ def describe_schema(
 def main():
     parser = argparse.ArgumentParser(
         prog="intentql",
-        description="IntentQL — Intent-driven natural language to SQL",
+        description="IntentQL — guided Postgres SQL from natural language",
     )
     subparsers = parser.add_subparsers(dest="command")
 
