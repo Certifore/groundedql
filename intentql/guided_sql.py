@@ -16,6 +16,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.engine import Engine
@@ -34,8 +35,25 @@ _GUIDED_SYSTEM = """You are a careful PostgreSQL analyst.
 Rules:
 - Produce exactly ONE read-only query: SELECT or WITH … SELECT. No INSERT/UPDATE/DELETE/DDL.
 - Use ONLY tables and columns from the SCHEMA block.
+- For relative time phrases ("last year", "this month", "YTD", etc.), use the CURRENT DATE (UTC) block in the user message — do not guess years.
 - Quote mixed-case identifiers when required by Postgres.
 - Output ONLY a Markdown fenced block: ```sql ... ``` — no prose outside the fence."""
+
+
+def _current_date_context_block() -> str:
+    """Anchor relative dates so the model does not invent calendar years."""
+    now = datetime.now(timezone.utc)
+    y = now.year
+    d = now.date().isoformat()
+    prev = y - 1
+    return (
+        "### CURRENT DATE (UTC)\n"
+        f"- Today: {d}\n"
+        f"- Current calendar year: {y}\n"
+        f"- \"Last calendar year\" / \"last year\" (when meaning the prior full year): "
+        f"{prev}-01-01 through {prev}-12-31 inclusive on the relevant date column.\n"
+        f"- \"This year\" (year-to-date): {y}-01-01 through {d} (or through end of query range as appropriate).\n\n"
+    )
 
 
 def _extract_sql(response: str) -> Optional[str]:
@@ -116,7 +134,10 @@ def run_guided_sql(
     repair_attempts = int(os.environ.get("INTENTQL_GUIDED_REPAIR_ATTEMPTS", "1"))
 
     mem_block = _intent_memory_block(intent_memory, q)
-    user_body = f"### USER QUESTION\n{q}\n\n### SCHEMA\n{catalog.schema_prompt_block}\n"
+    user_body = (
+        _current_date_context_block()
+        + f"### USER QUESTION\n{q}\n\n### SCHEMA\n{catalog.schema_prompt_block}\n"
+    )
     if mem_block:
         user_body += f"\n{mem_block}\n"
 
