@@ -10,6 +10,9 @@ from .planner import QueryPlanPlanner
 from .validation import validate_query_plan_dict, ValidationErrorItem
 from .queryplan_models import CteDef, QueryPlan, queryplan_json_schema
 from .agent import QueryAgent
+from .schema_catalog import SchemaCatalog, load_schema_catalog
+from .sql_guard import SqlGuardResult, validate_sql, apply_row_limit
+from .guided_sql import run_guided_sql
 from .semantic_lint import semantic_lint
 from .join_planner import auto_inject_joins, build_link_graph, shortest_join_path
 from .plan_canonical import canonicalize_query_plan, plan_fingerprint
@@ -37,6 +40,12 @@ __all__ = [
     "QueryPlan",
     "queryplan_json_schema",
     "QueryAgent",
+    "SchemaCatalog",
+    "load_schema_catalog",
+    "SqlGuardResult",
+    "validate_sql",
+    "apply_row_limit",
+    "run_guided_sql",
     "semantic_lint",
     "auto_inject_joins",
     "build_link_graph",

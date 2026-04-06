@@ -15,6 +15,14 @@ With optional few-shot memory (recommended for production):
 pip install "intentql[memory]"
 ```
 
+For **guided SQL** (LLM → Postgres with schema-backed validation via sqlglot):
+
+```bash
+pip install "intentql[guided]"
+```
+
+Use `QueryAgent(..., use_guided_sql=True)` with a LangChain chat model (`ChatOpenAI`, etc.). See `intentql/guided_sql.py`.
+
 <details>
 <summary>Install from source</summary>
 

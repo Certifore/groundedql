@@ -59,6 +59,7 @@ class QueryAgent:
         max_plan_retries: int = 2,
         enforce_semantic_lint: bool = True,
         use_intent_pipeline: bool = True,
+        use_guided_sql: bool = False,
     ):
         """
         Args:
@@ -72,9 +73,15 @@ class QueryAgent:
             use_intent_pipeline: If True (default), use the two-stage intent
                 extraction + deterministic plan builder instead of direct LLM
                 QueryPlan generation. Falls back to legacy pipeline on error.
+            use_guided_sql: If True, :meth:`ask` uses LLM→Postgres SQL with
+                schema-backed validation (:mod:`sql_guard`) instead of QueryPlan
+                compilation. Requires ``pip install 'intentql[guided]'`` and a
+                LangChain-compatible ``llm`` with ``.invoke()``.
         """
         self.engine = engine
         self.schema_path = schema_path
+        self.use_guided_sql = use_guided_sql
+        self._llm_raw = llm
         self.spec_path = _ensure_spec(schema_path, spec_path)
         self.max_plan_retries = max_plan_retries
         self.enforce_semantic_lint = enforce_semantic_lint
@@ -108,6 +115,16 @@ class QueryAgent:
         )
 
     def ask(self, question: str) -> Dict[str, Any]:
+        if self.use_guided_sql:
+            from .guided_sql import run_guided_sql
+
+            return run_guided_sql(
+                engine=self.engine,
+                schema_path=self.schema_path,
+                llm=self._llm_raw,
+                question=question,
+                intent_memory=self.intent_memory,
+            )
         if self.use_intent_pipeline:
             return self._ask_intent(question)
         return self._ask_legacy(question)
