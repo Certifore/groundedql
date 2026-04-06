@@ -10,6 +10,7 @@ Environment:
   INTENTQL_GUIDED_REPAIR_ATTEMPTS — extra LLM turns after validation/DB errors (default 1)
   INTENTQL_DISABLE_VALUE_INDEX — if 1/true, skip loading DISTINCT value lists (default off)
   INTENTQL_VALUE_INDEX_HARD_CAP — max DISTINCT rows per column from DB (default 800)
+  INTENTQL_GUIDED_MEMORY_MIN_SIMILARITY — retrieval threshold for prior guided SQL (default 0.62)
 """
 
 from __future__ import annotations
@@ -217,6 +218,37 @@ def _invoke_text(llm: Any, system: str, user: str) -> str:
     )
 
 
+def _guided_sql_memory_block(memory: Any, question: str) -> str:
+    """Optional: prior (question, SQL) pairs from :meth:`IntentMemory.retrieve_guided_sql`."""
+    if memory is None:
+        return ""
+    try:
+        retrieve = getattr(memory, "retrieve_guided_sql", None)
+        if not callable(retrieve):
+            return ""
+        examples = retrieve(question, top_k=2)
+    except Exception:
+        return ""
+    if not examples:
+        return ""
+    lines: List[str] = [
+        "### Guided SQL memory",
+        "",
+    ]
+    for ex in examples:
+        q = ex.get("question", "")
+        sql = (ex.get("sql") or "").strip()
+        sim = ex.get("similarity", 0.0)
+        if not sql:
+            continue
+        lines.append(f"- (sim={sim:.2f}) Q: {q}")
+        lines.append("```sql")
+        lines.append(sql[:12_000])
+        lines.append("```")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _intent_memory_block(memory: Any, question: str) -> str:
     """Optional few-shot from IntentMemory (intent JSON shapes, not SQL)."""
     if memory is None:
@@ -264,7 +296,8 @@ def run_guided_sql(
     max_rows = int(os.environ.get("INTENTQL_GUIDED_MAX_ROWS", "5000"))
     repair_attempts = int(os.environ.get("INTENTQL_GUIDED_REPAIR_ATTEMPTS", "1"))
 
-    mem_block = _intent_memory_block(intent_memory, q)
+    guided_mem = _guided_sql_memory_block(intent_memory, q)
+    intent_mem = _intent_memory_block(intent_memory, q)
     vi_block = ""
     try:
         vi_block = _value_index_block(engine, schema_path)
@@ -276,8 +309,13 @@ def run_guided_sql(
     )
     if vi_block:
         user_body += "\n" + vi_block
-    if mem_block:
-        user_body += f"\n{mem_block}\n"
+    memory_extra = ""
+    if guided_mem:
+        memory_extra += guided_mem + "\n"
+    if intent_mem:
+        memory_extra += intent_mem + "\n"
+    if memory_extra.strip():
+        user_body += "\n" + memory_extra.strip() + "\n"
 
     messages_tail: List[str] = []
     last_err: Optional[str] = None
@@ -322,6 +360,13 @@ def run_guided_sql(
             f"[IntentQL] Guided SQL executed ({result.get('row_count', 0)} rows).",
             file=sys.stderr,
         )
+        if intent_memory is not None:
+            try:
+                sg = getattr(intent_memory, "store_guided_sql", None)
+                if callable(sg):
+                    sg(q, limited)
+            except Exception:
+                pass
         return result
 
     return {

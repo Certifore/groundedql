@@ -1,19 +1,19 @@
 """
-intent_memory.py — Few-shot memory for intent extraction consistency.
+intent_memory.py — Persistent few-shot memory (ChromaDB).
 
-Stores successful (question, normalized_intent) pairs and retrieves
-semantically similar examples to inject into the extraction prompt.
-This is what makes the LLM produce consistent intents across rephrasings.
+1. **Intent collection** — (question, normalized_intent) for QueryPlan-style extraction;
+   retrieval uses task-class gating (see :meth:`retrieve`).
 
-Uses ChromaDB for persistent, embedding-indexed storage with fast
-similarity search.  Falls back gracefully if ChromaDB is unavailable.
+2. **Guided SQL collection** — (question, executed SQL) after successful guided runs;
+   retrieval has **no** task-class filter so follow-ups (e.g. total vs per-group) can
+   still match the prior question and reuse predicates.
 
-Embeddings are computed locally by ChromaDB's default embedding function
-(all-MiniLM-L6-v2 via sentence-transformers).  No API key or external
-service required.
+Uses ChromaDB with local embeddings (all-MiniLM-L6-v2). Disable entirely with
+``INTENTQL_DISABLE_MEMORY=1``.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -25,6 +25,9 @@ from typing import Any, Dict, List, Optional
 # ("work order") with the same *intent shape*; we only inject examples whose bucket
 # matches the current question's bucket (see retrieve()).
 _TASK_CLASS_INTENT = "task_class"
+
+# Second collection name suffix for guided SQL (same persist_directory).
+_GUIDED_SQL_SUFFIX = "_guided_sql"
 
 
 def _task_class_from_intent(intent: Dict[str, Any]) -> str:
@@ -96,12 +99,9 @@ def _task_class_from_question(question: str) -> str:
 
 
 class IntentMemory:
-    """Stores and retrieves (question, intent) pairs for few-shot prompting.
+    """Stores and retrieves (question, intent) and (question, SQL) pairs.
 
-    Persists to a ChromaDB collection so examples survive restarts
-    and similarity search is indexed (not brute-force).
-
-    Embeddings are computed locally — no API key needed.
+    Two collections share the same persist directory: intent examples and guided SQL.
     """
 
     def __init__(
@@ -112,6 +112,9 @@ class IntentMemory:
     ):
         self.max_examples = max_examples
         self._collection = None
+        self._guided_collection = None
+        self._collection_name = collection_name
+        self._guided_name = collection_name + _GUIDED_SQL_SUFFIX
 
         if os.environ.get("INTENTQL_DISABLE_MEMORY", "").strip().lower() in (
             "1",
@@ -141,33 +144,48 @@ class IntentMemory:
                 name=collection_name,
                 metadata={"hnsw:space": "cosine"},
             )
+            self._guided_collection = self._client.get_or_create_collection(
+                name=self._guided_name,
+                metadata={"hnsw:space": "cosine"},
+            )
 
-            # Detect embedding dimension mismatch (e.g. migrating from
-            # OpenAI 1536-dim to local 384-dim).  If mismatched, delete
-            # and recreate so queries don't crash at runtime.
-            count = self._collection.count()
-            if count > 0:
-                try:
-                    self._collection.query(query_texts=["test"], n_results=1)
-                except Exception as dim_exc:
-                    if "dimension" in str(dim_exc).lower():
-                        print(
-                            f"[IntentMemory] Embedding dimension changed, "
-                            f"resetting collection ({count} old examples removed).",
-                            file=sys.stderr,
-                        )
-                        self._client.delete_collection(collection_name)
-                        self._collection = self._client.get_or_create_collection(
-                            name=collection_name,
-                            metadata={"hnsw:space": "cosine"},
-                        )
-                        count = 0
-                    else:
+            # Detect embedding dimension mismatch — reset both collections.
+            for coll, label in (
+                (self._collection, collection_name),
+                (self._guided_collection, self._guided_name),
+            ):
+                cnt = coll.count()
+                if cnt > 0:
+                    try:
+                        coll.query(query_texts=["test"], n_results=1)
+                    except Exception as dim_exc:
+                        if "dimension" in str(dim_exc).lower():
+                            print(
+                                f"[IntentMemory] Embedding dimension changed, "
+                                f"resetting intent + guided SQL collections.",
+                                file=sys.stderr,
+                            )
+                            for name in (collection_name, self._guided_name):
+                                try:
+                                    self._client.delete_collection(name)
+                                except Exception:
+                                    pass
+                            self._collection = self._client.get_or_create_collection(
+                                name=collection_name,
+                                metadata={"hnsw:space": "cosine"},
+                            )
+                            self._guided_collection = self._client.get_or_create_collection(
+                                name=self._guided_name,
+                                metadata={"hnsw:space": "cosine"},
+                            )
+                            break
                         raise
 
-            if count > 0:
+            ic = self._collection.count()
+            gc = self._guided_collection.count()
+            if ic > 0 or gc > 0:
                 print(
-                    f"[IntentMemory] Loaded {count} examples from ChromaDB",
+                    f"[IntentMemory] Loaded {ic} intent + {gc} guided SQL example(s) from ChromaDB",
                     file=sys.stderr,
                 )
         except ImportError:
@@ -186,7 +204,6 @@ class IntentMemory:
         if self._collection is None:
             return
 
-        import hashlib
         doc_id = hashlib.md5(question.lower().strip().encode()).hexdigest()
 
         existing = self._collection.get(ids=[doc_id])
@@ -216,6 +233,96 @@ class IntentMemory:
             f"[IntentMemory] Stored example ({count} total)",
             file=sys.stderr,
         )
+
+    def store_guided_sql(self, question: str, sql: str) -> None:
+        """Persist a successful guided-SQL pair. Upserts by question text hash."""
+        if self._guided_collection is None:
+            return
+
+        q = (question or "").strip()
+        s = (sql or "").strip()
+        if not q or not s:
+            return
+
+        # Metadata size limits — keep SQL in metadata for retrieval payload (not embedded).
+        sql_stored = s[:48_000]
+
+        doc_id = hashlib.md5(q.lower().strip().encode()).hexdigest()
+        existing = self._guided_collection.get(ids=[doc_id])
+        if existing and existing["ids"]:
+            self._guided_collection.delete(ids=[doc_id])
+
+        self._guided_collection.add(
+            ids=[doc_id],
+            documents=[q],
+            metadatas=[{"sql": sql_stored}],
+        )
+
+        count = self._guided_collection.count()
+        if count > self.max_examples:
+            all_docs = self._guided_collection.get(limit=count - self.max_examples)
+            if all_docs["ids"]:
+                self._guided_collection.delete(ids=all_docs["ids"])
+
+        print(
+            f"[IntentMemory] Stored guided SQL ({count} total in {self._guided_name!r})",
+            file=sys.stderr,
+        )
+
+    def retrieve_guided_sql(
+        self,
+        question: str,
+        top_k: int = 2,
+        min_similarity: Optional[float] = None,
+    ) -> List[Dict[str, Any]]:
+        """Similar questions with stored SQL — no task-class filter (unlike :meth:`retrieve`)."""
+        if self._guided_collection is None or self._guided_collection.count() == 0:
+            return []
+
+        if min_similarity is None:
+            raw = os.environ.get("INTENTQL_GUIDED_MEMORY_MIN_SIMILARITY", "0.62")
+            try:
+                min_similarity = float(raw)
+            except ValueError:
+                min_similarity = 0.62
+
+        n_docs = self._guided_collection.count()
+        fetch_n = min(max(top_k * 8, top_k), n_docs)
+
+        results = self._guided_collection.query(
+            query_texts=[question],
+            n_results=fetch_n,
+        )
+
+        if not results or not results.get("documents") or not results["documents"][0]:
+            return []
+
+        matched: List[Dict[str, Any]] = []
+        for i, doc in enumerate(results["documents"][0]):
+            distance = results["distances"][0][i] if results.get("distances") else 1.0
+            similarity = 1.0 - distance
+            if similarity < min_similarity:
+                continue
+            meta = results["metadatas"][0][i] if results.get("metadatas") else {}
+            sql = (meta or {}).get("sql") or ""
+            if not sql:
+                continue
+            matched.append({
+                "question": doc,
+                "sql": sql,
+                "similarity": round(similarity, 3),
+            })
+            if len(matched) >= top_k:
+                break
+
+        if matched:
+            print(
+                f"[IntentMemory] Guided SQL memory: {len(matched)} hit(s) "
+                f"(best similarity {matched[0]['similarity']})",
+                file=sys.stderr,
+            )
+
+        return matched
 
     def retrieve(
         self,
