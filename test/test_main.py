@@ -59,6 +59,14 @@ def run_sql_guard_suite() -> None:
     lim = apply_row_limit("SELECT 1 AS x", 100)
     assert "LIMIT 100" in lim
 
+    # ORDER BY may use a SELECT alias (not a physical column name).
+    sql_alias_order = (
+        "SELECT customer_id, COUNT(*) AS row_cnt FROM orders "
+        "GROUP BY customer_id ORDER BY row_cnt DESC LIMIT 1"
+    )
+    r3 = validate_sql(sql_alias_order, catalog)
+    assert r3.ok, r3.message
+
     print("test_main: sql_guard suite OK")
 
 

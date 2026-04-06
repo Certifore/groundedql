@@ -174,12 +174,18 @@ def validate_sql(sql: str, catalog: SchemaCatalog) -> SqlGuardResult:
 
         tbl = col.table
         if not tbl:
-            if key not in all_cols:
-                return SqlGuardResult(
-                    False,
-                    f"Unknown column {key!r} (not in schema column list)",
-                )
-            continue
+            if key in all_cols:
+                continue
+            # ORDER BY / GROUP BY may reference SELECT list aliases (not physical columns).
+            try:
+                if col.find_ancestor(exp.Order) or col.find_ancestor(exp.Group):
+                    continue
+            except AttributeError:
+                pass
+            return SqlGuardResult(
+                False,
+                f"Unknown column {key!r} (not in schema column list)",
+            )
 
         tkey = _norm_ident(str(tbl))
         phys = alias_to_physical.get(tkey)
