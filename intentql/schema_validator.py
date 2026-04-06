@@ -162,4 +162,52 @@ def validate_schema(schema: Dict[str, Any]) -> List[str]:
                 f"{lloc} ('{lname}'): 'on' must be a non-empty list of join conditions."
             )
 
+    # Optional guided-SQL: DISTINCT samples per logical column (see guided_sql.value index)
+    vi = schema.get("value_index")
+    if vi is not None:
+        if not isinstance(vi, dict):
+            raise SchemaError(
+                "value_index must be a mapping: table_name -> { column_name: max_distinct }."
+            )
+        table_columns: Dict[str, Any] = {}
+        for t in tables:
+            if isinstance(t, dict) and t.get("name"):
+                table_columns[t["name"]] = {
+                    c.get("name")
+                    for c in (t.get("columns") or [])
+                    if isinstance(c, dict) and c.get("name")
+                }
+        for tname, cmap in vi.items():
+            if not isinstance(tname, str) or not tname.strip():
+                raise SchemaError("value_index: each table key must be a non-empty string.")
+            if tname not in known_table_names:
+                raise SchemaError(
+                    f"value_index: unknown table {tname!r}. Known: {sorted(known_table_names)}"
+                )
+            if not isinstance(cmap, dict) or not cmap:
+                raise SchemaError(
+                    f"value_index[{tname!r}]: must be a non-empty mapping of column_name -> limit."
+                )
+            allowed_cols = table_columns.get(tname, set())
+            for cname, lim in cmap.items():
+                if not isinstance(cname, str) or not cname.strip():
+                    raise SchemaError(
+                        f"value_index[{tname!r}]: column keys must be non-empty strings."
+                    )
+                if cname not in allowed_cols:
+                    raise SchemaError(
+                        f"value_index[{tname!r}]: unknown column {cname!r}. "
+                        f"Available: {sorted(allowed_cols)}"
+                    )
+                try:
+                    n = int(lim)
+                except (TypeError, ValueError) as err:
+                    raise SchemaError(
+                        f"value_index[{tname!r}][{cname!r}]: limit must be a positive integer."
+                    ) from err
+                if n <= 0:
+                    raise SchemaError(
+                        f"value_index[{tname!r}][{cname!r}]: limit must be positive, got {lim!r}."
+                    )
+
     return warnings
