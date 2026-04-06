@@ -162,12 +162,12 @@ def validate_schema(schema: Dict[str, Any]) -> List[str]:
                 f"{lloc} ('{lname}'): 'on' must be a non-empty list of join conditions."
             )
 
-    # Optional guided-SQL: DISTINCT samples per logical column (see guided_sql.value index)
+    # Optional guided-SQL: DISTINCT samples per logical column (see guided_sql value_index)
     vi = schema.get("value_index")
     if vi is not None:
         if not isinstance(vi, dict):
             raise SchemaError(
-                "value_index must be a mapping: table_name -> { column_name: max_distinct }."
+                "value_index must be a mapping: table_name -> [column, ...] or { column: max_distinct }."
             )
         table_columns: Dict[str, Any] = {}
         for t in tables:
@@ -184,30 +184,50 @@ def validate_schema(schema: Dict[str, Any]) -> List[str]:
                 raise SchemaError(
                     f"value_index: unknown table {tname!r}. Known: {sorted(known_table_names)}"
                 )
-            if not isinstance(cmap, dict) or not cmap:
-                raise SchemaError(
-                    f"value_index[{tname!r}]: must be a non-empty mapping of column_name -> limit."
-                )
             allowed_cols = table_columns.get(tname, set())
-            for cname, lim in cmap.items():
-                if not isinstance(cname, str) or not cname.strip():
+            if isinstance(cmap, list):
+                if not cmap:
                     raise SchemaError(
-                        f"value_index[{tname!r}]: column keys must be non-empty strings."
+                        f"value_index[{tname!r}]: must be a non-empty list of column names."
                     )
-                if cname not in allowed_cols:
+                for cname in cmap:
+                    if not isinstance(cname, str) or not cname.strip():
+                        raise SchemaError(
+                            f"value_index[{tname!r}]: each entry must be a non-empty column name string."
+                        )
+                    if cname not in allowed_cols:
+                        raise SchemaError(
+                            f"value_index[{tname!r}]: unknown column {cname!r}. "
+                            f"Available: {sorted(allowed_cols)}"
+                        )
+            elif isinstance(cmap, dict):
+                if not cmap:
                     raise SchemaError(
-                        f"value_index[{tname!r}]: unknown column {cname!r}. "
-                        f"Available: {sorted(allowed_cols)}"
+                        f"value_index[{tname!r}]: must be a non-empty mapping of column_name -> limit."
                     )
-                try:
-                    n = int(lim)
-                except (TypeError, ValueError) as err:
-                    raise SchemaError(
-                        f"value_index[{tname!r}][{cname!r}]: limit must be a positive integer."
-                    ) from err
-                if n <= 0:
-                    raise SchemaError(
-                        f"value_index[{tname!r}][{cname!r}]: limit must be positive, got {lim!r}."
-                    )
+                for cname, lim in cmap.items():
+                    if not isinstance(cname, str) or not cname.strip():
+                        raise SchemaError(
+                            f"value_index[{tname!r}]: column keys must be non-empty strings."
+                        )
+                    if cname not in allowed_cols:
+                        raise SchemaError(
+                            f"value_index[{tname!r}]: unknown column {cname!r}. "
+                            f"Available: {sorted(allowed_cols)}"
+                        )
+                    try:
+                        n = int(lim)
+                    except (TypeError, ValueError) as err:
+                        raise SchemaError(
+                            f"value_index[{tname!r}][{cname!r}]: limit must be a positive integer."
+                        ) from err
+                    if n <= 0:
+                        raise SchemaError(
+                            f"value_index[{tname!r}][{cname!r}]: limit must be positive, got {lim!r}."
+                        )
+            else:
+                raise SchemaError(
+                    f"value_index[{tname!r}]: must be a list of column names or a mapping to limits."
+                )
 
     return warnings

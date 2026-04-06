@@ -94,11 +94,14 @@ def _distinct_column_values(
 
 def _value_index_block(engine: Engine, schema_path: str) -> str:
     """
-    Optional schema.yaml top-level ``value_index``::
+    Optional schema.yaml top-level ``value_index`` — list form (no per-column limits in YAML)::
 
         value_index:
           work_orders:
-            building_name: 500
+            - building_name
+
+    Or legacy mapping ``column_name: max_distinct``. Row cap is always bounded by
+    ``INTENTQL_VALUE_INDEX_HARD_CAP`` for list form, or ``min(limit, hard_cap)`` for mapping form.
 
     Runs SELECT DISTINCT ... LIMIT per entry and injects into the prompt.
     """
@@ -133,23 +136,38 @@ def _value_index_block(engine: Engine, schema_path: str) -> str:
     for ltable, cmap in raw.items():
         ltable = str(ltable).strip()
         t = tables_by_name.get(ltable)
-        if not t or not isinstance(cmap, dict):
+        if not t:
             continue
-        db_table = str(t.get("db_table", "")).strip()
-        if not db_table:
-            continue
+        # value_index[table] may be a list of logical columns (limits = INTENTQL_VALUE_INDEX_HARD_CAP only)
+        # or a mapping column_name -> positive int (legacy).
         col_by_name = {
             str(c.get("name", "")).strip(): c
             for c in t.get("columns", []) or []
             if isinstance(c, dict) and str(c.get("name", "")).strip()
         }
-        for lcname, lim_raw in cmap.items():
-            lcname = str(lcname).strip()
-            try:
-                lim = int(lim_raw)
-            except (TypeError, ValueError):
-                continue
-            lim = max(1, min(lim, hard_cap))
+        entries: List[tuple[str, int]] = []
+        if isinstance(cmap, list):
+            for item in cmap:
+                lc = str(item).strip()
+                if lc:
+                    entries.append((lc, hard_cap))
+        elif isinstance(cmap, dict):
+            for lcname, lim_raw in cmap.items():
+                lcname = str(lcname).strip()
+                try:
+                    lim = int(lim_raw)
+                except (TypeError, ValueError):
+                    continue
+                if lim > 0:
+                    entries.append((lcname, max(1, min(lim, hard_cap))))
+        else:
+            continue
+
+        db_table = str(t.get("db_table", "")).strip()
+        if not db_table:
+            continue
+
+        for lcname, lim in entries:
             col = col_by_name.get(lcname)
             if not col:
                 continue
