@@ -78,8 +78,25 @@ def _detect_primary_date(columns: List[Dict[str, Any]]) -> Optional[str]:
         return None
 
     priority_names = [
-        "created_at", "created_date", "entry_date", "date_created",
-        "order_date", "event_date", "timestamp", "created",
+        "created_at",
+        "created_date",
+        "updated_at",
+        "modified_at",
+        "entry_date",
+        "date_created",
+        "order_date",
+        "event_date",
+        "start_date",
+        "end_date",
+        "completed_at",
+        "closed_date",
+        "shipped_date",
+        "required_date",
+        "effective_date",
+        "posted_date",
+        "transaction_date",
+        "timestamp",
+        "created",
     ]
     for pname in priority_names:
         for c in date_cols:

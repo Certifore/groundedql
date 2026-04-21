@@ -7,9 +7,21 @@ or query execution. Raises SchemaError with a clear message on misconfiguration.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set, Tuple
 
 from .exceptions import SchemaError
+
+
+def _qualified_table_column(ref: str, *, loc: str, side: str) -> Tuple[str, str]:
+    """Parse ``logical_table.logical_column`` (single dot)."""
+    if not isinstance(ref, str) or not ref.strip():
+        raise SchemaError(f"{loc}: {side} must be a non-empty string.")
+    parts = ref.strip().split(".", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise SchemaError(
+            f"{loc}: {side} must look like 'table.column' (logical names), got {ref!r}."
+        )
+    return parts[0], parts[1]
 
 
 def validate_schema(schema: Dict[str, Any]) -> List[str]:
@@ -114,6 +126,23 @@ def validate_schema(schema: Dict[str, Any]) -> List[str]:
                         f"{loc}.intent_id_patterns[{j}]: invalid regex {pat!r}: {err}"
                     ) from err
 
+    # Column sets per logical table (for link.on validation)
+    table_columns: Dict[str, Set[str]] = {}
+    for t in tables:
+        if not isinstance(t, dict):
+            continue
+        tname = t.get("name")
+        if not isinstance(tname, str) or not tname:
+            continue
+        cols = t.get("columns")
+        if not isinstance(cols, list):
+            continue
+        names: Set[str] = set()
+        for c in cols:
+            if isinstance(c, dict) and isinstance(c.get("name"), str) and c["name"]:
+                names.add(c["name"])
+        table_columns[tname] = names
+
     # Validate links
     known_table_names = {t["name"] for t in tables if isinstance(t, dict) and t.get("name")}
     for i, link in enumerate(schema.get("links", []) or []):
@@ -162,5 +191,38 @@ def validate_schema(schema: Dict[str, Any]) -> List[str]:
             raise SchemaError(
                 f"{lloc} ('{lname}'): 'on' must be a non-empty list of join conditions."
             )
+
+        for j, cond in enumerate(on):
+            cloc = f"{lloc}.on[{j}]"
+            if not isinstance(cond, dict):
+                raise SchemaError(f"{cloc}: each join condition must be an object.")
+            left = cond.get("left")
+            right = cond.get("right")
+            op_raw = cond.get("op", "=")
+            if not isinstance(op_raw, str) or op_raw.strip() != "=":
+                raise SchemaError(
+                    f"{cloc} ('{lname}'): join condition op must be '=' "
+                    f"(or omitted); got {op_raw!r}."
+                )
+            lt, lc = _qualified_table_column(str(left), loc=cloc, side="left")
+            rt, rc = _qualified_table_column(str(right), loc=cloc, side="right")
+            if lt not in table_columns:
+                raise SchemaError(
+                    f"{cloc}: left table {lt!r} is not a known logical table."
+                )
+            if rt not in table_columns:
+                raise SchemaError(
+                    f"{cloc}: right table {rt!r} is not a known logical table."
+                )
+            if lc not in table_columns[lt]:
+                raise SchemaError(
+                    f"{cloc}: left column {lc!r} not found on table {lt!r}. "
+                    f"Known: {sorted(table_columns[lt])}"
+                )
+            if rc not in table_columns[rt]:
+                raise SchemaError(
+                    f"{cloc}: right column {rc!r} not found on table {rt!r}. "
+                    f"Known: {sorted(table_columns[rt])}"
+                )
 
     return warnings

@@ -10,6 +10,7 @@ Modes (set via TEST_MODE env var or command-line arg):
 
 Usage:
   python test/test_main.py              # full suite (default); repo root is on sys.path (no pip install -e . required)
+  # lint mode runs without python-dotenv; DB/pipeline modes need ``pip install -e ".[dev]"`` or ``.[benchmark]``.
   python test/test_main.py update       # overwrite baseline
   python test/test_main.py check        # regression check (for CI)
   python test/test_main.py pipeline     # compile preflight + pipeline benchmark
@@ -36,7 +37,15 @@ _rp = str(ROOT)
 if _rp not in sys.path:
     sys.path.insert(0, _rp)
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:
+
+    def load_dotenv(*args, **kwargs):  # type: ignore[no-untyped-def]
+        """No-op when python-dotenv is not installed (lint mode works without it)."""
+        return False
+
+
 import psycopg2
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
@@ -1016,6 +1025,24 @@ print()
 # Mode: lint — only lint tests, no DB needed
 # ---------------------------------------------------------------------------
 if MODE == "lint":
+    import subprocess
+
+    smoke = subprocess.run(
+        [sys.executable, str(HERE / "test_read_sql_surface_and_schema_links.py")],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if smoke.returncode != 0:
+        errors += 1
+        print("[test] read_sql_surface / schema link smoke: FAIL")
+        if smoke.stdout:
+            print(smoke.stdout)
+        if smoke.stderr:
+            print(smoke.stderr, file=sys.stderr)
+    else:
+        print("[test] read_sql_surface / schema link smoke: PASS")
+
     print(f"\n[test] Lint + canonical + compile (no DB): {len(results)} tests, {errors} failure(s)")
     sys.exit(0 if errors == 0 else 1)
 

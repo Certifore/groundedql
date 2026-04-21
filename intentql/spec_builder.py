@@ -24,6 +24,11 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
+from .read_sql_surface import (
+    READ_SQL_SURFACE_VERSION,
+    read_sql_surface_summary_for_spec,
+)
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -53,7 +58,12 @@ def build_spec(schema_path: str | Path) -> Dict[str, Any]:
     spec["defaults"] = {"limit": 100, "offset": 0, "max_limit": 1000}
     spec["operators_supported"] = _operators_block()
     spec["schema_summary"] = _build_schema_summary(tables)
-    spec["structural_invariants"] = _structural_invariants()
+    spec["structural_invariants"] = (
+        _structural_invariants()
+        + "\n\n--- READ SQL SURFACE (compiler contract) ---\n"
+        + read_sql_surface_summary_for_spec()
+    )
+    spec["read_sql_surface_version"] = READ_SQL_SURFACE_VERSION
     spec["plan_construction_procedure"] = _plan_construction_procedure()
     spec["semantics_rules"] = _semantics_rules(tables)
     spec["legacy_queryplan_format"] = _legacy_format_shape()
