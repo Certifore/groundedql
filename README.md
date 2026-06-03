@@ -62,6 +62,39 @@ print(result["rows"])
 print(result["sql"])
 ```
 
+### Use Mistral instead of OpenAI
+
+```bash
+export MISTRAL_AI=...
+# optional
+export MISTRAL_MODEL=mistral-small-latest
+```
+
+```python
+agent = QueryAgent(
+    engine=engine,
+    schema_path="config/schema.yaml",
+    llm="mistral",  # or "mistral:mistral-small-latest"
+)
+```
+
+### Use a local Ollama model
+
+```bash
+export OLLAMA_MODEL=intentql-gemma4
+# optional
+export OLLAMA_BASE_URL=http://127.0.0.1:11434
+export OLLAMA_NUM_CTX=8192
+```
+
+```python
+agent = QueryAgent(
+    engine=engine,
+    schema_path="config/schema.yaml",
+    llm="ollama",  # or "ollama:intentql-gemma4"
+)
+```
+
 ## CLI Reference
 
 | Command | Description |

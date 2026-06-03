@@ -1,0 +1,416 @@
+version: 1
+dialect: postgres
+context: 'BIRD Mini-Dev database: card_games'
+tables:
+- name: cards
+  db_table: cards
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: artist
+    db_column: artist
+    type: text
+  - name: asciiname
+    db_column: asciiname
+    type: text
+  - name: availability
+    db_column: availability
+    type: text
+  - name: bordercolor
+    db_column: bordercolor
+    type: text
+  - name: cardkingdomfoilid
+    db_column: cardkingdomfoilid
+    type: text
+  - name: cardkingdomid
+    db_column: cardkingdomid
+    type: text
+  - name: coloridentity
+    db_column: coloridentity
+    type: text
+  - name: colorindicator
+    db_column: colorindicator
+    type: text
+  - name: colors
+    db_column: colors
+    type: text
+  - name: convertedmanacost
+    db_column: convertedmanacost
+    type: float
+  - name: dueldeck
+    db_column: dueldeck
+    type: text
+  - name: edhrecrank
+    db_column: edhrecrank
+    type: bigint
+  - name: faceconvertedmanacost
+    db_column: faceconvertedmanacost
+    type: float
+  - name: facename
+    db_column: facename
+    type: text
+  - name: flavorname
+    db_column: flavorname
+    type: text
+  - name: flavortext
+    db_column: flavortext
+    type: text
+  - name: frameeffects
+    db_column: frameeffects
+    type: text
+  - name: frameversion
+    db_column: frameversion
+    type: text
+  - name: hand
+    db_column: hand
+    type: text
+  - name: hasalternativedecklimit
+    db_column: hasalternativedecklimit
+    type: bigint
+  - name: hascontentwarning
+    db_column: hascontentwarning
+    type: bigint
+  - name: hasfoil
+    db_column: hasfoil
+    type: bigint
+  - name: hasnonfoil
+    db_column: hasnonfoil
+    type: bigint
+  - name: isalternative
+    db_column: isalternative
+    type: bigint
+  - name: isfullart
+    db_column: isfullart
+    type: bigint
+  - name: isonlineonly
+    db_column: isonlineonly
+    type: bigint
+  - name: isoversized
+    db_column: isoversized
+    type: bigint
+  - name: ispromo
+    db_column: ispromo
+    type: bigint
+  - name: isreprint
+    db_column: isreprint
+    type: bigint
+  - name: isreserved
+    db_column: isreserved
+    type: bigint
+  - name: isstarter
+    db_column: isstarter
+    type: bigint
+  - name: isstoryspotlight
+    db_column: isstoryspotlight
+    type: bigint
+  - name: istextless
+    db_column: istextless
+    type: bigint
+  - name: istimeshifted
+    db_column: istimeshifted
+    type: bigint
+  - name: keywords
+    db_column: keywords
+    type: text
+  - name: layout
+    db_column: layout
+    type: text
+  - name: leadershipskills
+    db_column: leadershipskills
+    type: text
+  - name: life
+    db_column: life
+    type: text
+  - name: loyalty
+    db_column: loyalty
+    type: text
+  - name: manacost
+    db_column: manacost
+    type: text
+  - name: mcmid
+    db_column: mcmid
+    type: text
+  - name: mcmmetaid
+    db_column: mcmmetaid
+    type: text
+  - name: mtgarenaid
+    db_column: mtgarenaid
+    type: text
+  - name: mtgjsonv4id
+    db_column: mtgjsonv4id
+    type: text
+  - name: mtgofoilid
+    db_column: mtgofoilid
+    type: text
+  - name: mtgoid
+    db_column: mtgoid
+    type: text
+  - name: multiverseid
+    db_column: multiverseid
+    type: text
+  - name: name
+    db_column: name
+    type: text
+  - name: number
+    db_column: number
+    type: text
+  - name: originalreleasedate
+    db_column: originalreleasedate
+    type: text
+  - name: originaltext
+    db_column: originaltext
+    type: text
+  - name: originaltype
+    db_column: originaltype
+    type: text
+  - name: otherfaceids
+    db_column: otherfaceids
+    type: text
+  - name: power
+    db_column: power
+    type: text
+  - name: printings
+    db_column: printings
+    type: text
+  - name: promotypes
+    db_column: promotypes
+    type: text
+  - name: purchaseurls
+    db_column: purchaseurls
+    type: text
+  - name: rarity
+    db_column: rarity
+    type: text
+  - name: scryfallid
+    db_column: scryfallid
+    type: text
+  - name: scryfallillustrationid
+    db_column: scryfallillustrationid
+    type: text
+  - name: scryfalloracleid
+    db_column: scryfalloracleid
+    type: text
+  - name: setcode
+    db_column: setcode
+    type: text
+  - name: side
+    db_column: side
+    type: text
+  - name: subtypes
+    db_column: subtypes
+    type: text
+  - name: supertypes
+    db_column: supertypes
+    type: text
+  - name: tcgplayerproductid
+    db_column: tcgplayerproductid
+    type: text
+  - name: text
+    db_column: text
+    type: text
+  - name: toughness
+    db_column: toughness
+    type: text
+  - name: type
+    db_column: type
+    type: text
+  - name: types
+    db_column: types
+    type: text
+  - name: uuid
+    db_column: uuid
+    type: text
+  - name: variations
+    db_column: variations
+    type: text
+  - name: watermark
+    db_column: watermark
+    type: text
+  primary_id: id
+  keyword_search_or:
+  - asciiname
+  - facename
+  - flavorname
+  - keywords
+- name: foreign_data
+  db_table: foreign_data
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: flavortext
+    db_column: flavortext
+    type: text
+  - name: language
+    db_column: language
+    type: text
+  - name: multiverseid
+    db_column: multiverseid
+    type: bigint
+  - name: name
+    db_column: name
+    type: text
+  - name: text
+    db_column: text
+    type: text
+  - name: type
+    db_column: type
+    type: text
+  - name: uuid
+    db_column: uuid
+    type: text
+  primary_id: id
+- name: legalities
+  db_table: legalities
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: format
+    db_column: format
+    type: text
+  - name: status
+    db_column: status
+    type: text
+  - name: uuid
+    db_column: uuid
+    type: text
+  primary_id: id
+- name: rulings
+  db_table: rulings
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: date
+    db_column: date
+    type: date
+  - name: text
+    db_column: text
+    type: text
+  - name: uuid
+    db_column: uuid
+    type: text
+  primary_id: id
+  primary_date: date
+- name: set_translations
+  db_table: set_translations
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: language
+    db_column: language
+    type: text
+  - name: setcode
+    db_column: setcode
+    type: text
+  - name: translation
+    db_column: translation
+    type: text
+  primary_id: id
+- name: sets
+  db_table: sets
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: basesetsize
+    db_column: basesetsize
+    type: bigint
+  - name: block
+    db_column: block
+    type: text
+  - name: booster
+    db_column: booster
+    type: text
+  - name: code
+    db_column: code
+    type: text
+  - name: isfoilonly
+    db_column: isfoilonly
+    type: bigint
+  - name: isforeignonly
+    db_column: isforeignonly
+    type: bigint
+  - name: isnonfoilonly
+    db_column: isnonfoilonly
+    type: bigint
+  - name: isonlineonly
+    db_column: isonlineonly
+    type: bigint
+  - name: ispartialpreview
+    db_column: ispartialpreview
+    type: bigint
+  - name: keyrunecode
+    db_column: keyrunecode
+    type: text
+  - name: mcmid
+    db_column: mcmid
+    type: bigint
+  - name: mcmidextras
+    db_column: mcmidextras
+    type: bigint
+  - name: mcmname
+    db_column: mcmname
+    type: text
+  - name: mtgocode
+    db_column: mtgocode
+    type: text
+  - name: name
+    db_column: name
+    type: text
+  - name: parentcode
+    db_column: parentcode
+    type: text
+  - name: releasedate
+    db_column: releasedate
+    type: date
+  - name: tcgplayergroupid
+    db_column: tcgplayergroupid
+    type: bigint
+  - name: totalsetsize
+    db_column: totalsetsize
+    type: bigint
+  - name: type
+    db_column: type
+    type: text
+  primary_id: id
+  primary_date: releasedate
+  keyword_search_or:
+  - mcmname
+  - name
+links:
+- name: rulings_to_cards
+  from_table: rulings
+  to_table: cards
+  join_type: left
+  'on':
+  - left: rulings.uuid
+    op: '='
+    right: cards.uuid
+- name: set_translations_to_sets
+  from_table: set_translations
+  to_table: sets
+  join_type: left
+  'on':
+  - left: set_translations.setcode
+    op: '='
+    right: sets.code
+- name: foreign_data_to_cards_uuid
+  from_table: foreign_data
+  to_table: cards
+  join_type: left
+  'on':
+  - left: foreign_data.uuid
+    op: '='
+    right: cards.uuid
+- name: legalities_to_cards_uuid
+  from_table: legalities
+  to_table: cards
+  join_type: left
+  'on':
+  - left: legalities.uuid
+    op: '='
+    right: cards.uuid

@@ -1,0 +1,428 @@
+version: 1
+name: IntentQL QueryPlan Spec (auto-generated)
+description: Auto-generated from schema.yaml. Instructions for generating QueryPlan
+  JSON for the IntentQL compiler. Output MUST be valid JSON only (no markdown, no
+  prose, no SQL).
+system_instructions: 'You are a QueryPlan generator.
+
+  Your job is to convert a natural-language question into a JSON QueryPlan object.
+
+  You MUST output JSON only — no markdown, no prose, no SQL.
+
+
+
+  DATA CONTEXT:
+
+  BIRD Mini-Dev database: financial
+
+  If the user mentions the organization/campus/site by name, that refers to the ENTIRE
+  dataset — do NOT add a filter for it.
+
+
+  RULES:
+
+  - dataset MUST be one of: "account", "card", "client", "disp", "district", "loan",
+  "order", "trans"
+
+  - Use ONLY the logical column names listed in schema_summary below.
+
+  - Do NOT use physical DB column names or write SQL.
+
+  - Always include limit and offset.
+
+  - Give every dimension and metric an alias.
+
+  - metric aliases must be unique within the plan.
+
+  - Prefer consistent, deterministic plans: same question → same JSON.
+
+  '
+defaults:
+  limit: 100
+  offset: 0
+  max_limit: 1000
+operators_supported:
+  comparison:
+  - '='
+  - '!='
+  - '>'
+  - '>='
+  - <
+  - <=
+  membership:
+  - in
+  - not_in
+  text:
+  - contains
+  - not_contains
+  - starts_with
+  - ends_with
+  null_checks:
+  - is_null
+  - is_not_null
+schema_summary:
+  account:
+    primary_id: account_id
+    primary_id_note: Use count_distinct('account_id') when counting distinct account.
+    columns:
+    - name: account_id
+      type: bigint
+    - name: district_id
+      type: bigint
+    - name: frequency
+      type: text
+    - name: date
+      type: date
+  card:
+    primary_id: card_id
+    primary_id_note: Use count_distinct('card_id') when counting distinct card.
+    columns:
+    - name: card_id
+      type: bigint
+    - name: disp_id
+      type: bigint
+    - name: type
+      type: text
+    - name: issued
+      type: date
+  client:
+    primary_id: client_id
+    primary_id_note: Use count_distinct('client_id') when counting distinct client.
+    columns:
+    - name: client_id
+      type: bigint
+    - name: gender
+      type: text
+    - name: birth_date
+      type: date
+    - name: district_id
+      type: bigint
+  disp:
+    primary_id: disp_id
+    primary_id_note: Use count_distinct('disp_id') when counting distinct disp.
+    columns:
+    - name: disp_id
+      type: bigint
+    - name: client_id
+      type: bigint
+    - name: account_id
+      type: bigint
+    - name: type
+      type: text
+  district:
+    primary_id: district_id
+    primary_id_note: Use count_distinct('district_id') when counting distinct district.
+    columns:
+    - name: district_id
+      type: bigint
+    - name: a2
+      type: text
+    - name: a3
+      type: text
+    - name: a4
+      type: text
+    - name: a5
+      type: text
+    - name: a6
+      type: text
+    - name: a7
+      type: text
+    - name: a8
+      type: bigint
+    - name: a9
+      type: bigint
+    - name: a10
+      type: float
+    - name: a11
+      type: bigint
+    - name: a12
+      type: float
+    - name: a13
+      type: float
+    - name: a14
+      type: bigint
+    - name: a15
+      type: bigint
+    - name: a16
+      type: bigint
+  loan:
+    primary_id: loan_id
+    primary_id_note: Use count_distinct('loan_id') when counting distinct loan.
+    columns:
+    - name: loan_id
+      type: bigint
+    - name: account_id
+      type: bigint
+    - name: date
+      type: date
+    - name: amount
+      type: bigint
+    - name: duration
+      type: bigint
+    - name: payments
+      type: float
+    - name: status
+      type: text
+  order:
+    primary_id: order_id
+    primary_id_note: Use count_distinct('order_id') when counting distinct order.
+    columns:
+    - name: order_id
+      type: bigint
+    - name: account_id
+      type: bigint
+    - name: bank_to
+      type: text
+    - name: account_to
+      type: bigint
+    - name: amount
+      type: float
+    - name: k_symbol
+      type: text
+  trans:
+    primary_id: trans_id
+    primary_id_note: Use count_distinct('trans_id') when counting distinct trans.
+    columns:
+    - name: trans_id
+      type: bigint
+    - name: account_id
+      type: bigint
+    - name: date
+      type: date
+    - name: type
+      type: text
+    - name: operation
+      type: text
+    - name: amount
+      type: bigint
+    - name: balance
+      type: bigint
+    - name: k_symbol
+      type: text
+    - name: bank
+      type: text
+    - name: account
+      type: bigint
+structural_invariants: "DATASET: must be a logical table name from schema_summary.\n\
+  \nDIMENSIONS: list of {field, alias} — alias is REQUIRED.\n\nMETRICS: list of {agg,\
+  \ field, alias} — alias is REQUIRED and unique.\n  Allowed agg: count, count_distinct,\
+  \ sum, avg, min, max.\n  count: field may be '*' or a logical column.\n  count_distinct/sum/avg/min/max:\
+  \ field MUST be a logical column, NOT '*'.\n\nFILTERS: list of {field, op, value}.\n\
+  \  'contains' = case-insensitive substring match (ILIKE %value%).\n\nORDER_BY: must\
+  \ reference an existing dimension alias or metric alias.\n\nLIMIT/OFFSET: always\
+  \ present. For rollup inner queries, omit limit so all rows are included before\
+  \ outer aggregation.\n\nROLLUP: if present, rollup.metrics[*].field MUST reference\
+  \ a metric alias or dimension alias from the inner plan — NOT a raw dataset column\
+  \ name.\n\n\n--- READ SQL SURFACE (compiler contract) ---\nREAD_SQL_SURFACE_VERSION=1\
+  \ (internal contract).\nThe compiler targets read-only SELECT-shaped plans over\
+  \ schema.yaml only.\nComposition: single_select, with_cte_recursive_false, set_ops_union_union_all_intersect_except.\n\
+  FROM / joins: single_dataset, explicit_joins_inner_left, link_declared_joins, self_join_via_join_as.\n\
+  Predicates: legacy_filters_and, where_boolean_tree_and_or_not_cmp, relative_date_sentinels.\n\
+  Aggregation: group_by, having, rollup_outer_metrics, filtered_aggregates_via_expr.\n\
+  Windows: func_over_partition_order.\nSubqueries: scalar_subquery_in_expr, nested_plans_in_cte.\n\
+  Hard caps (defaults): {'max_joins_default': 8, 'max_select_default': 200, 'max_predicates_default':\
+  \ 200, 'max_limit_clamp_default': 1000}.\nOut of scope for NL→plan→SQL path: mutating\
+  \ statements (INSERT/UPDATE/DELETE/DDL); arbitrary raw SQL strings from the LLM;\
+  \ queries referencing tables/columns not in schema.yaml"
+read_sql_surface_version: 1
+plan_construction_procedure: "1) Choose dataset: the ONE table that contains the needed\
+  \ information.\n2) Extract filters: convert ALL constraints to filter objects using\
+  \ logical field names.\n   Use op='contains' for fuzzy text matching (building names,\
+  \ keywords, etc.).\n   IMPORTANT: if the question mentions a time period ('last\
+  \ year', 'this year',\n   'past month', 'last 30 days', 'in 2025', etc.) you MUST\
+  \ add date filters\n   on the date column. NEVER omit date filters when a time period\
+  \ is stated.\n   Use $relative_date sentinels (see Semantics rules) for dynamic\
+  \ dates.\n3) Decide output shape:\n   - List of entities: dimensions + optional\
+  \ metrics.\n   - Single scalar: metrics only (no dimensions), or dimensions + rollup.\n\
+  4) Decide grouping:\n   - If question says 'by X' / 'per X' / 'for each X' / 'total\
+  \ for each X', put X in dimensions.\n   - CRITICAL: if the question names multiple\
+  \ specific values of a column (e.g. 'for building A, building B, building C') AND\
+  \ asks for 'a total for each' / 'count per' / 'breakdown', you MUST include that\
+  \ column in dimensions so the result has one row per value. Also use op='in' with\
+  \ the list of values as the filter.\n5) Decide metrics: use exactly the aggregations\
+  \ requested. Always give each metric an alias.\n6) Two-step aggregation (e.g. 'average\
+  \ per building'):\n   - Inner: group by dimension, compute per-group metric with\
+  \ alias.\n   - Rollup: compute avg/stddev/etc over that INNER metric alias.\n  \
+  \ - OMIT limit from inner plan so all groups are included.\n   - rollup.limit=1\
+  \ for scalar result.\n7) Order + limit: for 'top N' set order_by metric alias desc\
+  \ + limit=N.\n8) Multi-CTE questions: the outer query's `dataset` should be the\
+  \ CTE name that produces the rows you return (e.g. listing CTE), NOT the base table\
+  \ again with empty filters — or repeat the same filters/`where` on the outer query.\n"
+semantics_rules: "- Use 'contains' for fuzzy name/keyword matching (compiled as ILIKE\
+  \ %...%).\n- Use 'is_not_null' when excluding missing values is necessary for correctness.\n\
+  - Do NOT use avg(*) or avg(null) — avg/sum/min/max require a real column field.\n\
+  - For time-based filters use the $relative_date sentinel (never a SQL expression):\n\
+  \    last 7 days:  {\"$relative_date\": {\"op\": \"now_minus_days\", \"days\": 7}}\n\
+  \    last 24 hrs:  {\"$relative_date\": {\"op\": \"now_minus_hours\", \"hours\"\
+  : 24}}\n    today:        {\"$relative_date\": {\"op\": \"today\"}}\n    last calendar\
+  \ year (two filters on the date column, AND):\n      >= {\"$relative_date\": {\"\
+  op\": \"calendar_year_start\", \"year_offset\": -1}}\n      <  {\"$relative_date\"\
+  : {\"op\": \"calendar_year_start\", \"year_offset\": 0}}\n- Free-text keyword searches:\
+  \ OR \"contains\" across all plausible string columns\n  for that table from schema_summary\
+  \ — do not use only one column unless the question names it.\n- If the schema declares\
+  \ enum_columns, do NOT put free-text search terms into those columns;\n  they hold\
+  \ categorical values, not keywords.\n- For 'account': when counting distinct account,\
+  \ use count_distinct('account_id') — 'account_id' is the primary identifier.\n-\
+  \ For 'card': when counting distinct card, use count_distinct('card_id') — 'card_id'\
+  \ is the primary identifier.\n- For 'client': when counting distinct client, use\
+  \ count_distinct('client_id') — 'client_id' is the primary identifier.\n- For 'disp':\
+  \ when counting distinct disp, use count_distinct('disp_id') — 'disp_id' is the\
+  \ primary identifier.\n- For 'district': when counting distinct district, use count_distinct('district_id')\
+  \ — 'district_id' is the primary identifier.\n- For 'loan': when counting distinct\
+  \ loan, use count_distinct('loan_id') — 'loan_id' is the primary identifier.\n-\
+  \ For 'order': when counting distinct order, use count_distinct('order_id') — 'order_id'\
+  \ is the primary identifier.\n- For 'trans': when counting distinct trans, use count_distinct('trans_id')\
+  \ — 'trans_id' is the primary identifier."
+legacy_queryplan_format:
+  description: Use this format for all standard analytics queries. Easier for LLMs
+    and covers the vast majority of use cases.
+  shape:
+    version: '1.0'
+    dataset: <table name from schema_summary>
+    dimensions:
+    - field: <logical_column>
+      alias: <string>
+    metrics:
+    - agg: count|count_distinct|sum|avg|min|max
+      field: <logical_column_or_*>
+      alias: <string>
+    filters:
+    - field: <logical_column>
+      op: <operator>
+      value: <any or null>
+    order_by:
+    - by: <dimension_alias_or_metric_alias>
+      dir: asc|desc
+    limit: <int>
+    offset: <int>
+    rollup: <optional — see rollup block>
+rollup:
+  description: 'Use rollup for aggregate-of-aggregates: ''average per X'', ''stddev
+    per X'', ''total of totals'', etc. The inner query groups and computes per-group
+    values. The rollup outer query aggregates those values.'
+  shape:
+    metrics:
+    - agg: avg|sum|min|max|count|count_distinct|stddev|variance
+      field: <inner_alias>
+      alias: <string>
+    dimensions: <optional outer grouping>
+    filters: <optional filters on inner outputs>
+    order_by: <optional>
+    limit: <int — use 1 for scalar result>
+    offset: <int>
+  critical: rollup.metrics[*].field MUST be an alias from the inner plan (a metric
+    alias or dimension alias), NOT a raw dataset column name.
+validation_checklist: 'Before outputting JSON, verify:
+
+  - dataset is a table name from schema_summary
+
+  - every dimension has {field, alias}
+
+  - every metric has {agg, field, alias} with unique aliases
+
+  - no metric uses avg/sum/min/max with field=''*'' or field=null
+
+  - order_by.by references a dimension alias or metric alias
+
+  - limit and offset are present
+
+  - if rollup: rollup.metrics is non-empty, rollup.metrics[*].field references an
+  inner alias
+
+  '
+examples:
+- question: How many account are there in total?
+  plan:
+    version: '1.0'
+    dataset: account
+    dimensions: []
+    metrics:
+    - agg: count_distinct
+      field: account_id
+      alias: total_account
+    filters: []
+    order_by: []
+    limit: 1
+    offset: 0
+- question: Show me account where account_id contains 'example'
+  plan:
+    version: '1.0'
+    dataset: account
+    dimensions: []
+    metrics: []
+    filters:
+    - field: account_id
+      op: contains
+      value: example
+    order_by: []
+    limit: 100
+    offset: 0
+- question: How many account per frequency?
+  plan:
+    version: '1.0'
+    dataset: account
+    dimensions:
+    - field: frequency
+      alias: frequency
+    metrics:
+    - agg: count_distinct
+      field: account_id
+      alias: account_count
+    filters: []
+    order_by:
+    - by: account_count
+      dir: desc
+    limit: 100
+    offset: 0
+- question: How many account for value_A, value_B, value_C? Give a total for each.
+  note: When the user lists specific values and asks 'for each' / 'total for each',
+    use op='in' with the list AND include the column in dimensions so the result has
+    one row per value.
+  plan:
+    version: '1.0'
+    dataset: account
+    dimensions:
+    - field: frequency
+      alias: frequency
+    metrics:
+    - agg: count_distinct
+      field: account_id
+      alias: total_account
+    filters:
+    - field: frequency
+      op: in
+      value:
+      - value_A
+      - value_B
+      - value_C
+    order_by:
+    - by: total_account
+      dir: desc
+    limit: 100
+    offset: 0
+- question: What is the average number of account per frequency?
+  note: 'Two-step rollup: inner groups by dimension, outer computes avg over inner
+    alias.'
+  plan:
+    version: '1.0'
+    dataset: account
+    dimensions:
+    - field: frequency
+      alias: frequency
+    metrics:
+    - agg: count_distinct
+      field: account_id
+      alias: account_per_frequency
+    filters:
+    - field: frequency
+      op: is_not_null
+      value: null
+    order_by: []
+    offset: 0
+    rollup:
+      metrics:
+      - agg: avg
+        field: account_per_frequency
+        alias: avg_account_per_frequency
+      limit: 1
+      offset: 0

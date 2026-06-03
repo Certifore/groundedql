@@ -6,9 +6,8 @@ shortest join path between the primary dataset and every other referenced
 logical table (BFS, multi-hop). Injects `{"link": "<name>"}` entries so the
 compiler can connect any referenced schema tables that are linked in schema.yaml.
 
-Recurses into WITH (CTE) bodies and set_op left/right branches so each
-sub-plan gets its own inference. Does not recurse into exists / scalar_subquery
-(their outer joins are a separate concern).
+Recurses into WITH (CTE) bodies, set_op left/right branches, and nested
+exists / scalar_subquery plan bodies so each sub-plan gets its own inference.
 
 Returns a deep copy — never mutates the caller's plan dict.
 """
@@ -84,6 +83,7 @@ def shortest_join_path(
 
 # Keys that contain nested plans — do NOT scan inside these for *this* plan's join targets
 _SUBPLAN_KEYS = {"exists", "not_exists", "scalar_subquery", "with", "set_op"}
+_BOOLEAN_SUBQUERY_KEYS = {"exists", "not_exists", "scalar_subquery"}
 
 
 def _known_tables(schema: Dict[str, Any]) -> Set[str]:
@@ -217,10 +217,25 @@ def _auto_inject_joins_recursive(plan: Any, schema: Dict[str, Any]) -> None:
             if isinstance(sop.get("right"), dict):
                 _auto_inject_joins_recursive(sop["right"], schema)
 
+        _auto_inject_nested_subquery_plans(plan, schema)
         _inject_joins_on_node(plan, schema)
     elif isinstance(plan, list):
         for item in plan:
             _auto_inject_joins_recursive(item, schema)
+
+
+def _auto_inject_nested_subquery_plans(obj: Any, schema: Dict[str, Any]) -> None:
+    """Find nested {exists|not_exists|scalar_subquery: {plan: ...}} fragments."""
+    if isinstance(obj, dict):
+        for key in _BOOLEAN_SUBQUERY_KEYS:
+            node = obj.get(key)
+            if isinstance(node, dict) and isinstance(node.get("plan"), dict):
+                _auto_inject_joins_recursive(node["plan"], schema)
+        for value in obj.values():
+            _auto_inject_nested_subquery_plans(value, schema)
+    elif isinstance(obj, list):
+        for item in obj:
+            _auto_inject_nested_subquery_plans(item, schema)
 
 
 def auto_inject_joins(plan: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
@@ -232,8 +247,8 @@ def auto_inject_joins(plan: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str,
     - Deep-copies the plan first; the original dict is never modified.
 
     If the link graph has no path to a referenced table, that table is skipped
-    (compiler may still error later). exists/scalar_subquery bodies are not scanned
-    for outer join targets.
+    (compiler may still error later). Nested subquery bodies get their own
+    independent join inference.
     """
     cloned = copy.deepcopy(plan)
     _auto_inject_joins_recursive(cloned, schema)

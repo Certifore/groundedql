@@ -23,6 +23,7 @@ class Executor:
 
     def execute(self, sql: str, params: Dict[str, Any]) -> Dict[str, Any]:
         try:
+            params = dict(params or {})
             with self.engine.begin() as conn:
                 # Enforce per-query statement timeout to prevent runaway queries
                 conn.execute(sqla_text(

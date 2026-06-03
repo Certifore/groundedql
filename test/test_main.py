@@ -111,6 +111,62 @@ def _minimal_schema_for_compile(*, bad_link_join_type: str | None = None) -> dic
     return schema
 
 
+def _schema_orders_customers_for_intent() -> dict:
+    return {
+        "tables": [
+            {
+                "name": "orders",
+                "db_table": "orders",
+                "primary_id": "order_id",
+                "primary_date": "order_date",
+                "columns": [
+                    {"name": "order_id", "db_column": "order_id", "type": "int"},
+                    {"name": "customer_id", "db_column": "customer_id", "type": "int"},
+                    {"name": "order_date", "db_column": "order_date", "type": "date"},
+                    {"name": "amount", "db_column": "amount", "type": "numeric"},
+                    {"name": "region", "db_column": "region", "type": "varchar"},
+                ],
+            },
+            {
+                "name": "customers",
+                "db_table": "customers",
+                "primary_id": "customer_id",
+                "columns": [
+                    {"name": "customer_id", "db_column": "customer_id", "type": "int"},
+                    {"name": "name", "db_column": "name", "type": "varchar"},
+                    {"name": "currency", "db_column": "currency", "type": "varchar"},
+                ],
+            },
+        ],
+        "links": [
+            {
+                "name": "orders_to_customers",
+                "from_table": "orders",
+                "to_table": "customers",
+                "join_type": "left",
+                "on": [{"left": "orders.customer_id", "right": "customers.customer_id"}],
+            }
+        ],
+    }
+
+
+def _schema_text_period_for_intent() -> dict:
+    return {
+        "tables": [
+            {
+                "name": "usage_months",
+                "db_table": "usage_months",
+                "columns": [
+                    {"name": "customer_id", "db_column": "customer_id", "type": "int"},
+                    {"name": "date", "db_column": "date", "type": "text"},
+                    {"name": "segment", "db_column": "segment", "type": "varchar"},
+                    {"name": "consumption", "db_column": "consumption", "type": "float"},
+                ],
+            },
+        ],
+    }
+
+
 def _schema_intent_phase1(*, intent_id_patterns: list[str] | None = None) -> dict:
     """Minimal schema for intent pipeline compile tests (Phase 1).
 
@@ -608,6 +664,396 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
                 return False, f"ratio SQL unexpected: {sql[:200]!r}"
         except Exception as e:
             return False, f"ratio plan compile: {e}"
+        return True, None
+
+    if kind == "intent_phase1_qualified_filter_auto_joins_compiles":
+        import tempfile
+        from pathlib import Path as TmpPath
+
+        from intentql.intent_planner import build_plan_from_intent
+        from intentql.validation import validate_query_plan_dict
+
+        schema = _schema_orders_customers_for_intent()
+        plan = build_plan_from_intent(
+            {
+                "dataset": "orders",
+                "aggregation": "count",
+                "filters": [
+                    {"column": "customers.name", "op": "=", "values": ["Acme Corp"]},
+                ],
+                "group_by": [],
+            },
+            schema,
+        )
+        with tempfile.TemporaryDirectory() as td:
+            sp = TmpPath(td) / "schema.yaml"
+            sp.write_text(yaml.safe_dump(schema), encoding="utf-8")
+            _parsed, errs = validate_query_plan_dict(plan, str(sp))
+            if errs:
+                return False, f"qualified filter validation: {errs}"
+        joined = auto_inject_joins(plan, schema)
+        if not joined.get("joins"):
+            return False, f"expected auto-injected join, got {joined}"
+        try:
+            c = Compiler(schema)
+            sql, _ = c.compile(joined)
+            if "JOIN" not in sql.upper() or "customers" not in sql.lower():
+                return False, f"qualified filter SQL missing join: {sql[:240]}"
+        except Exception as e:
+            return False, f"qualified filter compile: {e}"
+        return True, None
+
+    if kind == "intent_phase1_explicit_ops_and_between_compile":
+        from intentql.intent_planner import build_plan_from_intent
+
+        schema = _schema_orders_customers_for_intent()
+        plan = build_plan_from_intent(
+            {
+                "dataset": "orders",
+                "aggregation": "sum",
+                "aggregation_field": "amount",
+                "filters": [
+                    {"column": "order_date", "op": "between", "values": ["2020-01-01", "2020-12-31"]},
+                    {"column": "amount", "op": ">", "values": [100]},
+                ],
+                "group_by": [],
+            },
+            schema,
+        )
+        ops = {(f.get("field"), f.get("op")) for f in plan.get("filters") or []}
+        if ("order_date", "between") not in ops or ("amount", ">") not in ops:
+            return False, f"expected explicit filter ops, got {plan.get('filters')}"
+        try:
+            c = Compiler(schema)
+            sql, _ = c.compile(plan)
+            if "BETWEEN" not in sql.upper() or ">" not in sql:
+                return False, f"explicit ops SQL unexpected: {sql[:240]}"
+        except Exception as e:
+            return False, f"explicit ops compile: {e}"
+        return True, None
+
+    if kind == "intent_phase1_text_period_time_bucket_compiles":
+        from intentql.intent_planner import build_plan_from_intent
+
+        schema = _schema_text_period_for_intent()
+        plan = build_plan_from_intent(
+            {
+                "dataset": "usage_months",
+                "aggregation": "sum",
+                "aggregation_field": "consumption",
+                "filters": [{"column": "date", "op": "starts_with", "values": ["2020"]}],
+                "group_by": ["date"],
+                "time_bucket": "month",
+                "sort_direction": "desc",
+                "limit": 1,
+            },
+            schema,
+        )
+        dim = plan.get("dimensions", [{}])[0]
+        if dim.get("time_bucket") != "month":
+            return False, f"expected month bucket, got {dim!r}"
+        try:
+            c = Compiler(schema)
+            sql, _ = c.compile(plan)
+            sql_l = sql.lower()
+            if "substr" not in sql_l or "date_trunc" in sql_l:
+                return False, f"text period bucket should use substr, got {sql[:320]}"
+        except Exception as e:
+            return False, f"text period bucket compile: {e}"
+        return True, None
+
+    if kind == "intent_phase1_normalize_single_year_and_peak_month":
+        from intentql.intent_normalize import normalize_intent
+
+        schema = _schema_text_period_for_intent()
+        intent = {
+            "dataset": "usage_months",
+            "aggregation": "sum",
+            "aggregation_field": "consumption",
+            "filters": [{"column": "segment", "op": "=", "values": ["ENTERPRISE"]}],
+            "group_by": [],
+        }
+        out = normalize_intent(
+            intent,
+            schema,
+            question="What was the peak month for enterprise customers in 2013?",
+        )
+        date_filter = next((f for f in out.get("filters") or [] if f.get("column") == "date"), None)
+        if not date_filter or date_filter.get("op") != "starts_with" or date_filter.get("values") != ["2013"]:
+            return False, f"expected injected single-year date filter, got {out.get('filters')}"
+        if out.get("time_bucket") != "month" or "date" not in (out.get("group_by") or []):
+            return False, f"expected month bucket + date group_by, got {out}"
+        if out.get("output_columns") != ["date"]:
+            return False, f"expected ranked dimension-only output column, got {out}"
+        if out.get("limit") != 1:
+            return False, f"expected ranked dimension limit 1, got {out}"
+        return True, None
+
+    if kind == "intent_phase1_ranked_dimension_hides_metric":
+        from intentql.intent_planner import build_plan_from_intent
+
+        schema = _schema_text_period_for_intent()
+        plan = build_plan_from_intent(
+            {
+                "dataset": "usage_months",
+                "aggregation": "sum",
+                "aggregation_field": "consumption",
+                "filters": [{"column": "date", "op": "starts_with", "values": ["2020"]}],
+                "group_by": ["date"],
+                "time_bucket": "month",
+                "sort_direction": "desc",
+                "limit": 1,
+                "output_columns": ["date"],
+            },
+            schema,
+        )
+        metric = plan.get("metrics", [{}])[0]
+        if metric.get("include") is not False:
+            return False, f"expected hidden metric, got {metric!r}"
+        try:
+            c = Compiler(schema)
+            sql, _ = c.compile(plan)
+            sql_l = sql.lower()
+            select_part = sql_l.split("\nfrom ", 1)[0]
+            if "sum(" in select_part:
+                return False, f"hidden metric should not be selected: {sql[:320]}"
+            if "order by sum(" not in sql_l:
+                return False, f"hidden metric should order by aggregate expression: {sql[:320]}"
+        except Exception as e:
+            return False, f"ranked dimension hidden metric compile: {e}"
+        return True, None
+
+    if kind == "intent_phase1_comparison_ratio_auto_joins_compiles":
+        from intentql.intent_planner import build_plan_from_intent
+
+        schema = _schema_orders_customers_for_intent()
+        plan = build_plan_from_intent(
+            {
+                "dataset": "orders",
+                "aggregation": "ratio",
+                "filters": [],
+                "group_by": [],
+                "comparison": {
+                    "operator": "ratio",
+                    "left": {
+                        "filters": [
+                            {"column": "customers.currency", "op": "=", "values": ["USD"]},
+                        ],
+                    },
+                    "right": {
+                        "filters": [
+                            {"column": "customers.currency", "op": "=", "values": ["CAD"]},
+                        ],
+                    },
+                    "metric_aggregation": "sum",
+                    "metric_field": "amount",
+                    "scale": "raw",
+                },
+            },
+            schema,
+        )
+        if plan.get("select", [{}])[0].get("alias") != "ratio":
+            return False, f"comparison ratio expected ratio alias, got {plan.get('select')}"
+        joined = auto_inject_joins(plan, schema)
+        try:
+            c = Compiler(schema)
+            sql, _ = c.compile(joined)
+            sql_l = sql.lower()
+            if sql_l.count("join") < 2 or "sum(" not in sql_l:
+                return False, f"comparison ratio SQL unexpected: {sql[:320]}"
+        except Exception as e:
+            return False, f"comparison ratio compile: {e}"
+        return True, None
+
+    if kind == "intent_phase1_comparison_difference_auto_joins_compiles":
+        from intentql.intent_planner import build_plan_from_intent
+
+        schema = _schema_orders_customers_for_intent()
+        plan = build_plan_from_intent(
+            {
+                "dataset": "orders",
+                "aggregation": "difference",
+                "filters": [{"column": "order_date", "op": "between", "values": ["2020-01-01", "2020-12-31"]}],
+                "group_by": [],
+                "comparison": {
+                    "operator": "difference",
+                    "left": {
+                        "filters": [
+                            {"column": "customers.currency", "op": "=", "values": ["USD"]},
+                        ],
+                    },
+                    "right": {
+                        "filters": [
+                            {"column": "customers.currency", "op": "=", "values": ["CAD"]},
+                        ],
+                    },
+                    "metric_aggregation": "sum",
+                    "metric_field": "amount",
+                },
+            },
+            schema,
+        )
+        if plan.get("select", [{}])[0].get("alias") != "difference":
+            return False, f"comparison difference expected alias, got {plan.get('select')}"
+        joined = auto_inject_joins(plan, schema)
+        try:
+            c = Compiler(schema)
+            sql, _ = c.compile(joined)
+            sql_l = sql.lower()
+            if sql_l.count("join") < 2 or "sum(" not in sql_l or "-" not in sql:
+                return False, f"comparison difference SQL unexpected: {sql[:320]}"
+        except Exception as e:
+            return False, f"comparison difference compile: {e}"
+        return True, None
+
+    if kind == "intent_phase1_conditional_formula_percent_change_compiles":
+        from intentql.intent_planner import build_plan_from_intent
+
+        schema = _schema_orders_customers_for_intent()
+        plan = build_plan_from_intent(
+            {
+                "dataset": "orders",
+                "filters": [{"column": "customers.currency", "op": "=", "values": ["USD"]}],
+                "group_by": [],
+                "conditional_metrics": [
+                    {
+                        "alias": "amount_2020",
+                        "aggregation": "sum",
+                        "field": "amount",
+                        "filters": [{"column": "order_date", "op": "starts_with", "values": ["2020"]}],
+                        "include": False,
+                    },
+                    {
+                        "alias": "amount_2021",
+                        "aggregation": "sum",
+                        "field": "amount",
+                        "filters": [{"column": "order_date", "op": "starts_with", "values": ["2021"]}],
+                        "include": False,
+                    },
+                ],
+                "formula_metrics": [
+                    {
+                        "alias": "amount_diff",
+                        "op": "-",
+                        "left": "amount_2021",
+                        "right": "amount_2020",
+                        "include": False,
+                    },
+                    {
+                        "alias": "pct_increase",
+                        "op": "/",
+                        "left": "amount_diff",
+                        "right": "amount_2020",
+                        "nullif_right": True,
+                        "scale": 100,
+                    },
+                ],
+                "limit": 1,
+            },
+            schema,
+        )
+        if plan.get("select", [{}])[0].get("alias") != "pct_increase":
+            return False, f"expected final formula only, got {plan.get('select')}"
+        joined = auto_inject_joins(plan, schema)
+        try:
+            c = Compiler(schema)
+            sql, _ = c.compile(joined)
+            sql_l = sql.lower()
+            if "case" not in sql_l or "nullif" not in sql_l or "customers" not in sql_l:
+                return False, f"conditional formula SQL unexpected: {sql[:420]}"
+        except Exception as e:
+            return False, f"conditional formula compile: {e}"
+        return True, None
+
+    if kind == "intent_phase1_conditional_formula_average_per_period_compiles":
+        from intentql.intent_planner import build_plan_from_intent
+
+        schema = _schema_orders_customers_for_intent()
+        plan = build_plan_from_intent(
+            {
+                "dataset": "orders",
+                "conditional_metrics": [
+                    {
+                        "alias": "total_amount",
+                        "aggregation": "sum",
+                        "field": "amount",
+                        "filters": [{"column": "order_date", "op": "starts_with", "values": ["2020"]}],
+                        "include": False,
+                    }
+                ],
+                "formula_metrics": [
+                    {
+                        "alias": "avg_monthly_amount",
+                        "op": "/",
+                        "left": "total_amount",
+                        "right": 12,
+                    }
+                ],
+                "limit": 1,
+            },
+            schema,
+        )
+        if plan.get("select", [{}])[0].get("alias") != "avg_monthly_amount":
+            return False, f"expected avg_monthly_amount, got {plan.get('select')}"
+        try:
+            c = Compiler(schema)
+            sql, _ = c.compile(plan)
+            sql_l = sql.lower()
+            if "case" not in sql_l or "/ " not in sql_l:
+                return False, f"average per period SQL unexpected: {sql[:420]}"
+        except Exception as e:
+            return False, f"average per period compile: {e}"
+        return True, None
+
+    if kind == "intent_phase1_conditional_formula_multi_output_compiles":
+        from intentql.intent_planner import build_plan_from_intent
+
+        schema = _schema_orders_customers_for_intent()
+        plan = build_plan_from_intent(
+            {
+                "dataset": "orders",
+                "conditional_metrics": [
+                    {
+                        "alias": "north_amount",
+                        "aggregation": "sum",
+                        "field": "amount",
+                        "filters": [{"column": "region", "op": "=", "values": ["NORTH"]}],
+                        "include": False,
+                    },
+                    {
+                        "alias": "south_amount",
+                        "aggregation": "sum",
+                        "field": "amount",
+                        "filters": [{"column": "region", "op": "=", "values": ["SOUTH"]}],
+                        "include": False,
+                    },
+                    {
+                        "alias": "west_amount",
+                        "aggregation": "sum",
+                        "field": "amount",
+                        "filters": [{"column": "region", "op": "=", "values": ["WEST"]}],
+                        "include": False,
+                    },
+                ],
+                "formula_metrics": [
+                    {"alias": "north_minus_south", "op": "-", "left": "north_amount", "right": "south_amount"},
+                    {"alias": "south_minus_west", "op": "-", "left": "south_amount", "right": "west_amount"},
+                    {"alias": "west_minus_north", "op": "-", "left": "west_amount", "right": "north_amount"},
+                ],
+                "limit": 1,
+            },
+            schema,
+        )
+        aliases = [item.get("alias") for item in plan.get("select") or []]
+        if aliases != ["north_minus_south", "south_minus_west", "west_minus_north"]:
+            return False, f"expected three final formulas, got {aliases}"
+        try:
+            c = Compiler(schema)
+            sql, _ = c.compile(plan)
+            if sql.lower().count("case") < 3:
+                return False, f"multi-output conditional SQL unexpected: {sql[:420]}"
+        except Exception as e:
+            return False, f"multi-output conditional compile: {e}"
         return True, None
 
     if kind == "intent_phase1_time_bucket_plan_validates":

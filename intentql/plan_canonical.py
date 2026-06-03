@@ -94,7 +94,9 @@ def _canonicalize_commutative_lists(obj: Json) -> None:
             elif k == "select" and isinstance(v, list):
                 for x in v:
                     _canonicalize_commutative_lists(x)
-                obj[k] = sorted(v, key=_select_item_sort_key)
+                # SELECT-list order is semantic: result rows are positional for
+                # SQL execution benchmarks and user-facing tabular output.
+                obj[k] = v
             elif k == "joins" and isinstance(v, list):
                 for x in v:
                     _canonicalize_commutative_lists(x)

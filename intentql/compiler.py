@@ -675,6 +675,52 @@ class Compiler:
         return outer_query
 
     # ---------- Legacy -> select-plan ----------
+    def _legacy_time_bucket_expr(self, dataset: str, field: str, tb: str) -> Dict[str, Any]:
+        table_name, col_name = _split_table_column(field, dataset, self._known_logical_tables)
+        table = self.tables.get(table_name)
+        col_def = table.columns.get(col_name) if table is not None else None
+        ctype = (col_def.col_type or "").lower() if col_def is not None else ""
+        cname = col_name.lower()
+        textish = any(tok in ctype for tok in ("char", "text", "string"))
+        dateish = cname == "date" or cname.endswith("_date") or cname.endswith("date") or cname.endswith("month")
+
+        if textish and dateish:
+            if tb == "year":
+                return {"func": "substr", "args": [{"col": field}, {"lit": 1}, {"lit": 4}]}
+            if tb == "month":
+                # Support compact YYYYMM as well as ISO-ish YYYY-MM... strings.
+                return {
+                    "case": {
+                        "whens": [
+                            {
+                                "when": {
+                                    "cmp": {
+                                        "left": {"func": "length", "args": [{"col": field}]},
+                                        "op": "=",
+                                        "right": 6,
+                                    }
+                                },
+                                "then": {"func": "substr", "args": [{"col": field}, {"lit": 5}, {"lit": 2}]},
+                            }
+                        ],
+                        "else": {"func": "substr", "args": [{"col": field}, {"lit": 6}, {"lit": 2}]},
+                    }
+                }
+
+        return {"func": "date_trunc", "args": [{"lit": tb}, {"col": field}]}
+
+    def _legacy_metric_arg_expr(self, dataset: str, field: str, agg: str) -> Dict[str, Any]:
+        arg: Dict[str, Any] = {"col": field}
+        if agg not in {"sum", "avg"} or not isinstance(field, str) or field == "*":
+            return arg
+        table_name, col_name = _split_table_column(field, dataset, self._known_logical_tables)
+        table = self.tables.get(table_name)
+        col_def = table.columns.get(col_name) if table is not None else None
+        ctype = (col_def.col_type or "").lower() if col_def is not None else ""
+        if "real" in ctype or "float" in ctype:
+            return {"cast": {"expr": arg, "type": "float"}}
+        return arg
+
     def _legacy_to_select_plan(self, plan: dict) -> dict:
         dataset = plan["dataset"]
         dims = plan.get("dimensions", []) or []
@@ -698,7 +744,7 @@ class Compiler:
             _require(isinstance(field, str), "INVALID_PLAN", "dimension.field must be string.", "$.dimensions")
             tb = (d.get("time_bucket") or "").lower() if isinstance(d.get("time_bucket"), str) else ""
             if tb in {"day", "month", "quarter", "year"}:
-                trunc_expr = {"func": "date_trunc", "args": [{"lit": tb}, {"col": field}]}
+                trunc_expr = self._legacy_time_bucket_expr(dataset, field, tb)
                 select_items.append({"expr": trunc_expr, "alias": alias})
                 group_by.append(trunc_expr)
             else:
@@ -709,6 +755,7 @@ class Compiler:
             agg = (m.get("agg") or "").lower()
             field = m.get("field", "*")
             alias = m.get("alias")
+            include = bool(m.get("include", True))
             _require(isinstance(alias, str), "INVALID_PLAN", "metric.alias required.", "$.metrics")
 
             if agg == "count" and field == "*":
@@ -717,11 +764,30 @@ class Compiler:
                 _require(isinstance(field, str) and field != "*", "INVALID_PLAN", "count_distinct requires a field.", "$.metrics")
                 expr = {"func": "count_distinct", "args": [{"col": field}]}
             else:
-                expr = {"func": agg, "args": [{"col": field}]}
+                expr = {"func": agg, "args": [self._legacy_metric_arg_expr(dataset, field, agg)]}
 
-            select_items.append({"expr": expr, "alias": alias})
+            if include:
+                select_items.append({"expr": expr, "alias": alias})
 
         metric_aliases = {m.get("alias") for m in mets if isinstance(m.get("alias"), str)}
+        hidden_metric_exprs: Dict[str, Dict[str, Any]] = {}
+        for m in mets:
+            if m.get("include", True):
+                continue
+            agg = (m.get("agg") or "").lower()
+            field = m.get("field", "*")
+            alias = m.get("alias")
+            if not isinstance(alias, str):
+                continue
+            if agg == "count" and field == "*":
+                hidden_metric_exprs[alias] = {"func": "count", "args": []}
+            elif agg in {"count_distinct", "countdistinct"} and isinstance(field, str) and field != "*":
+                hidden_metric_exprs[alias] = {"func": "count_distinct", "args": [{"col": field}]}
+            elif isinstance(field, str):
+                hidden_metric_exprs[alias] = {
+                    "func": agg,
+                    "args": [self._legacy_metric_arg_expr(dataset, field, agg)],
+                }
 
         # With GROUP BY, PostgreSQL requires ORDER BY expressions to appear in GROUP BY or be
         # aggregates. LLMs often set order_by to a time column (e.g. entry_date) without listing
@@ -790,6 +856,21 @@ class Compiler:
                 and isinstance(ob.get("by"), str)
                 and ob.get("by") in metric_aliases
             ]
+
+        if hidden_metric_exprs and order_by:
+            rewritten_order_by = []
+            for ob in order_by:
+                if (
+                    isinstance(ob, dict)
+                    and isinstance(ob.get("by"), str)
+                    and ob.get("by") in hidden_metric_exprs
+                ):
+                    item = dict(ob)
+                    item["by"] = hidden_metric_exprs[ob["by"]]
+                    rewritten_order_by.append(item)
+                else:
+                    rewritten_order_by.append(ob)
+            order_by = rewritten_order_by
 
         # If no dimensions and no metrics, select all columns from the schema table
         if not select_items:
@@ -862,17 +943,22 @@ class Compiler:
         _require(link.from_table in self.tables and link.to_table in self.tables,
                  "INVALID_PLAN", "Link references unknown tables.", path)
 
-        if link.from_table not in alias_map:
+        if link.from_table in alias_map and link.to_table in alias_map:
+            return from_clause, alias_map
+
+        if link.from_table in alias_map:
+            right_logical = link.to_table
+        elif link.to_table in alias_map:
+            right_logical = link.from_table
+        else:
+            # Link inference should hand us a path where one endpoint is already
+            # connected. Keep a deterministic fallback for manually specified
+            # joins that name a disconnected link.
             alias_map[link.from_table] = self._sa_tables[link.from_table].alias(self._new_alias(link.from_table))
+            right_logical = link.to_table
 
-        to_alias_name = self._new_alias(link.to_table)
-        to_alias = self._sa_tables[link.to_table].alias(to_alias_name)
-
-        # Register under the logical table name so qualified refs like
-        # "assets.keyword_of_asset" resolve correctly.
-        alias_map[link.to_table] = to_alias
-
-        right_tbl = to_alias
+        right_tbl = self._sa_tables[right_logical].alias(self._new_alias(right_logical))
+        alias_map[right_logical] = right_tbl
 
         conds = []
         for i, on in enumerate(link.on):
@@ -1251,8 +1337,20 @@ class Compiler:
                     pat = f"%{right_node}"
 
                 bp = sa.bindparam(self._new_param("s"), value=pat)
-                like_expr = left.ilike(bp)
+                like_expr = sa.cast(left, sa.Text()).ilike(bp)
                 return sa.not_(like_expr) if op == "not_contains" else like_expr
+
+            if op == "between":
+                _require(not isinstance(right_node, dict), "INVALID_PLAN", "BETWEEN requires literal pair.", f"{path}.cmp.right")
+                _require(
+                    isinstance(right_node, list) and len(right_node) == 2,
+                    "INVALID_PLAN",
+                    "BETWEEN requires a two-item list value.",
+                    f"{path}.cmp.right",
+                )
+                lo = sa.bindparam(self._new_param("b"), value=right_node[0])
+                hi = sa.bindparam(self._new_param("b"), value=right_node[1])
+                return left.between(lo, hi)
 
             raise QueryPlanError(
                 f"Unsupported comparison op '{op}'.",
@@ -1289,7 +1387,7 @@ class Compiler:
             else:
                 pat = f"%{value}"
             bp = sa.bindparam(self._new_param("rs"), value=pat)
-            like_expr = col.ilike(bp)
+            like_expr = sa.cast(col, sa.Text()).ilike(bp)
             return sa.not_(like_expr) if op == "not_contains" else like_expr
 
         if op in {"in", "not_in"}:

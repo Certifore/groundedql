@@ -1,0 +1,312 @@
+version: 1
+dialect: postgres
+context: 'BIRD Mini-Dev database: california_schools'
+tables:
+- name: frpm
+  db_table: frpm
+  columns:
+  - name: cdscode
+    db_column: cdscode
+    type: text
+  - name: academic_year
+    db_column: '"Academic Year"'
+    type: text
+  - name: county_code
+    db_column: '"County Code"'
+    type: text
+  - name: district_code
+    db_column: '"District Code"'
+    type: bigint
+  - name: school_code
+    db_column: '"School Code"'
+    type: text
+  - name: county_name
+    db_column: '"County Name"'
+    type: text
+  - name: district_name
+    db_column: '"District Name"'
+    type: text
+  - name: school_name
+    db_column: '"School Name"'
+    type: text
+  - name: district_type
+    db_column: '"District Type"'
+    type: text
+  - name: school_type
+    db_column: '"School Type"'
+    type: text
+  - name: educational_option_type
+    db_column: '"Educational Option Type"'
+    type: text
+  - name: nslp_provision_status
+    db_column: '"NSLP Provision Status"'
+    type: text
+  - name: charter_school_(y/n)
+    db_column: '"Charter School (Y/N)"'
+    type: bigint
+  - name: charter_school_number
+    db_column: '"Charter School Number"'
+    type: text
+  - name: charter_funding_type
+    db_column: '"Charter Funding Type"'
+    type: text
+  - name: irc
+    db_column: irc
+    type: bigint
+  - name: low_grade
+    db_column: '"Low Grade"'
+    type: text
+  - name: high_grade
+    db_column: '"High Grade"'
+    type: text
+  - name: enrollment_(k_12)
+    db_column: '"Enrollment (K-12)"'
+    type: float
+  - name: free_meal_count_(k_12)
+    db_column: '"Free Meal Count (K-12)"'
+    type: float
+  - name: percent_(%)_eligible_free_(k_12)
+    db_column: '"Percent (%) Eligible Free (K-12)"'
+    type: float
+  - name: frpm_count_(k_12)
+    db_column: '"FRPM Count (K-12)"'
+    type: float
+  - name: percent_(%)_eligible_frpm_(k_12)
+    db_column: '"Percent (%) Eligible FRPM (K-12)"'
+    type: float
+  - name: enrollment_(ages_5_17)
+    db_column: '"Enrollment (Ages 5-17)"'
+    type: float
+  - name: free_meal_count_(ages_5_17)
+    db_column: '"Free Meal Count (Ages 5-17)"'
+    type: float
+  - name: percent_(%)_eligible_free_(ages_5_17)
+    db_column: '"Percent (%) Eligible Free (Ages 5-17)"'
+    type: float
+  - name: frpm_count_(ages_5_17)
+    db_column: '"FRPM Count (Ages 5-17)"'
+    type: float
+  - name: percent_(%)_eligible_frpm_(ages_5_17)
+    db_column: '"Percent (%) Eligible FRPM (Ages 5-17)"'
+    type: float
+  - name: 2013_14_calpads_fall_1_certification_status
+    db_column: '"2013-14 CALPADS Fall 1 Certification Status"'
+    type: bigint
+  keyword_search_or:
+  - county_name
+  - district_name
+  - school_name
+- name: satscores
+  db_table: satscores
+  columns:
+  - name: cds
+    db_column: cds
+    type: text
+  - name: rtype
+    db_column: rtype
+    type: text
+  - name: sname
+    db_column: sname
+    type: text
+  - name: dname
+    db_column: dname
+    type: text
+  - name: cname
+    db_column: cname
+    type: text
+  - name: enroll12
+    db_column: enroll12
+    type: bigint
+  - name: numtsttakr
+    db_column: numtsttakr
+    type: bigint
+  - name: avgscrread
+    db_column: avgscrread
+    type: bigint
+  - name: avgscrmath
+    db_column: avgscrmath
+    type: bigint
+  - name: avgscrwrite
+    db_column: avgscrwrite
+    type: bigint
+  - name: numge1500
+    db_column: numge1500
+    type: bigint
+  primary_id: cds
+  keyword_search_or:
+  - sname
+  - dname
+  - cname
+- name: schools
+  db_table: schools
+  columns:
+  - name: cdscode
+    db_column: cdscode
+    type: text
+  - name: ncesdist
+    db_column: ncesdist
+    type: text
+  - name: ncesschool
+    db_column: ncesschool
+    type: text
+  - name: statustype
+    db_column: statustype
+    type: text
+  - name: county
+    db_column: county
+    type: text
+  - name: district
+    db_column: district
+    type: text
+  - name: school
+    db_column: school
+    type: text
+  - name: street
+    db_column: street
+    type: text
+  - name: streetabr
+    db_column: streetabr
+    type: text
+  - name: city
+    db_column: city
+    type: text
+  - name: zip
+    db_column: zip
+    type: text
+  - name: state
+    db_column: state
+    type: text
+  - name: mailstreet
+    db_column: mailstreet
+    type: text
+  - name: mailstrabr
+    db_column: mailstrabr
+    type: text
+  - name: mailcity
+    db_column: mailcity
+    type: text
+  - name: mailzip
+    db_column: mailzip
+    type: text
+  - name: mailstate
+    db_column: mailstate
+    type: text
+  - name: phone
+    db_column: phone
+    type: text
+  - name: ext
+    db_column: ext
+    type: text
+  - name: website
+    db_column: website
+    type: text
+  - name: opendate
+    db_column: opendate
+    type: date
+  - name: closeddate
+    db_column: closeddate
+    type: date
+  - name: charter
+    db_column: charter
+    type: bigint
+  - name: charternum
+    db_column: charternum
+    type: text
+  - name: fundingtype
+    db_column: fundingtype
+    type: text
+  - name: doc
+    db_column: doc
+    type: text
+  - name: doctype
+    db_column: doctype
+    type: text
+  - name: soc
+    db_column: soc
+    type: text
+  - name: soctype
+    db_column: soctype
+    type: text
+  - name: edopscode
+    db_column: edopscode
+    type: text
+  - name: edopsname
+    db_column: edopsname
+    type: text
+  - name: eilcode
+    db_column: eilcode
+    type: text
+  - name: eilname
+    db_column: eilname
+    type: text
+  - name: gsoffered
+    db_column: gsoffered
+    type: text
+  - name: gsserved
+    db_column: gsserved
+    type: text
+  - name: virtual
+    db_column: virtual
+    type: text
+  - name: magnet
+    db_column: magnet
+    type: bigint
+  - name: latitude
+    db_column: latitude
+    type: float
+  - name: longitude
+    db_column: longitude
+    type: float
+  - name: admfname1
+    db_column: admfname1
+    type: text
+  - name: admlname1
+    db_column: admlname1
+    type: text
+  - name: admemail1
+    db_column: admemail1
+    type: text
+  - name: admfname2
+    db_column: admfname2
+    type: text
+  - name: admlname2
+    db_column: admlname2
+    type: text
+  - name: admemail2
+    db_column: admemail2
+    type: text
+  - name: admfname3
+    db_column: admfname3
+    type: text
+  - name: admlname3
+    db_column: admlname3
+    type: text
+  - name: admemail3
+    db_column: admemail3
+    type: text
+  - name: lastupdate
+    db_column: lastupdate
+    type: date
+  primary_date: opendate
+  keyword_search_or:
+  - edopsname
+  - eilname
+  - admfname1
+  - admlname1
+links:
+- name: frpm_to_schools
+  from_table: frpm
+  to_table: schools
+  join_type: left
+  'on':
+  - left: frpm.cdscode
+    op: '='
+    right: schools.cdscode
+- name: satscores_to_schools
+  from_table: satscores
+  to_table: schools
+  join_type: left
+  'on':
+  - left: satscores.cds
+    op: '='
+    right: schools.cdscode

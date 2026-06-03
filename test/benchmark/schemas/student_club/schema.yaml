@@ -1,0 +1,247 @@
+version: 1
+dialect: postgres
+context: 'BIRD Mini-Dev database: student_club'
+tables:
+- name: attendance
+  db_table: attendance
+  columns:
+  - name: link_to_event
+    db_column: link_to_event
+    type: text
+  - name: link_to_member
+    db_column: link_to_member
+    type: text
+- name: budget
+  db_table: budget
+  columns:
+  - name: budget_id
+    db_column: budget_id
+    type: text
+  - name: category
+    db_column: category
+    type: text
+  - name: spent
+    db_column: spent
+    type: float
+  - name: remaining
+    db_column: remaining
+    type: float
+  - name: amount
+    db_column: amount
+    type: bigint
+  - name: event_status
+    db_column: event_status
+    type: text
+  - name: link_to_event
+    db_column: link_to_event
+    type: text
+  primary_id: budget_id
+- name: event
+  db_table: event
+  columns:
+  - name: event_id
+    db_column: event_id
+    type: text
+  - name: event_name
+    db_column: event_name
+    type: text
+  - name: event_date
+    db_column: event_date
+    type: text
+  - name: type
+    db_column: type
+    type: text
+  - name: notes
+    db_column: notes
+    type: text
+  - name: location
+    db_column: location
+    type: text
+  - name: status
+    db_column: status
+    type: text
+  primary_id: event_id
+- name: expense
+  db_table: expense
+  columns:
+  - name: expense_id
+    db_column: expense_id
+    type: text
+  - name: expense_description
+    db_column: expense_description
+    type: text
+  - name: expense_date
+    db_column: expense_date
+    type: text
+  - name: cost
+    db_column: cost
+    type: float
+  - name: approved
+    db_column: approved
+    type: text
+  - name: link_to_member
+    db_column: link_to_member
+    type: text
+  - name: link_to_budget
+    db_column: link_to_budget
+    type: text
+  primary_id: expense_id
+- name: income
+  db_table: income
+  columns:
+  - name: income_id
+    db_column: income_id
+    type: text
+  - name: date_received
+    db_column: date_received
+    type: text
+  - name: amount
+    db_column: amount
+    type: bigint
+  - name: source
+    db_column: source
+    type: text
+  - name: notes
+    db_column: notes
+    type: text
+  - name: link_to_member
+    db_column: link_to_member
+    type: text
+  primary_id: income_id
+- name: major
+  db_table: major
+  columns:
+  - name: major_id
+    db_column: major_id
+    type: text
+  - name: major_name
+    db_column: major_name
+    type: text
+  - name: department
+    db_column: department
+    type: text
+  - name: college
+    db_column: college
+    type: text
+  primary_id: major_id
+- name: member
+  db_table: member
+  columns:
+  - name: member_id
+    db_column: member_id
+    type: text
+  - name: first_name
+    db_column: first_name
+    type: text
+  - name: last_name
+    db_column: last_name
+    type: text
+  - name: email
+    db_column: email
+    type: text
+  - name: position
+    db_column: position
+    type: text
+  - name: t_shirt_size
+    db_column: t_shirt_size
+    type: text
+  - name: phone
+    db_column: phone
+    type: text
+  - name: zip
+    db_column: zip
+    type: bigint
+  - name: link_to_major
+    db_column: link_to_major
+    type: text
+  primary_id: member_id
+  keyword_search_or:
+  - first_name
+  - last_name
+- name: zip_code
+  db_table: zip_code
+  columns:
+  - name: zip_code
+    db_column: zip_code
+    type: bigint
+  - name: type
+    db_column: type
+    type: text
+  - name: city
+    db_column: city
+    type: text
+  - name: county
+    db_column: county
+    type: text
+  - name: state
+    db_column: state
+    type: text
+  - name: short_state
+    db_column: short_state
+    type: text
+  primary_id: zip_code
+links:
+- name: attendance_to_event
+  from_table: attendance
+  to_table: event
+  join_type: left
+  'on':
+  - left: attendance.link_to_event
+    op: '='
+    right: event.event_id
+- name: attendance_to_member
+  from_table: attendance
+  to_table: member
+  join_type: left
+  'on':
+  - left: attendance.link_to_member
+    op: '='
+    right: member.member_id
+- name: budget_to_event
+  from_table: budget
+  to_table: event
+  join_type: left
+  'on':
+  - left: budget.link_to_event
+    op: '='
+    right: event.event_id
+- name: expense_to_budget
+  from_table: expense
+  to_table: budget
+  join_type: left
+  'on':
+  - left: expense.link_to_budget
+    op: '='
+    right: budget.budget_id
+- name: expense_to_member
+  from_table: expense
+  to_table: member
+  join_type: left
+  'on':
+  - left: expense.link_to_member
+    op: '='
+    right: member.member_id
+- name: income_to_member
+  from_table: income
+  to_table: member
+  join_type: left
+  'on':
+  - left: income.link_to_member
+    op: '='
+    right: member.member_id
+- name: member_to_major
+  from_table: member
+  to_table: major
+  join_type: left
+  'on':
+  - left: member.link_to_major
+    op: '='
+    right: major.major_id
+- name: member_to_zip_code
+  from_table: member
+  to_table: zip_code
+  join_type: left
+  'on':
+  - left: member.zip
+    op: '='
+    right: zip_code.zip_code

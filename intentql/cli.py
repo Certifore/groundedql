@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 from sqlalchemy import create_engine, inspect, text as sqla_text
 from sqlalchemy.engine import Engine
+from .llm_adapters import env_value
 
 
 # ── Type mapping ────────────────────────────────────────────────────────────
@@ -268,6 +269,8 @@ def _sample_values(engine: Engine, db_table: str, db_column: str, limit: int = 5
 
 _DEFAULT_BASE_URL = "https://api.openai.com/v1"
 _DEFAULT_MODEL = "gpt-4o-mini"
+_MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
+_MISTRAL_MODEL = "mistral-small-latest"
 
 
 def _chat_completion(
@@ -311,11 +314,20 @@ def describe_schema(
     model: str = _DEFAULT_MODEL,
 ) -> None:
     """Enrich schema.yaml with LLM-generated descriptions using sample data."""
-    api_key = api_key or os.getenv("LLM_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
+    if not api_key:
+        api_key = env_value("LLM_API_KEY", "OPENAI_API_KEY")
+        if not api_key:
+            api_key = env_value("MISTRAL_AI", "MISTRAL_API_KEY")
+            if api_key:
+                if base_url == _DEFAULT_BASE_URL:
+                    base_url = _MISTRAL_BASE_URL
+                if model == _DEFAULT_MODEL:
+                    model = env_value("MISTRAL_MODEL") or _MISTRAL_MODEL
+
     if not api_key:
         print(
-            "Error: No API key found. Set LLM_API_KEY (or OPENAI_API_KEY) "
-            "environment variable, or pass --api-key.",
+            "Error: No API key found. Set LLM_API_KEY, OPENAI_API_KEY, "
+            "MISTRAL_AI, or MISTRAL_API_KEY environment variable, or pass --api-key.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -449,7 +461,10 @@ def main():
     desc_parser.add_argument(
         "--api-key",
         default=None,
-        help="LLM API key (default: reads LLM_API_KEY or OPENAI_API_KEY env var)",
+        help=(
+            "LLM API key (default: reads LLM_API_KEY, OPENAI_API_KEY, "
+            "MISTRAL_AI, or MISTRAL_API_KEY env var)"
+        ),
     )
     desc_parser.add_argument(
         "--base-url",

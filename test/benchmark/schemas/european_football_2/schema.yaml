@@ -1,0 +1,865 @@
+version: 1
+dialect: postgres
+context: 'BIRD Mini-Dev database: european_football_2'
+tables:
+- name: country
+  db_table: country
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: name
+    db_column: name
+    type: text
+  primary_id: id
+- name: league
+  db_table: league
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: country_id
+    db_column: country_id
+    type: bigint
+  - name: name
+    db_column: name
+    type: text
+  primary_id: id
+- name: match
+  db_table: match
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: country_id
+    db_column: country_id
+    type: bigint
+  - name: league_id
+    db_column: league_id
+    type: bigint
+  - name: season
+    db_column: season
+    type: text
+  - name: stage
+    db_column: stage
+    type: bigint
+  - name: date
+    db_column: date
+    type: text
+  - name: match_api_id
+    db_column: match_api_id
+    type: bigint
+  - name: home_team_api_id
+    db_column: home_team_api_id
+    type: bigint
+  - name: away_team_api_id
+    db_column: away_team_api_id
+    type: bigint
+  - name: home_team_goal
+    db_column: home_team_goal
+    type: bigint
+  - name: away_team_goal
+    db_column: away_team_goal
+    type: bigint
+  - name: home_player_x1
+    db_column: home_player_x1
+    type: bigint
+  - name: home_player_x2
+    db_column: home_player_x2
+    type: bigint
+  - name: home_player_x3
+    db_column: home_player_x3
+    type: bigint
+  - name: home_player_x4
+    db_column: home_player_x4
+    type: bigint
+  - name: home_player_x5
+    db_column: home_player_x5
+    type: bigint
+  - name: home_player_x6
+    db_column: home_player_x6
+    type: bigint
+  - name: home_player_x7
+    db_column: home_player_x7
+    type: bigint
+  - name: home_player_x8
+    db_column: home_player_x8
+    type: bigint
+  - name: home_player_x9
+    db_column: home_player_x9
+    type: bigint
+  - name: home_player_x10
+    db_column: home_player_x10
+    type: bigint
+  - name: home_player_x11
+    db_column: home_player_x11
+    type: bigint
+  - name: away_player_x1
+    db_column: away_player_x1
+    type: bigint
+  - name: away_player_x2
+    db_column: away_player_x2
+    type: bigint
+  - name: away_player_x3
+    db_column: away_player_x3
+    type: bigint
+  - name: away_player_x4
+    db_column: away_player_x4
+    type: bigint
+  - name: away_player_x5
+    db_column: away_player_x5
+    type: bigint
+  - name: away_player_x6
+    db_column: away_player_x6
+    type: bigint
+  - name: away_player_x7
+    db_column: away_player_x7
+    type: bigint
+  - name: away_player_x8
+    db_column: away_player_x8
+    type: bigint
+  - name: away_player_x9
+    db_column: away_player_x9
+    type: bigint
+  - name: away_player_x10
+    db_column: away_player_x10
+    type: bigint
+  - name: away_player_x11
+    db_column: away_player_x11
+    type: bigint
+  - name: home_player_y1
+    db_column: home_player_y1
+    type: bigint
+  - name: home_player_y2
+    db_column: home_player_y2
+    type: bigint
+  - name: home_player_y3
+    db_column: home_player_y3
+    type: bigint
+  - name: home_player_y4
+    db_column: home_player_y4
+    type: bigint
+  - name: home_player_y5
+    db_column: home_player_y5
+    type: bigint
+  - name: home_player_y6
+    db_column: home_player_y6
+    type: bigint
+  - name: home_player_y7
+    db_column: home_player_y7
+    type: bigint
+  - name: home_player_y8
+    db_column: home_player_y8
+    type: bigint
+  - name: home_player_y9
+    db_column: home_player_y9
+    type: bigint
+  - name: home_player_y10
+    db_column: home_player_y10
+    type: bigint
+  - name: home_player_y11
+    db_column: home_player_y11
+    type: bigint
+  - name: away_player_y1
+    db_column: away_player_y1
+    type: bigint
+  - name: away_player_y2
+    db_column: away_player_y2
+    type: bigint
+  - name: away_player_y3
+    db_column: away_player_y3
+    type: bigint
+  - name: away_player_y4
+    db_column: away_player_y4
+    type: bigint
+  - name: away_player_y5
+    db_column: away_player_y5
+    type: bigint
+  - name: away_player_y6
+    db_column: away_player_y6
+    type: bigint
+  - name: away_player_y7
+    db_column: away_player_y7
+    type: bigint
+  - name: away_player_y8
+    db_column: away_player_y8
+    type: bigint
+  - name: away_player_y9
+    db_column: away_player_y9
+    type: bigint
+  - name: away_player_y10
+    db_column: away_player_y10
+    type: bigint
+  - name: away_player_y11
+    db_column: away_player_y11
+    type: bigint
+  - name: home_player_1
+    db_column: home_player_1
+    type: bigint
+  - name: home_player_2
+    db_column: home_player_2
+    type: bigint
+  - name: home_player_3
+    db_column: home_player_3
+    type: bigint
+  - name: home_player_4
+    db_column: home_player_4
+    type: bigint
+  - name: home_player_5
+    db_column: home_player_5
+    type: bigint
+  - name: home_player_6
+    db_column: home_player_6
+    type: bigint
+  - name: home_player_7
+    db_column: home_player_7
+    type: bigint
+  - name: home_player_8
+    db_column: home_player_8
+    type: bigint
+  - name: home_player_9
+    db_column: home_player_9
+    type: bigint
+  - name: home_player_10
+    db_column: home_player_10
+    type: bigint
+  - name: home_player_11
+    db_column: home_player_11
+    type: bigint
+  - name: away_player_1
+    db_column: away_player_1
+    type: bigint
+  - name: away_player_2
+    db_column: away_player_2
+    type: bigint
+  - name: away_player_3
+    db_column: away_player_3
+    type: bigint
+  - name: away_player_4
+    db_column: away_player_4
+    type: bigint
+  - name: away_player_5
+    db_column: away_player_5
+    type: bigint
+  - name: away_player_6
+    db_column: away_player_6
+    type: bigint
+  - name: away_player_7
+    db_column: away_player_7
+    type: bigint
+  - name: away_player_8
+    db_column: away_player_8
+    type: bigint
+  - name: away_player_9
+    db_column: away_player_9
+    type: bigint
+  - name: away_player_10
+    db_column: away_player_10
+    type: bigint
+  - name: away_player_11
+    db_column: away_player_11
+    type: bigint
+  - name: goal
+    db_column: goal
+    type: text
+  - name: shoton
+    db_column: shoton
+    type: text
+  - name: shotoff
+    db_column: shotoff
+    type: text
+  - name: foulcommit
+    db_column: foulcommit
+    type: text
+  - name: card
+    db_column: card
+    type: text
+  - name: cross
+    db_column: cross
+    type: text
+  - name: corner
+    db_column: corner
+    type: text
+  - name: possession
+    db_column: possession
+    type: text
+  - name: b365h
+    db_column: b365h
+    type: float
+  - name: b365d
+    db_column: b365d
+    type: float
+  - name: b365a
+    db_column: b365a
+    type: float
+  - name: bwh
+    db_column: bwh
+    type: float
+  - name: bwd
+    db_column: bwd
+    type: float
+  - name: bwa
+    db_column: bwa
+    type: float
+  - name: iwh
+    db_column: iwh
+    type: float
+  - name: iwd
+    db_column: iwd
+    type: float
+  - name: iwa
+    db_column: iwa
+    type: float
+  - name: lbh
+    db_column: lbh
+    type: float
+  - name: lbd
+    db_column: lbd
+    type: float
+  - name: lba
+    db_column: lba
+    type: float
+  - name: psh
+    db_column: psh
+    type: float
+  - name: psd
+    db_column: psd
+    type: float
+  - name: psa
+    db_column: psa
+    type: float
+  - name: whh
+    db_column: whh
+    type: float
+  - name: whd
+    db_column: whd
+    type: float
+  - name: wha
+    db_column: wha
+    type: float
+  - name: sjh
+    db_column: sjh
+    type: float
+  - name: sjd
+    db_column: sjd
+    type: float
+  - name: sja
+    db_column: sja
+    type: float
+  - name: vch
+    db_column: vch
+    type: float
+  - name: vcd
+    db_column: vcd
+    type: float
+  - name: vca
+    db_column: vca
+    type: float
+  - name: gbh
+    db_column: gbh
+    type: float
+  - name: gbd
+    db_column: gbd
+    type: float
+  - name: gba
+    db_column: gba
+    type: float
+  - name: bsh
+    db_column: bsh
+    type: float
+  - name: bsd
+    db_column: bsd
+    type: float
+  - name: bsa
+    db_column: bsa
+    type: float
+  primary_id: id
+- name: player
+  db_table: player
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: player_api_id
+    db_column: player_api_id
+    type: bigint
+  - name: player_name
+    db_column: player_name
+    type: text
+  - name: player_fifa_api_id
+    db_column: player_fifa_api_id
+    type: bigint
+  - name: birthday
+    db_column: birthday
+    type: text
+  - name: height
+    db_column: height
+    type: bigint
+  - name: weight
+    db_column: weight
+    type: bigint
+  primary_id: id
+- name: player_attributes
+  db_table: player_attributes
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: player_fifa_api_id
+    db_column: player_fifa_api_id
+    type: bigint
+  - name: player_api_id
+    db_column: player_api_id
+    type: bigint
+  - name: date
+    db_column: date
+    type: text
+  - name: overall_rating
+    db_column: overall_rating
+    type: bigint
+  - name: potential
+    db_column: potential
+    type: bigint
+  - name: preferred_foot
+    db_column: preferred_foot
+    type: text
+  - name: attacking_work_rate
+    db_column: attacking_work_rate
+    type: text
+  - name: defensive_work_rate
+    db_column: defensive_work_rate
+    type: text
+  - name: crossing
+    db_column: crossing
+    type: bigint
+  - name: finishing
+    db_column: finishing
+    type: bigint
+  - name: heading_accuracy
+    db_column: heading_accuracy
+    type: bigint
+  - name: short_passing
+    db_column: short_passing
+    type: bigint
+  - name: volleys
+    db_column: volleys
+    type: bigint
+  - name: dribbling
+    db_column: dribbling
+    type: bigint
+  - name: curve
+    db_column: curve
+    type: bigint
+  - name: free_kick_accuracy
+    db_column: free_kick_accuracy
+    type: bigint
+  - name: long_passing
+    db_column: long_passing
+    type: bigint
+  - name: ball_control
+    db_column: ball_control
+    type: bigint
+  - name: acceleration
+    db_column: acceleration
+    type: bigint
+  - name: sprint_speed
+    db_column: sprint_speed
+    type: bigint
+  - name: agility
+    db_column: agility
+    type: bigint
+  - name: reactions
+    db_column: reactions
+    type: bigint
+  - name: balance
+    db_column: balance
+    type: bigint
+  - name: shot_power
+    db_column: shot_power
+    type: bigint
+  - name: jumping
+    db_column: jumping
+    type: bigint
+  - name: stamina
+    db_column: stamina
+    type: bigint
+  - name: strength
+    db_column: strength
+    type: bigint
+  - name: long_shots
+    db_column: long_shots
+    type: bigint
+  - name: aggression
+    db_column: aggression
+    type: bigint
+  - name: interceptions
+    db_column: interceptions
+    type: bigint
+  - name: positioning
+    db_column: positioning
+    type: bigint
+  - name: vision
+    db_column: vision
+    type: bigint
+  - name: penalties
+    db_column: penalties
+    type: bigint
+  - name: marking
+    db_column: marking
+    type: bigint
+  - name: standing_tackle
+    db_column: standing_tackle
+    type: bigint
+  - name: sliding_tackle
+    db_column: sliding_tackle
+    type: bigint
+  - name: gk_diving
+    db_column: gk_diving
+    type: bigint
+  - name: gk_handling
+    db_column: gk_handling
+    type: bigint
+  - name: gk_kicking
+    db_column: gk_kicking
+    type: bigint
+  - name: gk_positioning
+    db_column: gk_positioning
+    type: bigint
+  - name: gk_reflexes
+    db_column: gk_reflexes
+    type: bigint
+  primary_id: id
+- name: team
+  db_table: team
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: team_api_id
+    db_column: team_api_id
+    type: bigint
+  - name: team_fifa_api_id
+    db_column: team_fifa_api_id
+    type: bigint
+  - name: team_long_name
+    db_column: team_long_name
+    type: text
+  - name: team_short_name
+    db_column: team_short_name
+    type: text
+  primary_id: id
+  keyword_search_or:
+  - team_long_name
+  - team_short_name
+- name: team_attributes
+  db_table: team_attributes
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: team_fifa_api_id
+    db_column: team_fifa_api_id
+    type: bigint
+  - name: team_api_id
+    db_column: team_api_id
+    type: bigint
+  - name: date
+    db_column: date
+    type: text
+  - name: buildupplayspeed
+    db_column: buildupplayspeed
+    type: bigint
+  - name: buildupplayspeedclass
+    db_column: buildupplayspeedclass
+    type: text
+  - name: buildupplaydribbling
+    db_column: buildupplaydribbling
+    type: bigint
+  - name: buildupplaydribblingclass
+    db_column: buildupplaydribblingclass
+    type: text
+  - name: buildupplaypassing
+    db_column: buildupplaypassing
+    type: bigint
+  - name: buildupplaypassingclass
+    db_column: buildupplaypassingclass
+    type: text
+  - name: buildupplaypositioningclass
+    db_column: buildupplaypositioningclass
+    type: text
+  - name: chancecreationpassing
+    db_column: chancecreationpassing
+    type: bigint
+  - name: chancecreationpassingclass
+    db_column: chancecreationpassingclass
+    type: text
+  - name: chancecreationcrossing
+    db_column: chancecreationcrossing
+    type: bigint
+  - name: chancecreationcrossingclass
+    db_column: chancecreationcrossingclass
+    type: text
+  - name: chancecreationshooting
+    db_column: chancecreationshooting
+    type: bigint
+  - name: chancecreationshootingclass
+    db_column: chancecreationshootingclass
+    type: text
+  - name: chancecreationpositioningclass
+    db_column: chancecreationpositioningclass
+    type: text
+  - name: defencepressure
+    db_column: defencepressure
+    type: bigint
+  - name: defencepressureclass
+    db_column: defencepressureclass
+    type: text
+  - name: defenceaggression
+    db_column: defenceaggression
+    type: bigint
+  - name: defenceaggressionclass
+    db_column: defenceaggressionclass
+    type: text
+  - name: defenceteamwidth
+    db_column: defenceteamwidth
+    type: bigint
+  - name: defenceteamwidthclass
+    db_column: defenceteamwidthclass
+    type: text
+  - name: defencedefenderlineclass
+    db_column: defencedefenderlineclass
+    type: text
+  primary_id: id
+links:
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.away_player_10
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.away_player_11
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.away_player_1
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.away_player_2
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.away_player_3
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.away_player_4
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.away_player_5
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.away_player_6
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.away_player_7
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.away_player_8
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.away_player_9
+    op: '='
+    right: player.player_api_id
+- name: match_to_team
+  from_table: match
+  to_table: team
+  join_type: left
+  'on':
+  - left: match.away_team_api_id
+    op: '='
+    right: team.team_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.home_player_10
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.home_player_11
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.home_player_1
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.home_player_2
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.home_player_3
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.home_player_4
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.home_player_5
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.home_player_6
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.home_player_7
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.home_player_8
+    op: '='
+    right: player.player_api_id
+- name: match_to_player
+  from_table: match
+  to_table: player
+  join_type: left
+  'on':
+  - left: match.home_player_9
+    op: '='
+    right: player.player_api_id
+- name: match_to_team
+  from_table: match
+  to_table: team
+  join_type: left
+  'on':
+  - left: match.home_team_api_id
+    op: '='
+    right: team.team_api_id
+- name: player_attributes_to_player
+  from_table: player_attributes
+  to_table: player
+  join_type: left
+  'on':
+  - left: player_attributes.player_api_id
+    op: '='
+    right: player.player_api_id
+- name: team_attributes_to_team
+  from_table: team_attributes
+  to_table: team
+  join_type: left
+  'on':
+  - left: team_attributes.team_api_id
+    op: '='
+    right: team.team_api_id
+- name: player_attributes_to_player_player_fifa_api_id
+  from_table: player_attributes
+  to_table: player
+  join_type: left
+  'on':
+  - left: player_attributes.player_fifa_api_id
+    op: '='
+    right: player.player_fifa_api_id
+- name: league_to_country_country_id
+  from_table: league
+  to_table: country
+  join_type: left
+  'on':
+  - left: league.country_id
+    op: '='
+    right: country.id
+- name: team_attributes_to_team_team_fifa_api_id
+  from_table: team_attributes
+  to_table: team
+  join_type: left
+  'on':
+  - left: team_attributes.team_fifa_api_id
+    op: '='
+    right: team.team_fifa_api_id

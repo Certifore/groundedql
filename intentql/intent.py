@@ -23,18 +23,119 @@ TimeRange = Literal[
     "yesterday", "today",
 ]
 
-AggType = Literal["count", "list", "sum", "avg", "min", "max", "ratio"]
+FilterOp = Literal[
+    "=", "!=", ">", ">=", "<", "<=",
+    "in", "not_in",
+    "contains", "not_contains", "starts_with", "ends_with",
+    "between",
+    "is_null", "is_not_null",
+]
+AggType = Literal["count", "list", "sum", "avg", "min", "max", "ratio", "difference"]
+MetricAggType = Literal["count", "sum", "avg", "min", "max"]
+ComparisonOp = Literal["ratio", "difference"]
+RatioScale = Literal["raw", "percent"]
+FormulaOp = Literal["+", "-", "*", "/"]
 SortDir = Literal["asc", "desc"]
 TimeBucket = Literal["day", "month", "quarter", "year"]
 
 
 class IntentFilter(BaseModel):
     model_config = STRICT
-    column: str = Field(..., description="Logical column name from schema.yaml (snake_case)")
-    values: List[str] = Field(
+    column: str = Field(
         ...,
-        min_length=1,
-        description="One or more values. Use UPPER CASE when schema says values are stored that way.",
+        description=(
+            "Logical column name from schema.yaml. Use table.column when the "
+            "constraint belongs to a linked table rather than the selected dataset."
+        ),
+    )
+    op: Optional[FilterOp] = Field(
+        None,
+        description=(
+            "Optional comparison operator. Leave null to infer contains/equality/in "
+            "from values and column metadata. Use between with exactly two values."
+        ),
+    )
+    values: List[Any] = Field(
+        default_factory=list,
+        description=(
+            "Zero or more literal values. is_null/is_not_null use no values; "
+            "between uses exactly two values. Use exact database casing when known."
+        ),
+    )
+
+
+class IntentSegment(BaseModel):
+    model_config = STRICT
+    name: Optional[str] = Field(None, description="Optional human label for this side of a comparison.")
+    filters: List[IntentFilter] = Field(
+        default_factory=list,
+        description="Filters that define this comparison segment.",
+    )
+
+
+class IntentComparison(BaseModel):
+    model_config = STRICT
+
+    operator: ComparisonOp = Field(
+        ...,
+        description="ratio for A/B; difference for A-B.",
+    )
+    left: IntentSegment = Field(..., description="Numerator/minuend segment.")
+    right: IntentSegment = Field(..., description="Denominator/subtrahend segment.")
+    metric_aggregation: Optional[MetricAggType] = Field(
+        None,
+        description="Metric to compute inside each segment. Defaults to count.",
+    )
+    metric_field: Optional[str] = Field(
+        None,
+        description="Column to aggregate for sum/avg/min/max. May be table.column.",
+    )
+    scale: Optional[RatioScale] = Field(
+        None,
+        description="For ratio only: raw returns A/B; percent returns A/B*100.",
+    )
+
+
+class IntentConditionalMetric(BaseModel):
+    model_config = STRICT
+
+    alias: str = Field(..., description="Output/reference alias for this metric.")
+    aggregation: MetricAggType = Field(
+        ...,
+        description="Aggregate to compute after applying filters.",
+    )
+    field: Optional[str] = Field(
+        None,
+        description="Column to aggregate for sum/avg/min/max. May be table.column. Not needed for count.",
+    )
+    filters: List[IntentFilter] = Field(
+        default_factory=list,
+        description="Filters that define the rows included in this metric.",
+    )
+    include: bool = Field(
+        True,
+        description="Whether to include this metric in the final output.",
+    )
+
+
+class IntentFormulaMetric(BaseModel):
+    model_config = STRICT
+
+    alias: str = Field(..., description="Output/reference alias for this computed metric.")
+    op: FormulaOp = Field(..., description="Binary arithmetic operator.")
+    left: Any = Field(..., description="Metric alias or numeric literal.")
+    right: Any = Field(..., description="Metric alias or numeric literal.")
+    nullif_right: bool = Field(
+        False,
+        description="If true, divide/operate against NULLIF(right, 0). Useful for ratios.",
+    )
+    scale: Optional[float] = Field(
+        None,
+        description="Optional multiplier applied after the binary operation, e.g. 100 for percent.",
+    )
+    include: bool = Field(
+        True,
+        description="Whether to include this formula metric in the final output.",
     )
 
 
@@ -63,7 +164,7 @@ class QueryIntent(BaseModel):
         description=(
             "'count' for how many / total; 'list' for show/display/enumerate; "
             "'sum'/'avg'/'min'/'max' for numeric aggregation; "
-            "'ratio' for percentages ('what % of X are Y?') — requires keyword and uses count/total."
+            "'ratio' for A/B or percentages; 'difference' for A-B comparisons."
         ),
     )
     aggregation_field: Optional[str] = Field(
@@ -103,6 +204,28 @@ class QueryIntent(BaseModel):
     output_columns: List[str] = Field(
         default_factory=list,
         description="For 'list' aggregation: which columns to include in the output.",
+    )
+    comparison: Optional[IntentComparison] = Field(
+        None,
+        description=(
+            "Use for questions comparing two filtered segments, such as a ratio, "
+            "percentage, or difference between A and B."
+        ),
+    )
+    conditional_metrics: List[IntentConditionalMetric] = Field(
+        default_factory=list,
+        description=(
+            "Named aggregate metrics over filtered row subsets. Use for conditional "
+            "aggregates such as sum of amount where status='open' or year=2020."
+        ),
+    )
+    formula_metrics: List[IntentFormulaMetric] = Field(
+        default_factory=list,
+        description=(
+            "Named arithmetic formulas over conditional_metrics or earlier formulas. "
+            "Use for derived values such as differences, ratios, percentages, and "
+            "average-per-period calculations."
+        ),
     )
 
 

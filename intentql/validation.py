@@ -58,6 +58,16 @@ def _schema_tables(schema: Dict[str, Any]) -> Dict[str, Set[str]]:
     return out
 
 
+def _split_table_column_ref(ref: str, known_tables: Set[str]) -> Tuple[str, str]:
+    """Split table.column while supporting logical table names that contain dots."""
+    parts = ref.split(".")
+    for n in range(len(parts) - 1, 0, -1):
+        tname = ".".join(parts[:n])
+        if tname in known_tables:
+            return tname, ".".join(parts[n:])
+    return ref.split(".", 1)
+
+
 def validate_query_plan_dict(
     plan_dict: Dict[str, Any],
     schema_path: str,
@@ -126,7 +136,18 @@ def validate_query_plan_dict(
             return
         if col == "*":
             return
-        if allowed_cols is not None and col not in allowed_cols:
+        if allowed_cols is None:
+            return
+        if "." in col:
+            table_name, col_name = _split_table_column_ref(col, set(table_cols))
+            if table_name in table_cols and col_name in table_cols[table_name]:
+                return
+            if table_name not in table_cols:
+                errors.append(ValidationErrorItem(path=path, message=f"Unknown table '{table_name}' in column ref '{col}'."))
+            else:
+                errors.append(ValidationErrorItem(path=path, message=f"Unknown column '{col_name}' for table '{table_name}'."))
+            return
+        if col not in allowed_cols:
             errors.append(ValidationErrorItem(path=path, message=f"Unknown column '{col}' for dataset '{plan.dataset}'."))
 
     # filters

@@ -49,12 +49,13 @@ class QueryMetric(BaseModel):
         description="Logical column name (snake_case) from schema.yaml, or '*' for count",
     )
     alias: str = Field(..., description="Output alias for this metric")
+    include: bool = Field(True, description="If false, metric may be used for ordering but is not selected.")
 
 
 class OrderBy(BaseModel):
     model_config = STRICT
 
-    by: str = Field(..., description="Metric alias or dimension alias/field")
+    by: Union[str, Dict[str, Any]] = Field(..., description="Metric alias, dimension alias/field, or expression")
     dir: Literal["asc", "desc"] = "asc"
 
 
@@ -99,6 +100,20 @@ class QueryPlan(BaseModel):
         description="Optional boolean tree: {and: [...]}, {or: [...]}, {cmp: {left, op, right}}, {not: ...}",
     )
 
+    joins: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Advanced explicit/link joins used by the compiler.",
+    )
+    group_by: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Advanced group-by expression list.",
+    )
+    having: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Advanced HAVING boolean expression.",
+    )
+    distinct: bool = False
+
     order_by: List[OrderBy] = Field(default_factory=list)
     limit: Optional[int] = 100
     offset: int = 0
@@ -116,6 +131,10 @@ class QueryPlan(BaseModel):
         default=None,
         alias="with",
         description="Optional WITH clauses; each plan is compiled recursively.",
+    )
+    set_op: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Advanced set operation node.",
     )
 
 

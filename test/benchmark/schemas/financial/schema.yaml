@@ -1,0 +1,271 @@
+version: 1
+dialect: postgres
+context: 'BIRD Mini-Dev database: financial'
+tables:
+- name: account
+  db_table: account
+  columns:
+  - name: account_id
+    db_column: account_id
+    type: bigint
+  - name: district_id
+    db_column: district_id
+    type: bigint
+  - name: frequency
+    db_column: frequency
+    type: text
+  - name: date
+    db_column: date
+    type: date
+  primary_id: account_id
+  primary_date: date
+- name: card
+  db_table: card
+  columns:
+  - name: card_id
+    db_column: card_id
+    type: bigint
+  - name: disp_id
+    db_column: disp_id
+    type: bigint
+  - name: type
+    db_column: type
+    type: text
+  - name: issued
+    db_column: issued
+    type: date
+  primary_id: card_id
+  primary_date: issued
+- name: client
+  db_table: client
+  columns:
+  - name: client_id
+    db_column: client_id
+    type: bigint
+  - name: gender
+    db_column: gender
+    type: text
+  - name: birth_date
+    db_column: birth_date
+    type: date
+  - name: district_id
+    db_column: district_id
+    type: bigint
+  primary_id: client_id
+  primary_date: birth_date
+- name: disp
+  db_table: disp
+  columns:
+  - name: disp_id
+    db_column: disp_id
+    type: bigint
+  - name: client_id
+    db_column: client_id
+    type: bigint
+  - name: account_id
+    db_column: account_id
+    type: bigint
+  - name: type
+    db_column: type
+    type: text
+  primary_id: disp_id
+- name: district
+  db_table: district
+  columns:
+  - name: district_id
+    db_column: district_id
+    type: bigint
+  - name: a2
+    db_column: a2
+    type: text
+  - name: a3
+    db_column: a3
+    type: text
+  - name: a4
+    db_column: a4
+    type: text
+  - name: a5
+    db_column: a5
+    type: text
+  - name: a6
+    db_column: a6
+    type: text
+  - name: a7
+    db_column: a7
+    type: text
+  - name: a8
+    db_column: a8
+    type: bigint
+  - name: a9
+    db_column: a9
+    type: bigint
+  - name: a10
+    db_column: a10
+    type: float
+  - name: a11
+    db_column: a11
+    type: bigint
+  - name: a12
+    db_column: a12
+    type: float
+  - name: a13
+    db_column: a13
+    type: float
+  - name: a14
+    db_column: a14
+    type: bigint
+  - name: a15
+    db_column: a15
+    type: bigint
+  - name: a16
+    db_column: a16
+    type: bigint
+  primary_id: district_id
+- name: loan
+  db_table: loan
+  columns:
+  - name: loan_id
+    db_column: loan_id
+    type: bigint
+  - name: account_id
+    db_column: account_id
+    type: bigint
+  - name: date
+    db_column: date
+    type: date
+  - name: amount
+    db_column: amount
+    type: bigint
+  - name: duration
+    db_column: duration
+    type: bigint
+  - name: payments
+    db_column: payments
+    type: float
+  - name: status
+    db_column: status
+    type: text
+  primary_id: loan_id
+  primary_date: date
+- name: order
+  db_table: order
+  columns:
+  - name: order_id
+    db_column: order_id
+    type: bigint
+  - name: account_id
+    db_column: account_id
+    type: bigint
+  - name: bank_to
+    db_column: bank_to
+    type: text
+  - name: account_to
+    db_column: account_to
+    type: bigint
+  - name: amount
+    db_column: amount
+    type: float
+  - name: k_symbol
+    db_column: k_symbol
+    type: text
+  primary_id: order_id
+- name: trans
+  db_table: trans
+  columns:
+  - name: trans_id
+    db_column: trans_id
+    type: bigint
+  - name: account_id
+    db_column: account_id
+    type: bigint
+  - name: date
+    db_column: date
+    type: date
+  - name: type
+    db_column: type
+    type: text
+  - name: operation
+    db_column: operation
+    type: text
+  - name: amount
+    db_column: amount
+    type: bigint
+  - name: balance
+    db_column: balance
+    type: bigint
+  - name: k_symbol
+    db_column: k_symbol
+    type: text
+  - name: bank
+    db_column: bank
+    type: text
+  - name: account
+    db_column: account
+    type: bigint
+  primary_id: trans_id
+  primary_date: date
+links:
+- name: account_to_district
+  from_table: account
+  to_table: district
+  join_type: left
+  'on':
+  - left: account.district_id
+    op: '='
+    right: district.district_id
+- name: card_to_disp
+  from_table: card
+  to_table: disp
+  join_type: left
+  'on':
+  - left: card.disp_id
+    op: '='
+    right: disp.disp_id
+- name: client_to_district
+  from_table: client
+  to_table: district
+  join_type: left
+  'on':
+  - left: client.district_id
+    op: '='
+    right: district.district_id
+- name: disp_to_account
+  from_table: disp
+  to_table: account
+  join_type: left
+  'on':
+  - left: disp.account_id
+    op: '='
+    right: account.account_id
+- name: disp_to_client
+  from_table: disp
+  to_table: client
+  join_type: left
+  'on':
+  - left: disp.client_id
+    op: '='
+    right: client.client_id
+- name: loan_to_account
+  from_table: loan
+  to_table: account
+  join_type: left
+  'on':
+  - left: loan.account_id
+    op: '='
+    right: account.account_id
+- name: order_to_account
+  from_table: order
+  to_table: account
+  join_type: left
+  'on':
+  - left: order.account_id
+    op: '='
+    right: account.account_id
+- name: trans_to_account
+  from_table: trans
+  to_table: account
+  join_type: left
+  'on':
+  - left: trans.account_id
+    op: '='
+    right: account.account_id

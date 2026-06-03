@@ -1,0 +1,300 @@
+version: 1
+dialect: postgres
+context: 'BIRD Mini-Dev database: formula_1'
+tables:
+- name: circuits
+  db_table: circuits
+  columns:
+  - name: circuitid
+    db_column: circuitid
+    type: bigint
+  - name: circuitref
+    db_column: circuitref
+    type: text
+  - name: name
+    db_column: name
+    type: text
+  - name: location
+    db_column: location
+    type: text
+  - name: country
+    db_column: country
+    type: text
+  - name: lat
+    db_column: lat
+    type: float
+  - name: lng
+    db_column: lng
+    type: float
+  - name: alt
+    db_column: alt
+    type: bigint
+  - name: url
+    db_column: url
+    type: text
+  primary_id: circuitid
+- name: constructors
+  db_table: constructors
+  columns:
+  - name: constructorid
+    db_column: constructorid
+    type: bigint
+  - name: constructorref
+    db_column: constructorref
+    type: text
+  - name: name
+    db_column: name
+    type: text
+  - name: nationality
+    db_column: nationality
+    type: text
+  - name: url
+    db_column: url
+    type: text
+  primary_id: constructorid
+- name: drivers
+  db_table: drivers
+  columns:
+  - name: driverid
+    db_column: driverid
+    type: bigint
+  - name: driverref
+    db_column: driverref
+    type: text
+  - name: number
+    db_column: number
+    type: bigint
+  - name: code
+    db_column: code
+    type: text
+  - name: forename
+    db_column: forename
+    type: text
+  - name: surname
+    db_column: surname
+    type: text
+  - name: dob
+    db_column: dob
+    type: date
+  - name: nationality
+    db_column: nationality
+    type: text
+  - name: url
+    db_column: url
+    type: text
+  primary_id: driverid
+  primary_date: dob
+  keyword_search_or:
+  - forename
+  - surname
+- name: qualifying
+  db_table: qualifying
+  columns:
+  - name: qualifyid
+    db_column: qualifyid
+    type: bigint
+  - name: raceid
+    db_column: raceid
+    type: bigint
+  - name: driverid
+    db_column: driverid
+    type: bigint
+  - name: constructorid
+    db_column: constructorid
+    type: bigint
+  - name: number
+    db_column: number
+    type: bigint
+  - name: position
+    db_column: position
+    type: bigint
+  - name: q1
+    db_column: q1
+    type: text
+  - name: q2
+    db_column: q2
+    type: text
+  - name: q3
+    db_column: q3
+    type: text
+  primary_id: qualifyid
+- name: races
+  db_table: races
+  columns:
+  - name: raceid
+    db_column: raceid
+    type: bigint
+  - name: year
+    db_column: year
+    type: bigint
+  - name: round
+    db_column: round
+    type: bigint
+  - name: circuitid
+    db_column: circuitid
+    type: bigint
+  - name: name
+    db_column: name
+    type: text
+  - name: date
+    db_column: date
+    type: date
+  - name: time
+    db_column: time
+    type: text
+  - name: url
+    db_column: url
+    type: text
+  primary_id: raceid
+  primary_date: date
+- name: results
+  db_table: results
+  columns:
+  - name: resultid
+    db_column: resultid
+    type: bigint
+  - name: raceid
+    db_column: raceid
+    type: bigint
+  - name: driverid
+    db_column: driverid
+    type: bigint
+  - name: constructorid
+    db_column: constructorid
+    type: bigint
+  - name: number
+    db_column: number
+    type: bigint
+  - name: grid
+    db_column: grid
+    type: bigint
+  - name: position
+    db_column: position
+    type: bigint
+  - name: positiontext
+    db_column: positiontext
+    type: text
+  - name: positionorder
+    db_column: positionorder
+    type: bigint
+  - name: points
+    db_column: points
+    type: float
+  - name: laps
+    db_column: laps
+    type: bigint
+  - name: time
+    db_column: time
+    type: text
+  - name: milliseconds
+    db_column: milliseconds
+    type: bigint
+  - name: fastestlap
+    db_column: fastestlap
+    type: bigint
+  - name: rank
+    db_column: rank
+    type: bigint
+  - name: fastestlaptime
+    db_column: fastestlaptime
+    type: text
+  - name: fastestlapspeed
+    db_column: fastestlapspeed
+    type: text
+  - name: statusid
+    db_column: statusid
+    type: bigint
+  primary_id: resultid
+- name: seasons
+  db_table: seasons
+  columns:
+  - name: year
+    db_column: year
+    type: bigint
+  - name: url
+    db_column: url
+    type: text
+  primary_id: year
+- name: status
+  db_table: status
+  columns:
+  - name: statusid
+    db_column: statusid
+    type: bigint
+  - name: status
+    db_column: status
+    type: text
+  primary_id: statusid
+links:
+- name: qualifying_to_constructors
+  from_table: qualifying
+  to_table: constructors
+  join_type: left
+  'on':
+  - left: qualifying.constructorid
+    op: '='
+    right: constructors.constructorid
+- name: qualifying_to_drivers
+  from_table: qualifying
+  to_table: drivers
+  join_type: left
+  'on':
+  - left: qualifying.driverid
+    op: '='
+    right: drivers.driverid
+- name: qualifying_to_races
+  from_table: qualifying
+  to_table: races
+  join_type: left
+  'on':
+  - left: qualifying.raceid
+    op: '='
+    right: races.raceid
+- name: races_to_circuits
+  from_table: races
+  to_table: circuits
+  join_type: left
+  'on':
+  - left: races.circuitid
+    op: '='
+    right: circuits.circuitid
+- name: races_to_seasons
+  from_table: races
+  to_table: seasons
+  join_type: left
+  'on':
+  - left: races.year
+    op: '='
+    right: seasons.year
+- name: results_to_constructors
+  from_table: results
+  to_table: constructors
+  join_type: left
+  'on':
+  - left: results.constructorid
+    op: '='
+    right: constructors.constructorid
+- name: results_to_drivers
+  from_table: results
+  to_table: drivers
+  join_type: left
+  'on':
+  - left: results.driverid
+    op: '='
+    right: drivers.driverid
+- name: results_to_races
+  from_table: results
+  to_table: races
+  join_type: left
+  'on':
+  - left: results.raceid
+    op: '='
+    right: races.raceid
+- name: results_to_status
+  from_table: results
+  to_table: status
+  join_type: left
+  'on':
+  - left: results.statusid
+    op: '='
+    right: status.statusid

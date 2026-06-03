@@ -2382,5 +2382,85 @@
     "compile": {
       "kind": "intent_phase1_ratio_plan_compiles"
     }
+  },
+  {
+    "name": "compile_intent_phase1_qualified_filter_auto_joins_compiles",
+    "question": "How many orders were placed by customer Acme Corp?",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_qualified_filter_auto_joins_compiles"
+    }
+  },
+  {
+    "name": "compile_intent_phase1_explicit_ops_and_between_compile",
+    "question": "Sum order amounts above 100 between 2020-01-01 and 2020-12-31",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_explicit_ops_and_between_compile"
+    }
+  },
+  {
+    "name": "compile_intent_phase1_text_period_time_bucket_compiles",
+    "question": "Peak usage month in 2020",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_text_period_time_bucket_compiles"
+    }
+  },
+  {
+    "name": "compile_intent_phase1_normalize_single_year_and_peak_month",
+    "question": "What was the peak month for enterprise customers in 2013?",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_normalize_single_year_and_peak_month"
+    }
+  },
+  {
+    "name": "compile_intent_phase1_ranked_dimension_hides_metric",
+    "question": "Which month had the highest usage in 2020?",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_ranked_dimension_hides_metric"
+    }
+  },
+  {
+    "name": "compile_intent_phase1_comparison_ratio_auto_joins_compiles",
+    "question": "What is the ratio of USD order amount against CAD order amount?",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_comparison_ratio_auto_joins_compiles"
+    }
+  },
+  {
+    "name": "compile_intent_phase1_comparison_difference_auto_joins_compiles",
+    "question": "What is the difference between USD and CAD order amount in 2020?",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_comparison_difference_auto_joins_compiles"
+    }
+  },
+  {
+    "name": "compile_intent_phase1_conditional_formula_percent_change_compiles",
+    "question": "What was the percentage increase in USD order amount from 2020 to 2021?",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_conditional_formula_percent_change_compiles"
+    }
+  },
+  {
+    "name": "compile_intent_phase1_conditional_formula_average_per_period_compiles",
+    "question": "What was the average monthly order amount in 2020?",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_conditional_formula_average_per_period_compiles"
+    }
+  },
+  {
+    "name": "compile_intent_phase1_conditional_formula_multi_output_compiles",
+    "question": "Show north-south, south-west, and west-north amount differences.",
+    "type": "compile",
+    "compile": {
+      "kind": "intent_phase1_conditional_formula_multi_output_compiles"
+    }
   }
 ]

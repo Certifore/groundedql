@@ -114,6 +114,44 @@ def _get_indexable_columns(table: Dict[str, Any]) -> List[Dict[str, Any]]:
     return indexable
 
 
+def _date_like_column(name: str) -> bool:
+    n = (name or "").lower()
+    return n == "date" or n.endswith("_date") or n.endswith("date") or n in {"time", "year", "month"}
+
+
+def _split_index_ref(
+    default_table: str,
+    ref: str,
+    value_index: Dict[str, Dict[str, List[str]]],
+) -> tuple[str, str]:
+    """Resolve table.column refs against value_index keys, preserving dotted table names."""
+    if not isinstance(ref, str) or "." not in ref:
+        return default_table, ref
+    parts = ref.split(".")
+    for n in range(len(parts) - 1, 0, -1):
+        table_name = ".".join(parts[:n])
+        if table_name in value_index:
+            return table_name, ".".join(parts[n:])
+    return ref.split(".", 1)
+
+
+def _iter_filter_lists(intent: Dict[str, Any]) -> List[List[Dict[str, Any]]]:
+    lists: List[List[Dict[str, Any]]] = []
+    filters = intent.get("filters")
+    if isinstance(filters, list):
+        lists.append(filters)
+    comparison = intent.get("comparison")
+    if isinstance(comparison, dict):
+        for side in ("left", "right"):
+            segment = comparison.get(side)
+            if isinstance(segment, dict) and isinstance(segment.get("filters"), list):
+                lists.append(segment["filters"])
+    for metric in intent.get("conditional_metrics") or []:
+        if isinstance(metric, dict) and isinstance(metric.get("filters"), list):
+            lists.append(metric["filters"])
+    return lists
+
+
 def format_value_index_for_prompt(
     value_index: Dict[str, Dict[str, List[str]]],
     max_values_per_column: int = 80,
@@ -181,29 +219,34 @@ def resolve_intent_values(
     Also returns a list of corrections made for logging.
     """
     dataset = intent.get("dataset", "")
-    table_values = value_index.get(dataset, {})
     corrections: List[str] = []
 
-    for filt in intent.get("filters") or []:
-        col = filt.get("column", "")
-        known = table_values.get(col)
-        if not known:
-            continue
+    for filters in _iter_filter_lists(intent):
+        for filt in filters:
+            col_ref = filt.get("column", "")
+            table_name, col = _split_index_ref(dataset, col_ref, value_index)
+            if _date_like_column(col):
+                continue
+            table_values = value_index.get(table_name, {})
+            known = table_values.get(col)
+            if not known:
+                continue
 
-        resolved_vals = []
-        for v in filt.get("values", []):
-            match = fuzzy_resolve(v, known)
-            if match and match != v:
-                corrections.append(f"filter {col}: '{v}' → '{match}'")
-                resolved_vals.append(match)
-            elif match:
-                resolved_vals.append(match)
-            else:
-                resolved_vals.append(v)
-        filt["values"] = resolved_vals
+            resolved_vals = []
+            for v in filt.get("values", []):
+                match = fuzzy_resolve(v, known)
+                if match and match != v:
+                    corrections.append(f"filter {col_ref}: '{v}' → '{match}'")
+                    resolved_vals.append(match)
+                elif match:
+                    resolved_vals.append(match)
+                else:
+                    resolved_vals.append(v)
+            filt["values"] = resolved_vals
 
     keyword = intent.get("keyword")
     if keyword:
+        table_values = value_index.get(dataset, {})
         kw_col = table_values.get("keyword_of_asset")
         if kw_col:
             match = fuzzy_resolve(keyword, kw_col)
@@ -229,21 +272,26 @@ def validate_intent_against_index(
     Returns a list of issues found (empty = all good).
     """
     dataset = intent.get("dataset", "")
-    table_values = value_index.get(dataset, {})
     issues: List[str] = []
 
-    for filt in intent.get("filters") or []:
-        col = filt.get("column", "")
-        known = table_values.get(col)
-        if not known:
-            continue
-        known_upper = {v.upper().strip() for v in known}
-        for v in filt.get("values", []):
-            if v.upper().strip() not in known_upper:
-                close = get_close_matches(v.upper(), list(known_upper), n=3, cutoff=0.4)
-                suggestion = f" Did you mean: {close}" if close else ""
-                issues.append(
-                    f"Filter value '{v}' for column '{col}' not found in database.{suggestion}"
-                )
+    for filters in _iter_filter_lists(intent):
+        for filt in filters:
+            col_ref = filt.get("column", "")
+            table_name, col = _split_index_ref(dataset, col_ref, value_index)
+            if _date_like_column(col):
+                continue
+            table_values = value_index.get(table_name, {})
+            known = table_values.get(col)
+            if not known:
+                continue
+            known_upper = {v.upper().strip() for v in known}
+            for v in filt.get("values", []):
+                v_text = str(v)
+                if v_text.upper().strip() not in known_upper:
+                    close = get_close_matches(v_text.upper(), list(known_upper), n=3, cutoff=0.4)
+                    suggestion = f" Did you mean: {close}" if close else ""
+                    issues.append(
+                        f"Filter value '{v}' for column '{col_ref}' not found in database.{suggestion}"
+                    )
 
     return issues

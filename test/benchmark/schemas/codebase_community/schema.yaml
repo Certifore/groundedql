@@ -1,0 +1,277 @@
+version: 1
+dialect: postgres
+context: 'BIRD Mini-Dev database: codebase_community'
+tables:
+- name: badges
+  db_table: badges
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: userid
+    db_column: userid
+    type: bigint
+  - name: name
+    db_column: name
+    type: text
+  - name: date
+    db_column: date
+    type: varchar
+  primary_id: id
+- name: comments
+  db_table: comments
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: postid
+    db_column: postid
+    type: bigint
+  - name: score
+    db_column: score
+    type: bigint
+  - name: text
+    db_column: text
+    type: text
+  - name: creationdate
+    db_column: creationdate
+    type: varchar
+  - name: userid
+    db_column: userid
+    type: bigint
+  - name: userdisplayname
+    db_column: userdisplayname
+    type: text
+  primary_id: id
+- name: posts
+  db_table: posts
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: posttypeid
+    db_column: posttypeid
+    type: bigint
+  - name: acceptedanswerid
+    db_column: acceptedanswerid
+    type: bigint
+  - name: creaiondate
+    db_column: creaiondate
+    type: varchar
+  - name: score
+    db_column: score
+    type: bigint
+  - name: viewcount
+    db_column: viewcount
+    type: bigint
+  - name: body
+    db_column: body
+    type: text
+  - name: owneruserid
+    db_column: owneruserid
+    type: bigint
+  - name: lasactivitydate
+    db_column: lasactivitydate
+    type: varchar
+  - name: title
+    db_column: title
+    type: text
+  - name: tags
+    db_column: tags
+    type: text
+  - name: answercount
+    db_column: answercount
+    type: bigint
+  - name: commentcount
+    db_column: commentcount
+    type: bigint
+  - name: favoritecount
+    db_column: favoritecount
+    type: bigint
+  - name: lasteditoruserid
+    db_column: lasteditoruserid
+    type: bigint
+  - name: lasteditdate
+    db_column: lasteditdate
+    type: varchar
+  - name: communityowneddate
+    db_column: communityowneddate
+    type: varchar
+  - name: parentid
+    db_column: parentid
+    type: bigint
+  - name: closeddate
+    db_column: closeddate
+    type: varchar
+  - name: ownerdisplayname
+    db_column: ownerdisplayname
+    type: text
+  - name: lasteditordisplayname
+    db_column: lasteditordisplayname
+    type: text
+  primary_id: id
+  keyword_search_or:
+  - title
+  - ownerdisplayname
+  - lasteditordisplayname
+- name: tags
+  db_table: tags
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: tagname
+    db_column: tagname
+    type: text
+  - name: count
+    db_column: count
+    type: bigint
+  - name: excerptpostid
+    db_column: excerptpostid
+    type: bigint
+  - name: wikipostid
+    db_column: wikipostid
+    type: bigint
+  primary_id: id
+- name: users
+  db_table: users
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: reputation
+    db_column: reputation
+    type: bigint
+  - name: creationdate
+    db_column: creationdate
+    type: varchar
+  - name: displayname
+    db_column: displayname
+    type: text
+  - name: lastaccessdate
+    db_column: lastaccessdate
+    type: varchar
+  - name: websiteurl
+    db_column: websiteurl
+    type: text
+  - name: location
+    db_column: location
+    type: text
+  - name: aboutme
+    db_column: aboutme
+    type: text
+  - name: views
+    db_column: views
+    type: bigint
+  - name: upvotes
+    db_column: upvotes
+    type: bigint
+  - name: downvotes
+    db_column: downvotes
+    type: bigint
+  - name: accountid
+    db_column: accountid
+    type: bigint
+  - name: age
+    db_column: age
+    type: bigint
+  - name: profileimageurl
+    db_column: profileimageurl
+    type: text
+  primary_id: id
+- name: votes
+  db_table: votes
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: postid
+    db_column: postid
+    type: bigint
+  - name: votetypeid
+    db_column: votetypeid
+    type: bigint
+  - name: creationdate
+    db_column: creationdate
+    type: date
+  - name: userid
+    db_column: userid
+    type: bigint
+  - name: bountyamount
+    db_column: bountyamount
+    type: bigint
+  primary_id: id
+  primary_date: creationdate
+links:
+- name: badges_to_users
+  from_table: badges
+  to_table: users
+  join_type: left
+  'on':
+  - left: badges.userid
+    op: '='
+    right: users.id
+- name: comments_to_users
+  from_table: comments
+  to_table: users
+  join_type: left
+  'on':
+  - left: comments.userid
+    op: '='
+    right: users.id
+- name: posts_to_users
+  from_table: posts
+  to_table: users
+  join_type: left
+  'on':
+  - left: posts.lasteditoruserid
+    op: '='
+    right: users.id
+- name: posts_to_users
+  from_table: posts
+  to_table: users
+  join_type: left
+  'on':
+  - left: posts.owneruserid
+    op: '='
+    right: users.id
+- name: votes_to_posts
+  from_table: votes
+  to_table: posts
+  join_type: left
+  'on':
+  - left: votes.postid
+    op: '='
+    right: posts.id
+- name: votes_to_users
+  from_table: votes
+  to_table: users
+  join_type: left
+  'on':
+  - left: votes.userid
+    op: '='
+    right: users.id
+- name: comments_to_posts_postid
+  from_table: comments
+  to_table: posts
+  join_type: left
+  'on':
+  - left: comments.postid
+    op: '='
+    right: posts.id
+- name: posts_to_posts_parentid
+  from_table: posts
+  to_table: posts
+  join_type: left
+  'on':
+  - left: posts.parentid
+    op: '='
+    right: posts.id
+- name: tags_to_posts_excerptpostid
+  from_table: tags
+  to_table: posts
+  join_type: left
+  'on':
+  - left: tags.excerptpostid
+    op: '='
+    right: posts.id

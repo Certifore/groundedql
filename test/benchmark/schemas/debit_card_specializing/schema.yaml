@@ -1,0 +1,120 @@
+version: 1
+dialect: postgres
+context: 'BIRD Mini-Dev database: debit_card_specializing'
+tables:
+- name: customers
+  db_table: customers
+  columns:
+  - name: customerid
+    db_column: customerid
+    type: bigint
+  - name: segment
+    db_column: segment
+    type: text
+  - name: currency
+    db_column: currency
+    type: text
+  primary_id: customerid
+- name: gasstations
+  db_table: gasstations
+  columns:
+  - name: gasstationid
+    db_column: gasstationid
+    type: bigint
+  - name: chainid
+    db_column: chainid
+    type: bigint
+  - name: country
+    db_column: country
+    type: text
+  - name: segment
+    db_column: segment
+    type: text
+  primary_id: gasstationid
+- name: products
+  db_table: products
+  columns:
+  - name: productid
+    db_column: productid
+    type: bigint
+  - name: description
+    db_column: description
+    type: text
+  primary_id: productid
+- name: transactions_1k
+  db_table: transactions_1k
+  columns:
+  - name: transactionid
+    db_column: transactionid
+    type: bigint
+  - name: date
+    db_column: date
+    type: date
+  - name: time
+    db_column: time
+    type: text
+  - name: customerid
+    db_column: customerid
+    type: bigint
+  - name: cardid
+    db_column: cardid
+    type: bigint
+  - name: gasstationid
+    db_column: gasstationid
+    type: bigint
+  - name: productid
+    db_column: productid
+    type: bigint
+  - name: amount
+    db_column: amount
+    type: bigint
+  - name: price
+    db_column: price
+    type: float
+  primary_id: transactionid
+  primary_date: date
+- name: yearmonth
+  db_table: yearmonth
+  columns:
+  - name: customerid
+    db_column: customerid
+    type: bigint
+  - name: date
+    db_column: date
+    type: text
+  - name: consumption
+    db_column: consumption
+    type: float
+links:
+- name: yearmonth_to_customers_customerid
+  from_table: yearmonth
+  to_table: customers
+  join_type: left
+  'on':
+  - left: yearmonth.customerid
+    op: '='
+    right: customers.customerid
+- name: transactions_1k_to_customers_customerid
+  from_table: transactions_1k
+  to_table: customers
+  join_type: left
+  'on':
+  - left: transactions_1k.customerid
+    op: '='
+    right: customers.customerid
+- name: transactions_1k_to_gasstations_gasstationid
+  from_table: transactions_1k
+  to_table: gasstations
+  join_type: left
+  'on':
+  - left: transactions_1k.gasstationid
+    op: '='
+    right: gasstations.gasstationid
+- name: transactions_1k_to_products_productid
+  from_table: transactions_1k
+  to_table: products
+  join_type: left
+  'on':
+  - left: transactions_1k.productid
+    op: '='
+    right: products.productid

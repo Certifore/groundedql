@@ -1,0 +1,415 @@
+version: 1
+name: IntentQL QueryPlan Spec (auto-generated)
+description: Auto-generated from schema.yaml. Instructions for generating QueryPlan
+  JSON for the IntentQL compiler. Output MUST be valid JSON only (no markdown, no
+  prose, no SQL).
+system_instructions: 'You are a QueryPlan generator.
+
+  Your job is to convert a natural-language question into a JSON QueryPlan object.
+
+  You MUST output JSON only — no markdown, no prose, no SQL.
+
+
+
+  DATA CONTEXT:
+
+  BIRD Mini-Dev database: superhero
+
+  If the user mentions the organization/campus/site by name, that refers to the ENTIRE
+  dataset — do NOT add a filter for it.
+
+
+  RULES:
+
+  - dataset MUST be one of: "alignment", "attribute", "colour", "gender", "hero_attribute",
+  "hero_power", "publisher", "race", "superhero", "superpower"
+
+  - Use ONLY the logical column names listed in schema_summary below.
+
+  - Do NOT use physical DB column names or write SQL.
+
+  - Always include limit and offset.
+
+  - Give every dimension and metric an alias.
+
+  - metric aliases must be unique within the plan.
+
+  - Prefer consistent, deterministic plans: same question → same JSON.
+
+  '
+defaults:
+  limit: 100
+  offset: 0
+  max_limit: 1000
+operators_supported:
+  comparison:
+  - '='
+  - '!='
+  - '>'
+  - '>='
+  - <
+  - <=
+  membership:
+  - in
+  - not_in
+  text:
+  - contains
+  - not_contains
+  - starts_with
+  - ends_with
+  null_checks:
+  - is_null
+  - is_not_null
+schema_summary:
+  alignment:
+    primary_id: id
+    primary_id_note: Use count_distinct('id') when counting distinct alignment.
+    columns:
+    - name: id
+      type: bigint
+    - name: alignment
+      type: text
+  attribute:
+    primary_id: id
+    primary_id_note: Use count_distinct('id') when counting distinct attribute.
+    columns:
+    - name: id
+      type: bigint
+    - name: attribute_name
+      type: text
+  colour:
+    primary_id: id
+    primary_id_note: Use count_distinct('id') when counting distinct colour.
+    columns:
+    - name: id
+      type: bigint
+    - name: colour
+      type: text
+  gender:
+    primary_id: id
+    primary_id_note: Use count_distinct('id') when counting distinct gender.
+    columns:
+    - name: id
+      type: bigint
+    - name: gender
+      type: text
+  hero_attribute:
+    columns:
+    - name: hero_id
+      type: bigint
+    - name: attribute_id
+      type: bigint
+    - name: attribute_value
+      type: bigint
+  hero_power:
+    columns:
+    - name: hero_id
+      type: bigint
+    - name: power_id
+      type: bigint
+  publisher:
+    primary_id: id
+    primary_id_note: Use count_distinct('id') when counting distinct publisher.
+    columns:
+    - name: id
+      type: bigint
+    - name: publisher_name
+      type: text
+  race:
+    primary_id: id
+    primary_id_note: Use count_distinct('id') when counting distinct race.
+    columns:
+    - name: id
+      type: bigint
+    - name: race
+      type: text
+  superhero:
+    primary_id: id
+    primary_id_note: Use count_distinct('id') when counting distinct superhero.
+    columns:
+    - name: id
+      type: bigint
+    - name: superhero_name
+      type: text
+    - name: full_name
+      type: text
+    - name: gender_id
+      type: bigint
+    - name: eye_colour_id
+      type: bigint
+    - name: hair_colour_id
+      type: bigint
+    - name: skin_colour_id
+      type: bigint
+    - name: race_id
+      type: bigint
+    - name: publisher_id
+      type: bigint
+    - name: alignment_id
+      type: bigint
+    - name: height_cm
+      type: bigint
+    - name: weight_kg
+      type: bigint
+  superpower:
+    primary_id: id
+    primary_id_note: Use count_distinct('id') when counting distinct superpower.
+    columns:
+    - name: id
+      type: bigint
+    - name: power_name
+      type: text
+structural_invariants: "DATASET: must be a logical table name from schema_summary.\n\
+  \nDIMENSIONS: list of {field, alias} — alias is REQUIRED.\n\nMETRICS: list of {agg,\
+  \ field, alias} — alias is REQUIRED and unique.\n  Allowed agg: count, count_distinct,\
+  \ sum, avg, min, max.\n  count: field may be '*' or a logical column.\n  count_distinct/sum/avg/min/max:\
+  \ field MUST be a logical column, NOT '*'.\n\nFILTERS: list of {field, op, value}.\n\
+  \  'contains' = case-insensitive substring match (ILIKE %value%).\n\nORDER_BY: must\
+  \ reference an existing dimension alias or metric alias.\n\nLIMIT/OFFSET: always\
+  \ present. For rollup inner queries, omit limit so all rows are included before\
+  \ outer aggregation.\n\nROLLUP: if present, rollup.metrics[*].field MUST reference\
+  \ a metric alias or dimension alias from the inner plan — NOT a raw dataset column\
+  \ name.\n\n\n--- READ SQL SURFACE (compiler contract) ---\nREAD_SQL_SURFACE_VERSION=1\
+  \ (internal contract).\nThe compiler targets read-only SELECT-shaped plans over\
+  \ schema.yaml only.\nComposition: single_select, with_cte_recursive_false, set_ops_union_union_all_intersect_except.\n\
+  FROM / joins: single_dataset, explicit_joins_inner_left, link_declared_joins, self_join_via_join_as.\n\
+  Predicates: legacy_filters_and, where_boolean_tree_and_or_not_cmp, relative_date_sentinels.\n\
+  Aggregation: group_by, having, rollup_outer_metrics, filtered_aggregates_via_expr.\n\
+  Windows: func_over_partition_order.\nSubqueries: scalar_subquery_in_expr, nested_plans_in_cte.\n\
+  Hard caps (defaults): {'max_joins_default': 8, 'max_select_default': 200, 'max_predicates_default':\
+  \ 200, 'max_limit_clamp_default': 1000}.\nOut of scope for NL→plan→SQL path: mutating\
+  \ statements (INSERT/UPDATE/DELETE/DDL); arbitrary raw SQL strings from the LLM;\
+  \ queries referencing tables/columns not in schema.yaml"
+read_sql_surface_version: 1
+plan_construction_procedure: "1) Choose dataset: the ONE table that contains the needed\
+  \ information.\n2) Extract filters: convert ALL constraints to filter objects using\
+  \ logical field names.\n   Use op='contains' for fuzzy text matching (building names,\
+  \ keywords, etc.).\n   IMPORTANT: if the question mentions a time period ('last\
+  \ year', 'this year',\n   'past month', 'last 30 days', 'in 2025', etc.) you MUST\
+  \ add date filters\n   on the date column. NEVER omit date filters when a time period\
+  \ is stated.\n   Use $relative_date sentinels (see Semantics rules) for dynamic\
+  \ dates.\n3) Decide output shape:\n   - List of entities: dimensions + optional\
+  \ metrics.\n   - Single scalar: metrics only (no dimensions), or dimensions + rollup.\n\
+  4) Decide grouping:\n   - If question says 'by X' / 'per X' / 'for each X' / 'total\
+  \ for each X', put X in dimensions.\n   - CRITICAL: if the question names multiple\
+  \ specific values of a column (e.g. 'for building A, building B, building C') AND\
+  \ asks for 'a total for each' / 'count per' / 'breakdown', you MUST include that\
+  \ column in dimensions so the result has one row per value. Also use op='in' with\
+  \ the list of values as the filter.\n5) Decide metrics: use exactly the aggregations\
+  \ requested. Always give each metric an alias.\n6) Two-step aggregation (e.g. 'average\
+  \ per building'):\n   - Inner: group by dimension, compute per-group metric with\
+  \ alias.\n   - Rollup: compute avg/stddev/etc over that INNER metric alias.\n  \
+  \ - OMIT limit from inner plan so all groups are included.\n   - rollup.limit=1\
+  \ for scalar result.\n7) Order + limit: for 'top N' set order_by metric alias desc\
+  \ + limit=N.\n8) Multi-CTE questions: the outer query's `dataset` should be the\
+  \ CTE name that produces the rows you return (e.g. listing CTE), NOT the base table\
+  \ again with empty filters — or repeat the same filters/`where` on the outer query.\n"
+semantics_rules: "- Use 'contains' for fuzzy name/keyword matching (compiled as ILIKE\
+  \ %...%).\n- Use 'is_not_null' when excluding missing values is necessary for correctness.\n\
+  - Do NOT use avg(*) or avg(null) — avg/sum/min/max require a real column field.\n\
+  - For time-based filters use the $relative_date sentinel (never a SQL expression):\n\
+  \    last 7 days:  {\"$relative_date\": {\"op\": \"now_minus_days\", \"days\": 7}}\n\
+  \    last 24 hrs:  {\"$relative_date\": {\"op\": \"now_minus_hours\", \"hours\"\
+  : 24}}\n    today:        {\"$relative_date\": {\"op\": \"today\"}}\n    last calendar\
+  \ year (two filters on the date column, AND):\n      >= {\"$relative_date\": {\"\
+  op\": \"calendar_year_start\", \"year_offset\": -1}}\n      <  {\"$relative_date\"\
+  : {\"op\": \"calendar_year_start\", \"year_offset\": 0}}\n- Free-text keyword searches:\
+  \ OR \"contains\" across all plausible string columns\n  for that table from schema_summary\
+  \ — do not use only one column unless the question names it.\n- If the schema declares\
+  \ enum_columns, do NOT put free-text search terms into those columns;\n  they hold\
+  \ categorical values, not keywords.\n- For 'alignment': when counting distinct alignment,\
+  \ use count_distinct('id') — 'id' is the primary identifier.\n- For 'attribute':\
+  \ when counting distinct attribute, use count_distinct('id') — 'id' is the primary\
+  \ identifier.\n- For 'colour': when counting distinct colour, use count_distinct('id')\
+  \ — 'id' is the primary identifier.\n- For 'gender': when counting distinct gender,\
+  \ use count_distinct('id') — 'id' is the primary identifier.\n- For 'publisher':\
+  \ when counting distinct publisher, use count_distinct('id') — 'id' is the primary\
+  \ identifier.\n- For 'race': when counting distinct race, use count_distinct('id')\
+  \ — 'id' is the primary identifier.\n- For 'superhero': when counting distinct superhero,\
+  \ use count_distinct('id') — 'id' is the primary identifier.\n- Table 'superhero'\
+  \ declares keyword_search_or [superhero_name, full_name]: use advanced `where.or`\
+  \ of `contains` on those columns for keyword search; legacy filters are ANDed.\n\
+  - For 'superpower': when counting distinct superpower, use count_distinct('id')\
+  \ — 'id' is the primary identifier."
+legacy_queryplan_format:
+  description: Use this format for all standard analytics queries. Easier for LLMs
+    and covers the vast majority of use cases.
+  shape:
+    version: '1.0'
+    dataset: <table name from schema_summary>
+    dimensions:
+    - field: <logical_column>
+      alias: <string>
+    metrics:
+    - agg: count|count_distinct|sum|avg|min|max
+      field: <logical_column_or_*>
+      alias: <string>
+    filters:
+    - field: <logical_column>
+      op: <operator>
+      value: <any or null>
+    order_by:
+    - by: <dimension_alias_or_metric_alias>
+      dir: asc|desc
+    limit: <int>
+    offset: <int>
+    rollup: <optional — see rollup block>
+rollup:
+  description: 'Use rollup for aggregate-of-aggregates: ''average per X'', ''stddev
+    per X'', ''total of totals'', etc. The inner query groups and computes per-group
+    values. The rollup outer query aggregates those values.'
+  shape:
+    metrics:
+    - agg: avg|sum|min|max|count|count_distinct|stddev|variance
+      field: <inner_alias>
+      alias: <string>
+    dimensions: <optional outer grouping>
+    filters: <optional filters on inner outputs>
+    order_by: <optional>
+    limit: <int — use 1 for scalar result>
+    offset: <int>
+  critical: rollup.metrics[*].field MUST be an alias from the inner plan (a metric
+    alias or dimension alias), NOT a raw dataset column name.
+validation_checklist: 'Before outputting JSON, verify:
+
+  - dataset is a table name from schema_summary
+
+  - every dimension has {field, alias}
+
+  - every metric has {agg, field, alias} with unique aliases
+
+  - no metric uses avg/sum/min/max with field=''*'' or field=null
+
+  - order_by.by references a dimension alias or metric alias
+
+  - limit and offset are present
+
+  - if rollup: rollup.metrics is non-empty, rollup.metrics[*].field references an
+  inner alias
+
+  '
+examples:
+- question: How many alignment are there in total?
+  plan:
+    version: '1.0'
+    dataset: alignment
+    dimensions: []
+    metrics:
+    - agg: count_distinct
+      field: id
+      alias: total_alignment
+    filters: []
+    order_by: []
+    limit: 1
+    offset: 0
+- question: Show me alignment where id contains 'example'
+  plan:
+    version: '1.0'
+    dataset: alignment
+    dimensions: []
+    metrics: []
+    filters:
+    - field: id
+      op: contains
+      value: example
+    order_by: []
+    limit: 100
+    offset: 0
+- question: How many alignment per alignment?
+  plan:
+    version: '1.0'
+    dataset: alignment
+    dimensions:
+    - field: alignment
+      alias: alignment
+    metrics:
+    - agg: count_distinct
+      field: id
+      alias: alignment_count
+    filters: []
+    order_by:
+    - by: alignment_count
+      dir: desc
+    limit: 100
+    offset: 0
+- question: How many alignment for value_A, value_B, value_C? Give a total for each.
+  note: When the user lists specific values and asks 'for each' / 'total for each',
+    use op='in' with the list AND include the column in dimensions so the result has
+    one row per value.
+  plan:
+    version: '1.0'
+    dataset: alignment
+    dimensions:
+    - field: alignment
+      alias: alignment
+    metrics:
+    - agg: count_distinct
+      field: id
+      alias: total_alignment
+    filters:
+    - field: alignment
+      op: in
+      value:
+      - value_A
+      - value_B
+      - value_C
+    order_by:
+    - by: total_alignment
+      dir: desc
+    limit: 100
+    offset: 0
+- question: What is the average number of alignment per alignment?
+  note: 'Two-step rollup: inner groups by dimension, outer computes avg over inner
+    alias.'
+  plan:
+    version: '1.0'
+    dataset: alignment
+    dimensions:
+    - field: alignment
+      alias: alignment
+    metrics:
+    - agg: count_distinct
+      field: id
+      alias: alignment_per_alignment
+    filters:
+    - field: alignment
+      op: is_not_null
+      value: null
+    order_by: []
+    offset: 0
+    rollup:
+      metrics:
+      - agg: avg
+        field: alignment_per_alignment
+        alias: avg_alignment_per_alignment
+      limit: 1
+      offset: 0
+- question: How many superhero matching a free-text keyword last year (search across
+    ['superhero_name', 'full_name'] with OR, not AND on one column)?
+  note: 'Table ''superhero'' has keyword_search_or [''superhero_name'', ''full_name'']:
+    use legacy filters for other constraints and a top-level `where` with `or` of
+    `cmp` contains for the keyword across ALL listed columns.'
+  plan:
+    version: '1.0'
+    dataset: superhero
+    dimensions: []
+    metrics:
+    - agg: count_distinct
+      field: id
+      alias: total_superhero
+    filters: []
+    where:
+      or:
+      - cmp:
+          left:
+            col: superhero_name
+          op: contains
+          right: keyword
+      - cmp:
+          left:
+            col: full_name
+          op: contains
+          right: keyword
+    order_by: []
+    limit: 1
+    offset: 0

@@ -1,0 +1,93 @@
+version: 1
+dialect: postgres
+context: 'BIRD Mini-Dev database: toxicology'
+tables:
+- name: atom
+  db_table: atom
+  columns:
+  - name: atom_id
+    db_column: atom_id
+    type: text
+  - name: molecule_id
+    db_column: molecule_id
+    type: text
+  - name: element
+    db_column: element
+    type: text
+  primary_id: atom_id
+- name: bond
+  db_table: bond
+  columns:
+  - name: bond_id
+    db_column: bond_id
+    type: text
+  - name: molecule_id
+    db_column: molecule_id
+    type: text
+  - name: bond_type
+    db_column: bond_type
+    type: text
+  primary_id: bond_id
+- name: connected
+  db_table: connected
+  columns:
+  - name: atom_id
+    db_column: atom_id
+    type: text
+  - name: atom_id2
+    db_column: atom_id2
+    type: text
+  - name: bond_id
+    db_column: bond_id
+    type: text
+- name: molecule
+  db_table: molecule
+  columns:
+  - name: molecule_id
+    db_column: molecule_id
+    type: text
+  - name: label
+    db_column: label
+    type: text
+  primary_id: molecule_id
+links:
+- name: atom_to_molecule
+  from_table: atom
+  to_table: molecule
+  join_type: left
+  'on':
+  - left: atom.molecule_id
+    op: '='
+    right: molecule.molecule_id
+- name: bond_to_molecule
+  from_table: bond
+  to_table: molecule
+  join_type: left
+  'on':
+  - left: bond.molecule_id
+    op: '='
+    right: molecule.molecule_id
+- name: connected_to_atom
+  from_table: connected
+  to_table: atom
+  join_type: left
+  'on':
+  - left: connected.atom_id2
+    op: '='
+    right: atom.atom_id
+- name: connected_to_atom
+  from_table: connected
+  to_table: atom
+  join_type: left
+  'on':
+  - left: connected.atom_id
+    op: '='
+    right: atom.atom_id
+- name: connected_to_bond
+  from_table: connected
+  to_table: bond
+  join_type: left
+  'on':
+  - left: connected.bond_id
+    op: '='
+    right: bond.bond_id

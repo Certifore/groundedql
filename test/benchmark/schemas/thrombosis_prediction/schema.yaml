@@ -1,0 +1,226 @@
+version: 1
+dialect: postgres
+context: 'BIRD Mini-Dev database: thrombosis_prediction'
+tables:
+- name: examination
+  db_table: examination
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: examination_date
+    db_column: '"Examination Date"'
+    type: date
+  - name: a_cl_ig_g
+    db_column: '"aCL IgG"'
+    type: float
+  - name: a_cl_ig_m
+    db_column: '"aCL IgM"'
+    type: float
+  - name: ana
+    db_column: ana
+    type: bigint
+  - name: ana_pattern
+    db_column: '"ANA Pattern"'
+    type: text
+  - name: a_cl_ig_a
+    db_column: '"aCL IgA"'
+    type: bigint
+  - name: diagnosis
+    db_column: diagnosis
+    type: text
+  - name: kct
+    db_column: kct
+    type: text
+  - name: rvvt
+    db_column: rvvt
+    type: text
+  - name: lac
+    db_column: lac
+    type: text
+  - name: symptoms
+    db_column: symptoms
+    type: text
+  - name: thrombosis
+    db_column: thrombosis
+    type: bigint
+  primary_date: examination_date
+- name: laboratory
+  db_table: laboratory
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: date
+    db_column: date
+    type: date
+  - name: got
+    db_column: got
+    type: bigint
+  - name: gpt
+    db_column: gpt
+    type: bigint
+  - name: ldh
+    db_column: ldh
+    type: bigint
+  - name: alp
+    db_column: alp
+    type: bigint
+  - name: tp
+    db_column: tp
+    type: float
+  - name: alb
+    db_column: alb
+    type: float
+  - name: ua
+    db_column: ua
+    type: float
+  - name: un
+    db_column: un
+    type: bigint
+  - name: cre
+    db_column: cre
+    type: float
+  - name: t_bil
+    db_column: '"T-BIL"'
+    type: float
+  - name: t_cho
+    db_column: '"T-CHO"'
+    type: bigint
+  - name: tg
+    db_column: tg
+    type: bigint
+  - name: cpk
+    db_column: cpk
+    type: bigint
+  - name: glu
+    db_column: glu
+    type: bigint
+  - name: wbc
+    db_column: wbc
+    type: float
+  - name: rbc
+    db_column: rbc
+    type: float
+  - name: hgb
+    db_column: hgb
+    type: float
+  - name: hct
+    db_column: hct
+    type: float
+  - name: plt
+    db_column: plt
+    type: bigint
+  - name: pt
+    db_column: pt
+    type: float
+  - name: aptt
+    db_column: aptt
+    type: bigint
+  - name: fg
+    db_column: fg
+    type: float
+  - name: pic
+    db_column: pic
+    type: bigint
+  - name: tat
+    db_column: tat
+    type: bigint
+  - name: tat2
+    db_column: tat2
+    type: bigint
+  - name: u_pro
+    db_column: '"U-PRO"'
+    type: text
+  - name: igg
+    db_column: igg
+    type: bigint
+  - name: iga
+    db_column: iga
+    type: bigint
+  - name: igm
+    db_column: igm
+    type: bigint
+  - name: crp
+    db_column: crp
+    type: text
+  - name: ra
+    db_column: ra
+    type: text
+  - name: rf
+    db_column: rf
+    type: text
+  - name: c3
+    db_column: c3
+    type: bigint
+  - name: c4
+    db_column: c4
+    type: bigint
+  - name: rnp
+    db_column: rnp
+    type: text
+  - name: sm
+    db_column: sm
+    type: text
+  - name: sc170
+    db_column: sc170
+    type: text
+  - name: ssa
+    db_column: ssa
+    type: text
+  - name: ssb
+    db_column: ssb
+    type: text
+  - name: centromea
+    db_column: centromea
+    type: text
+  - name: dna
+    db_column: dna
+    type: text
+  - name: dna_ii
+    db_column: '"DNA-II"'
+    type: bigint
+  primary_date: date
+- name: patient
+  db_table: patient
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: sex
+    db_column: sex
+    type: text
+  - name: birthday
+    db_column: birthday
+    type: date
+  - name: description
+    db_column: description
+    type: date
+  - name: first_date
+    db_column: '"First Date"'
+    type: date
+  - name: admission
+    db_column: admission
+    type: text
+  - name: diagnosis
+    db_column: diagnosis
+    type: text
+  primary_id: id
+  primary_date: birthday
+links:
+- name: examination_to_patient
+  from_table: examination
+  to_table: patient
+  join_type: left
+  'on':
+  - left: examination.id
+    op: '='
+    right: patient.id
+- name: laboratory_to_patient
+  from_table: laboratory
+  to_table: patient
+  join_type: left
+  'on':
+  - left: laboratory.id
+    op: '='
+    right: patient.id

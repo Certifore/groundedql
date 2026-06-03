@@ -1,0 +1,227 @@
+version: 1
+dialect: postgres
+context: 'BIRD Mini-Dev database: superhero'
+tables:
+- name: alignment
+  db_table: alignment
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: alignment
+    db_column: alignment
+    type: text
+  primary_id: id
+- name: attribute
+  db_table: attribute
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: attribute_name
+    db_column: attribute_name
+    type: text
+  primary_id: id
+- name: colour
+  db_table: colour
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: colour
+    db_column: colour
+    type: text
+  primary_id: id
+- name: gender
+  db_table: gender
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: gender
+    db_column: gender
+    type: text
+  primary_id: id
+- name: hero_attribute
+  db_table: hero_attribute
+  columns:
+  - name: hero_id
+    db_column: hero_id
+    type: bigint
+  - name: attribute_id
+    db_column: attribute_id
+    type: bigint
+  - name: attribute_value
+    db_column: attribute_value
+    type: bigint
+- name: hero_power
+  db_table: hero_power
+  columns:
+  - name: hero_id
+    db_column: hero_id
+    type: bigint
+  - name: power_id
+    db_column: power_id
+    type: bigint
+- name: publisher
+  db_table: publisher
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: publisher_name
+    db_column: publisher_name
+    type: text
+  primary_id: id
+- name: race
+  db_table: race
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: race
+    db_column: race
+    type: text
+  primary_id: id
+- name: superhero
+  db_table: superhero
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: superhero_name
+    db_column: superhero_name
+    type: text
+  - name: full_name
+    db_column: full_name
+    type: text
+  - name: gender_id
+    db_column: gender_id
+    type: bigint
+  - name: eye_colour_id
+    db_column: eye_colour_id
+    type: bigint
+  - name: hair_colour_id
+    db_column: hair_colour_id
+    type: bigint
+  - name: skin_colour_id
+    db_column: skin_colour_id
+    type: bigint
+  - name: race_id
+    db_column: race_id
+    type: bigint
+  - name: publisher_id
+    db_column: publisher_id
+    type: bigint
+  - name: alignment_id
+    db_column: alignment_id
+    type: bigint
+  - name: height_cm
+    db_column: height_cm
+    type: bigint
+  - name: weight_kg
+    db_column: weight_kg
+    type: bigint
+  primary_id: id
+  keyword_search_or:
+  - superhero_name
+  - full_name
+- name: superpower
+  db_table: superpower
+  columns:
+  - name: id
+    db_column: id
+    type: bigint
+  - name: power_name
+    db_column: power_name
+    type: text
+  primary_id: id
+links:
+- name: hero_attribute_to_attribute
+  from_table: hero_attribute
+  to_table: attribute
+  join_type: left
+  'on':
+  - left: hero_attribute.attribute_id
+    op: '='
+    right: attribute.id
+- name: hero_attribute_to_superhero
+  from_table: hero_attribute
+  to_table: superhero
+  join_type: left
+  'on':
+  - left: hero_attribute.hero_id
+    op: '='
+    right: superhero.id
+- name: hero_power_to_superhero
+  from_table: hero_power
+  to_table: superhero
+  join_type: left
+  'on':
+  - left: hero_power.hero_id
+    op: '='
+    right: superhero.id
+- name: hero_power_to_superpower
+  from_table: hero_power
+  to_table: superpower
+  join_type: left
+  'on':
+  - left: hero_power.power_id
+    op: '='
+    right: superpower.id
+- name: superhero_to_alignment
+  from_table: superhero
+  to_table: alignment
+  join_type: left
+  'on':
+  - left: superhero.alignment_id
+    op: '='
+    right: alignment.id
+- name: superhero_to_colour
+  from_table: superhero
+  to_table: colour
+  join_type: left
+  'on':
+  - left: superhero.eye_colour_id
+    op: '='
+    right: colour.id
+- name: superhero_to_gender
+  from_table: superhero
+  to_table: gender
+  join_type: left
+  'on':
+  - left: superhero.gender_id
+    op: '='
+    right: gender.id
+- name: superhero_to_colour
+  from_table: superhero
+  to_table: colour
+  join_type: left
+  'on':
+  - left: superhero.hair_colour_id
+    op: '='
+    right: colour.id
+- name: superhero_to_publisher
+  from_table: superhero
+  to_table: publisher
+  join_type: left
+  'on':
+  - left: superhero.publisher_id
+    op: '='
+    right: publisher.id
+- name: superhero_to_race
+  from_table: superhero
+  to_table: race
+  join_type: left
+  'on':
+  - left: superhero.race_id
+    op: '='
+    right: race.id
+- name: superhero_to_colour
+  from_table: superhero
+  to_table: colour
+  join_type: left
+  'on':
+  - left: superhero.skin_colour_id
+    op: '='
+    right: colour.id
