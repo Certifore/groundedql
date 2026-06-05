@@ -110,6 +110,11 @@ def _exported_column_count(stmt: sa.SelectBase) -> int:
     return len(stmt.exported_columns)
 
 
+def _ordered(expr: sa.ColumnElement, direction: str) -> sa.ColumnElement:
+    ordered = expr.asc() if direction == "asc" else expr.desc()
+    return ordered.nulls_last()
+
+
 # -----------------------------
 # Compiler
 # -----------------------------
@@ -358,7 +363,7 @@ class Compiler:
                          "For set_op, order_by.by must be a column/alias name (identifier).", f"{pp}.by")
                 _require(direction in {"asc", "desc"}, "INVALID_PLAN", "order_by.dir must be asc|desc.", f"{pp}.dir")
                 col = sa.column(by)
-                ob_exprs.append(col.asc() if direction == "asc" else col.desc())
+                ob_exprs.append(_ordered(col, direction))
             comb = comb.order_by(*ob_exprs)
 
         if limit is not None:
@@ -552,7 +557,7 @@ class Compiler:
                             by, inner_alias_map, dataset, cte_map=cte_map, path=f"{pp}.by", outer_alias_map=outer_alias_map
                         )
 
-                ob_exprs.append(e.asc() if direction == "asc" else e.desc())
+                ob_exprs.append(_ordered(e, direction))
             query = query.order_by(*ob_exprs)
 
         # LIMIT/OFFSET (only when no rollup)
@@ -664,7 +669,7 @@ class Compiler:
                 else:
                     _require(False, "INVALID_PLAN", "rollup.order_by.by must be an alias or inner column name.", f"{pp}.by")
 
-                ob_exprs.append(e.asc() if direction == "asc" else e.desc())
+                ob_exprs.append(_ordered(e, direction))
             outer_query = outer_query.order_by(*ob_exprs)
 
         if roll_limit is not None:             # only emit LIMIT on rollup if explicitly set
@@ -1018,6 +1023,8 @@ class Compiler:
             return tbl.c[c]
 
         if "." not in ref:
+            if default_table in inner_alias_map and default_table in self.tables and c in self.tables[default_table].columns:
+                return _resolve_column(inner_alias_map, default_table)
             inner_matches = [tname for tname, tdef in self.tables.items() if tname in inner_alias_map and c in tdef.columns]
             if len(inner_matches) > 1:
                 raise AmbiguousColumnError(c, inner_matches, path)
@@ -1195,7 +1202,7 @@ class Compiler:
                     e = self._compile_expr(item["expr"], alias_map, default_table, cte_map=cte_map, path=f"{ip}.expr", outer_alias_map=outer_alias_map)
                     direction = (item.get("dir") or "asc").lower()
                     _require(direction in {"asc", "desc"}, "INVALID_PLAN", "order dir must be asc|desc.", f"{ip}.dir")
-                    ob_exprs.append(e.asc() if direction == "asc" else e.desc())
+                    ob_exprs.append(_ordered(e, direction))
                 else:
                     if isinstance(item, str):
                         e = self._compile_expr(
@@ -1208,7 +1215,7 @@ class Compiler:
                         )
                     else:
                         e = self._compile_expr(item, alias_map, default_table, cte_map=cte_map, path=ip, outer_alias_map=outer_alias_map)
-                    ob_exprs.append(e.asc())
+                    ob_exprs.append(_ordered(e, "asc"))
 
             # Most window funcs come from sa.func.*; they support .over()
             _require(hasattr(base_expr, "over"), "INVALID_PLAN", "over.expr must support windowing (function).", f"{path}.over.expr")

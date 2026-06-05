@@ -375,6 +375,91 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
                 return False, f"legacy order_by string column: {e}"
             return False, f"legacy order_by: {e}"
 
+    if kind == "advanced_unqualified_col_prefers_dataset":
+        schema = _minimal_schema_for_compile()
+        plan = {
+            "version": "1.0",
+            "dataset": "orders",
+            "joins": [{"link": "orders_to_customers"}],
+            "select": [{"expr": {"func": "count", "args": [{"col": "customer_id"}]}, "alias": "total"}],
+            "where": {"cmp": {"left": {"col": "customers.name"}, "op": "=", "right": "Acme"}},
+            "limit": 1,
+            "offset": 0,
+        }
+        try:
+            c = Compiler(schema)
+            sql, _ = c.compile(plan)
+            if "orders_1.customer_id" not in sql:
+                return False, f"expected unqualified customer_id to resolve to dataset table: {sql[:240]}"
+            return True, None
+        except Exception as e:
+            return False, f"advanced unqualified col compile: {e}"
+
+    if kind == "multi_hop_join_order_survives_canonical":
+        schema = yaml.safe_load((ROOT / "test" / "benchmark" / "schemas" / "student_club" / "schema.yaml").read_text())
+        plan = {
+            "version": "1.0",
+            "dataset": "expense",
+            "select": [{"expr": {"col": "approved"}, "alias": "approved"}],
+            "where": {
+                "and": [
+                    {"cmp": {"left": {"col": "event.event_name"}, "op": "=", "right": "October Meeting"}},
+                    {"cmp": {"left": {"col": "event.event_date"}, "op": "starts_with", "right": "2019-10-08"}},
+                ]
+            },
+            "limit": 100,
+            "offset": 0,
+        }
+        try:
+            joined = auto_inject_joins(plan, schema)
+            canonical = canonicalize_query_plan(joined)
+            links = [j.get("link") for j in canonical.get("joins") or []]
+            if links != ["expense_to_budget", "budget_to_event"]:
+                return False, f"multi-hop link order changed: {links}"
+            sql, _ = Compiler(schema).compile(canonical)
+            sql_l = sql.lower()
+            if "join budget" not in sql_l or "join event" not in sql_l:
+                return False, f"expected budget and event joins: {sql[:320]}"
+            if sql_l.index("join budget") > sql_l.index("join event"):
+                return False, f"event joined before bridge table: {sql[:320]}"
+            return True, None
+        except Exception as e:
+            return False, f"multi-hop join order compile: {e}"
+
+    if kind == "evidence_formula_patterns_compile":
+        from intentql.evidence_planner import build_evidence_plan
+
+        cases = [
+            (
+                "debit_card_specializing",
+                "What is the percentage of the customers who used EUR in 2012/8/25?\n\n"
+                "Evidence: '2012/8/25' can be represented by '2012-08-25'",
+            ),
+            (
+                "debit_card_specializing",
+                'What is the percentage of "premium" against the overall segment in Country = "SVK"?\n\nEvidence: ',
+            ),
+            (
+                "student_club",
+                "Among the events attended by more than 10 members of the Student_Club, how many of them are meetings?\n\n"
+                "Evidence: meetings events refers to type = 'Meeting'; attended by more than 10 members refers to COUNT(event_id) > 10",
+            ),
+        ]
+        for db_id, question in cases:
+            schema = yaml.safe_load((ROOT / "test" / "benchmark" / "schemas" / db_id / "schema.yaml").read_text())
+            plan = build_evidence_plan(question, schema)
+            if not isinstance(plan, dict):
+                return False, f"expected evidence plan for {db_id}: {question}"
+            body = {k: v for k, v in plan.items() if k != "meta"}
+            try:
+                resolved = canonicalize_query_plan(auto_inject_joins(body, schema))
+                sql, _ = Compiler(schema).compile(resolved)
+                if "select" not in sql.lower():
+                    return False, f"compiled SQL unexpected for {db_id}: {sql[:240]}"
+            except Exception as e:
+                return False, f"evidence formula compile for {db_id}: {e}"
+        return True, None
+
     if kind == "compound_cte_compiles":
         plan = spec.get("plan")
         if not isinstance(plan, dict):

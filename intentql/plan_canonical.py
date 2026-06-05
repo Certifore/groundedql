@@ -3,12 +3,12 @@ Deterministic structural canonicalization of QueryPlan JSON.
 
 Goals:
   - Same semantic plan (up to commutative reorderings we define) → same bytes for hashing.
-  - Stable join / filter / dimension / metric ordering so auto_inject and LLM key order
+  - Stable filter / dimension / metric ordering so LLM key order
     do not change plan_hash or compiled SQL shape.
 
 Limits:
   - Does not prove semantic equivalence (different JSON can mean the same query).
-  - Preserves order where it matters: order_by, case.whens, rollup.order_by, set_op sides.
+  - Preserves order where it matters: joins, order_by, case.whens, rollup.order_by, set_op sides.
   - NL → plan is still non-deterministic when the LLM varies; this normalizes structure only.
 """
 from __future__ import annotations
@@ -100,7 +100,9 @@ def _canonicalize_commutative_lists(obj: Json) -> None:
             elif k == "joins" and isinstance(v, list):
                 for x in v:
                     _canonicalize_commutative_lists(x)
-                obj[k] = sorted(v, key=_join_sort_key)
+                # Link joins form a path through the schema graph; reordering can
+                # reference bridge-table aliases before they have been joined.
+                obj[k] = v
             elif k == "with" and isinstance(v, list):
                 for x in v:
                     _canonicalize_commutative_lists(x)

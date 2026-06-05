@@ -29,6 +29,7 @@ from .value_index import (
 )
 from .intent_normalize import normalize_intent
 from .intent_memory import IntentMemory
+from .evidence_planner import build_evidence_plan
 
 
 # ---------------------------------------------------------------------------
@@ -1338,6 +1339,11 @@ class IntentPlanner:
         schema = self._read_schema()
         retry_count = 0
         feedback = None
+
+        evidence_plan = build_evidence_plan(question, schema, value_index=self.value_index)
+        if evidence_plan is not None:
+            print(f"[DSL] Built plan from evidence: {evidence_plan}", file=sys.stderr)
+            return evidence_plan
 
         # Step 1: Retrieve similar past examples for few-shot prompting
         few_shot_prompt = None

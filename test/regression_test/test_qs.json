@@ -2462,5 +2462,29 @@
     "compile": {
       "kind": "intent_phase1_conditional_formula_multi_output_compiles"
     }
+  },
+  {
+    "name": "compile_advanced_unqualified_col_prefers_dataset",
+    "question": "Advanced expressions resolve unqualified joined columns to the base dataset when possible.",
+    "type": "compile",
+    "compile": {
+      "kind": "advanced_unqualified_col_prefers_dataset"
+    }
+  },
+  {
+    "name": "compile_multi_hop_join_order_survives_canonical",
+    "question": "Canonicalization preserves link path order for multi-hop joins.",
+    "type": "compile",
+    "compile": {
+      "kind": "multi_hop_join_order_survives_canonical"
+    }
+  },
+  {
+    "name": "compile_evidence_formula_patterns_compile",
+    "question": "Evidence/direct formula shortcuts compile through join injection.",
+    "type": "compile",
+    "compile": {
+      "kind": "evidence_formula_patterns_compile"
+    }
   }
 ]
