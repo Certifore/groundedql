@@ -112,7 +112,7 @@ Run `intentql --help` for full options.
 
 ## Documentation
 
-Full documentation, benchmarks, and guides are in the [intentql_docs](https://github.com/Certifore/intentql_docs) repository.
+Full documentation, benchmarks, and guides are at [certifore.github.io/intentql_docs](https://certifore.github.io/intentql_docs) ([source](https://github.com/Certifore/intentql_docs)).
 
 See [ROADMAP.md](ROADMAP.md) for planned capabilities (lookup, trends, ratios, multi-step NL, and expressiveness goals).
 
