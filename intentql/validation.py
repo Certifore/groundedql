@@ -43,7 +43,7 @@ def load_schema_yaml(schema_path: str) -> Dict[str, Any]:
 def _schema_tables(schema: Dict[str, Any]) -> Dict[str, Set[str]]:
     """
     Returns:
-      { "assets": {"asset_tag", ...}, "work_orders": {...} }
+      { "records": {"record_id", ...}, "categories": {...} }
     """
     out: Dict[str, Set[str]] = {}
     for t in schema.get("tables", []) or []:

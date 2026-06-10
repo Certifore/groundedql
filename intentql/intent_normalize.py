@@ -33,8 +33,6 @@ def normalize_intent(
 
     intent = _absorb_keyword_filters(intent, kso_cols)
     intent = _ensure_group_by_is_list(intent)
-    intent = _coerce_work_order_volume_dataset(intent, question, schema)
-    intent = _strip_spurious_work_token_as_primary_id(intent, question, schema)
     intent = _inject_primary_id_from_question(intent, question, schema)
     intent = _inject_single_year_filter_from_question(intent, question, schema)
     intent = _infer_time_bucket_for_trends(intent, question, schema)
@@ -199,73 +197,6 @@ def _ensure_group_by_is_list(intent: Dict[str, Any]) -> Dict[str, Any]:
     return intent
 
 
-def _coerce_work_order_volume_dataset(
-    intent: Dict[str, Any],
-    question: Optional[str],
-    schema: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Use the work-order fact table for counts per asset, not a dimension/catalog table.
-
-    LLMs often pick a table whose *name* matches the word \"asset\" (e.g. ``assets``) and
-    run COUNT(*) there — that does **not** count work orders. When the user explicitly
-    mentions work orders and groups by ``asset_tag``, redirect to the table that holds
-    work order rows.
-
-    Optional per-table schema key ``alternate_dataset_for_work_order_counts`` (string table
-    name) names the target dataset. If unset, and the current dataset is ``assets`` and a
-    table named ``work_orders`` exists with the same ``group_by`` columns, use
-    ``work_orders``.
-    """
-    if not question:
-        return intent
-    if not re.search(r"\bwork orders?\b", question, re.I):
-        return intent
-
-    group_by = intent.get("group_by") or []
-    if isinstance(group_by, str):
-        group_by = [group_by]
-    if "asset_tag" not in group_by:
-        return intent
-
-    ds = intent.get("dataset") or ""
-    table = _table_meta(schema, ds)
-    if not table:
-        return intent
-
-    target = table.get("alternate_dataset_for_work_order_counts")
-    if isinstance(target, str) and target.strip():
-        target = target.strip()
-    else:
-        target = ""
-        if ds == "assets" and _table_meta(schema, "work_orders"):
-            wo_cols = _column_names_set(_table_meta(schema, "work_orders"))
-            if "asset_tag" in wo_cols:
-                target = "work_orders"
-
-    if not target:
-        return intent
-
-    tgt_table = _table_meta(schema, target)
-    if not tgt_table:
-        return intent
-    tgt_cols = _column_names_set(tgt_table)
-    if not all(c in tgt_cols for c in group_by):
-        return intent
-
-    if ds == target:
-        return intent
-
-    print(
-        f"[Normalize] Switched dataset {ds!r} → {target!r} "
-        f"(work order volume grouped by {group_by}; not the catalog/dimension table).",
-        file=sys.stderr,
-    )
-    intent["dataset"] = target
-    if intent.get("sort_column") == "asset_tag":
-        intent["sort_column"] = None
-    return intent
-
-
 def _normalize_group_by_for_multi_value_filters(
     intent: Dict[str, Any],
     question: Optional[str],
@@ -320,7 +251,7 @@ def _infer_dimension_only_answer(
     asks_ranked_entity = bool(
         re.search(r"\bwhich\b.*\b(?:most|least|highest|lowest|biggest|smallest|peak|recorded)\b", q)
         or re.search(r"\bwho\b.*\b(?:most|least|highest|lowest|biggest|smallest)\b", q)
-        or re.search(r"\bwhat\s+(?:year|month|quarter|customer|segment|category|country)\b.*\b(?:most|least|highest|lowest|peak|recorded)\b", q)
+        or re.search(r"\bwhat\b.*\b(?:most|least|highest|lowest|peak|recorded)\b", q)
         or re.search(r"\bwhat\b.*\bpeak\s+(?:year|month|quarter)\b", q)
     )
     if not asks_ranked_entity:
@@ -350,8 +281,18 @@ def _directly_linked_tables(schema: Dict[str, Any], dataset: str) -> List[str]:
 
 
 def _unique_linked_ref_for_column(schema: Dict[str, Any], dataset: str, col: str) -> Optional[str]:
-    if not isinstance(col, str) or not col or "." in col:
+    if not isinstance(col, str) or not col:
         return None
+    if "." in col:
+        if _column_ref_valid(schema, dataset, col):
+            return col
+        _hinted_table, local_col = _split_column_ref(schema, dataset, col)
+        matches = [
+            f"{table_name}.{local_col}"
+            for table_name in _directly_linked_tables(schema, dataset)
+            if local_col in _column_names_set(_table_meta(schema, table_name))
+        ]
+        return matches[0] if len(matches) == 1 else None
     if _column_ref_valid(schema, dataset, col):
         for table_name in _directly_linked_tables(schema, dataset):
             table = _table_meta(schema, table_name)
@@ -1430,44 +1371,6 @@ def _coerce_average_per_period_intent(
 
 
 # --- Phase 1: optional ID hints from question, trend bucketing ----------------
-
-
-def _strip_spurious_work_token_as_primary_id(
-    intent: Dict[str, Any],
-    question: Optional[str],
-    schema: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Remove primary_id filter value WORK when the user said 'work order(s)'.
-
-    This is a common structured-output mistake: the model treats the word **work**
-    as a literal ID. Not domain-specific to WO formats — English phrase guard only.
-    """
-    if not question:
-        return intent
-    q = question.lower()
-    if "work order" not in q:
-        return intent
-    dataset = intent.get("dataset") or ""
-    table = _table_meta(schema, dataset)
-    pid = table.get("primary_id")
-    if not pid:
-        return intent
-    kept: List[Dict[str, Any]] = []
-    for f in intent.get("filters") or []:
-        if f.get("column") != pid:
-            kept.append(f)
-            continue
-        vals = f.get("values") or []
-        if len(vals) == 1 and str(vals[0]).strip().upper() == "WORK":
-            print(
-                "[Normalize] Dropped spurious primary_id filter WORK "
-                "(misread from 'work order(s)' in the question).",
-                file=sys.stderr,
-            )
-            continue
-        kept.append(f)
-    intent["filters"] = kept
-    return intent
 
 
 def _compiled_intent_id_patterns(table: Dict[str, Any]) -> List[re.Pattern]:

@@ -1,8 +1,8 @@
 """
 value_index.py — Database value index for constraining LLM intent extraction.
 
-Queries the live database at startup for distinct values of key columns
-(building names, asset keywords, status codes, etc.) and provides:
+Queries the live database at startup for distinct values of categorical columns and
+provides:
 
 1. Pick-lists to inject into the LLM prompt (enum-style constraints)
 2. Fuzzy matching to resolve LLM-extracted values against real data
@@ -33,18 +33,7 @@ def build_value_index(
 
     Returns::
 
-        {
-            "work_orders": {
-                "building_name": ["ATHENAEUM", "BECHTEL RESIDENCE", ...],
-                "status_code": ["CLOSED", "COMPLETE", ...],
-                ...
-            },
-            "assets": {
-                "building_name": ["ATHENAEUM", "BECHTEL MALL", ...],
-                "keyword_of_asset": ["AIR HANDLER", "FIRE EXTINGUISHER", ...],
-                ...
-            },
-        }
+        {"orders": {"status": ["open", "closed"], "region": ["east", "west"]}}
     """
     schema = _load_schema(schema_path)
     index: Dict[str, Dict[str, List[str]]] = {}
@@ -69,7 +58,8 @@ def build_value_index(
                 with engine.connect() as conn:
                     rows = conn.execute(sql, {"lim": max_distinct}).fetchall()
                 values = [str(r[0]).strip() for r in rows if r[0] and str(r[0]).strip()]
-                if values:
+                explicitly_enabled = col_meta.get("value_index") is True
+                if values and (explicitly_enabled or len(values) < max_distinct):
                     table_index[col_logical] = values
                     print(
                         f"[ValueIndex] {logical_name}.{col_logical}: {len(values)} values",
@@ -90,25 +80,28 @@ def build_value_index(
 def _get_indexable_columns(table: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Decide which columns are worth indexing for pick-lists.
 
-    Index columns that are categorical (varchar with limited distinct values):
-    building names, status codes, priority codes, asset keywords, etc.
-    Skip free-text columns and high-cardinality ID columns.
+    Index text columns that are likely categorical. Schema authors can set
+    ``value_index: true`` or ``value_index: false`` on a column to override the
+    generic heuristic.
     """
-    skip_patterns = {
-        "description", "long_desc", "desc", "comment", "note",
-        "work_order_id", "worker_id", "worker_name",
-        "asset_tag", "tag_number", "phase_id",
-        "shop_id", "building_id", "floor_id", "location_code",
-    }
+    primary_id = table.get("primary_id")
+    free_text_tokens = {"description", "comment", "note", "content", "body", "details"}
     indexable = []
     for col in table.get("columns", []):
         cname = col.get("name", "")
         ctype = (col.get("type") or "").lower()
+        override = col.get("value_index")
+        if override is False:
+            continue
         if ctype not in ("varchar", "text"):
             continue
-        if cname.lower() in skip_patterns:
+        if override is True:
+            indexable.append(col)
             continue
-        if any(pat in cname.lower() for pat in {"description", "long_desc", "desc"}):
+        normalized = cname.lower()
+        if cname == primary_id or normalized == "id" or normalized.endswith("_id"):
+            continue
+        if any(token in normalized for token in free_text_tokens):
             continue
         indexable.append(col)
     return indexable

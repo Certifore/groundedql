@@ -147,13 +147,13 @@ You are an intent extractor.  Given a database schema and a user question,
 output a JSON object capturing WHAT the user wants — not HOW to query it.
 
 Rules:
-- dataset: pick the ONE table that has the data. If the question is about how many
-  **work orders** each asset has (or which asset has the most work orders), the rows to
-  count live on the **work_orders** (or similarly named) table — not on an **assets** /
-  catalog table that describes equipment. Count work_order rows grouped by asset_tag.
-- keyword: the topic/trade word the user is asking about (e.g. "plumbing",
-  "electrical", "HVAC").  Leave null if the question has no free-text topic.
-  Use the root form of the word (e.g. "plumbing" not "plumb").
+- dataset: pick the ONE table whose rows represent the thing being listed, counted, or
+  aggregated.  When a question counts events or transactions per related entity, choose
+  the event/transaction table as dataset and group by the linked entity field; do not
+  count rows from a descriptive catalog table merely because it names the entity.
+- keyword: the free-text topic the user is asking about.  Leave null if the question has
+  no free-text topic.  Prefer the canonical/root form when the schema descriptions support
+  one.
 - filters: column + optional op + values.  Use UPPER CASE for values that the schema says
   are stored in upper case.  If a filter column belongs to a linked table, write
   it as table.column (for example customers.country) so the deterministic link
@@ -161,18 +161,14 @@ Rules:
   Supported ops: =, !=, >, >=, <, <=, in, not_in, contains, not_contains,
   starts_with, ends_with, between, is_null, is_not_null.  Leave op null when a
   simple equality/contains/in choice is enough.
-  When the user mentions building names, always use column "building_name" — never "asset_tag".
-  CRITICAL: if the question names specific entities (buildings, workers, etc.),
+  CRITICAL: if the question names specific entities,
   you MUST include them as filter values.  Never omit explicit entity names.
   CRITICAL: if a KNOWN DATABASE VALUES list is provided, you MUST pick values
   from that list.  Map user input to the closest matching known value.
-  For example, if the user says "bechtel" and the known building names include
-  "BECHTEL RESIDENCE", use "BECHTEL RESIDENCE".  If a user says "page house"
-  and the list has "PAGE HOUSE", use "PAGE HOUSE" exactly.
+  Preserve the exact stored spelling and casing from KNOWN DATABASE VALUES.
   If the user names a specific record ID, put it in filters on the table's
   primary_id column — do not rely on list mode alone.
-  Never use the substring "WORK" or similar as a primary_id value just because
-  the user said "work orders" — that names the entity type, not a row id.
+  Never infer a primary_id value merely from the name of an entity type.
 - time_range: pick from the enum if the question mentions a time period.
   "last year" → "last_year", "this year" → "this_year",
   "last 3 years" / "past three years" → "last_3_years",
@@ -183,8 +179,7 @@ Rules:
   to see individual records, details, or specific IDs.  When in doubt and
   the question names multiple entities, prefer "count".
   Use "ratio" for "what percent / what % / proportion / share" of rows match
-  a keyword (e.g. "what % of work orders are plumbing?") — set keyword to the
-  topic and aggregation to "ratio".
+  a condition or keyword — set the condition/keyword and aggregation to "ratio".
   For "ratio of A against B", "percentage of A compared with B", or
   "difference between A and B", also fill comparison:
   comparison.operator = "ratio" or "difference"; comparison.left.filters define
@@ -206,7 +201,7 @@ Rules:
 - group_by: if the question says "per X", "for each X", "by X", or lists
   multiple specific values and wants a total for each, put X's column here.
   IMPORTANT: when the question names multiple specific values of a column
-  (e.g. "for house A, house B, house C"), ALWAYS put that column in group_by.
+  and requests a result for each, ALWAYS put that column in group_by.
   For trends ("trend over …", "over time", "by month"), include the primary
   date column in group_by; normalization may add time_bucket (month/year).
   For "which year/month had the most/highest/peak <numeric measure>", group by
@@ -216,7 +211,7 @@ Rules:
 - time_bucket: optional — "month", "year", "quarter", or "day" when bucketing
   a trend over the primary date (usually inferred from the question).
 - sort_direction: "desc" for most/highest, "asc" for least/lowest.
-- sort_column: for "most recent / latest / newest" ONE record (e.g. one work order), use
+- sort_column: for "most recent / latest / newest" ONE record, use
   aggregation "list", group_by [], the table's primary_date column as sort_column,
   sort_direction "desc", limit 1. Do NOT use count+group_by(primary_id) for that —
   that ranks by row count, not by date.
@@ -1240,7 +1235,7 @@ def build_plan_from_intent(
                 )
 
     # --- safety: exclude null/empty values on group-by columns (aggregates only) ---
-    # When grouping by a column (e.g. asset_tag to find "which asset has the most"),
+    # When grouping by a column to find a ranked entity,
     # null/empty values form a giant catch-all bucket that dominates the results.
     # Do NOT apply to pure "list" queries: output columns are often optional text fields
     # that may be null without invalidating the row.

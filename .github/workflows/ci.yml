@@ -9,8 +9,36 @@ on:
       - main
 
 jobs:
-  lint-tests:
-    name: Lint tests (no DB required)
+  tests:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -e .
+
+      - name: Run lint tests
+        run: python test/test_main.py lint
+
+      - name: Run generic planner resolution tests
+        run: python test/test_generic_planner_resolution.py
+
+  package:
+    name: Build package
     runs-on: ubuntu-latest
 
     steps:
@@ -22,13 +50,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
-          cache-dependency-path: requirements.txt
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Install build tooling
+        run: pip install build
 
-      - name: Install package
-        run: pip install -e .
-
-      - name: Run lint tests
-        run: python test/test_main.py lint
+      - name: Build source and wheel distributions
+        run: python -m build

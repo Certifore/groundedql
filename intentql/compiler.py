@@ -403,12 +403,14 @@ class Compiler:
         group_by = plan.get("group_by", []) or []
         having = plan.get("having")
         distinct = bool(plan.get("distinct", False))
+        distinct_on = plan.get("distinct_on", []) or []
 
         _require(isinstance(select_items, list), "INVALID_PLAN", "select must be a list.", f"{path}.select")
         _require(len(select_items) >= 1, "INVALID_PLAN", "select must have at least 1 item.", f"{path}.select")
         _require(len(select_items) <= self.max_select, "QUERY_TOO_COMPLEX", "Too many select items.", f"{path}.select")
         _require(isinstance(joins, list), "INVALID_PLAN", "joins must be a list.", f"{path}.joins")
         _require(len(joins) <= self.max_joins, "QUERY_TOO_COMPLEX", "Too many joins.", f"{path}.joins")
+        _require(isinstance(distinct_on, list), "INVALID_PLAN", "distinct_on must be a list.", f"{path}.distinct_on")
 
         source = self._resolve_relation(dataset, cte_map, f"{path}.dataset")
         from_alias = self._new_alias(dataset)
@@ -433,6 +435,7 @@ class Compiler:
                     dataset,
                     link_name,
                     p,
+                    join_type=j.get("type"),
                     cte_map=cte_map,
                     outer_alias_map=outer_alias_map,
                 )
@@ -499,7 +502,20 @@ class Compiler:
 
         query = sa.select(*compiled_select).select_from(from_clause)
 
-        if distinct:
+        if distinct_on:
+            distinct_exprs = [
+                self._compile_expr(
+                    expr,
+                    inner_alias_map,
+                    dataset,
+                    cte_map=cte_map,
+                    path=f"{path}.distinct_on[{idx}]",
+                    outer_alias_map=outer_alias_map,
+                )
+                for idx, expr in enumerate(distinct_on)
+            ]
+            query = query.distinct(*distinct_exprs)
+        elif distinct:
             query = query.distinct()
 
         # WHERE
@@ -940,6 +956,7 @@ class Compiler:
         link_name: str,
         path: str,
         *,
+        join_type: Optional[str] = None,
         cte_map: Dict[str, sa.CTE],
         outer_alias_map: Optional[Dict[str, sa.FromClause]] = None,
     ) -> Tuple[sa.FromClause, Dict[str, sa.FromClause]]:
@@ -982,7 +999,9 @@ class Compiler:
             conds.append(l_expr == r_expr)
 
         on_expr = sa.and_(*conds) if conds else sa.true()
-        is_outer = (link.join_type == "left")
+        effective_join_type = (join_type or link.join_type).lower()
+        _require(effective_join_type in {"left", "inner"}, "INVALID_PLAN", "Link join type must be left|inner.", path)
+        is_outer = (effective_join_type == "left")
         from_clause = from_clause.join(right_tbl, on_expr, isouter=is_outer)
         return from_clause, alias_map
 

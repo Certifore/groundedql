@@ -631,7 +631,7 @@ tables:
     type: text
   primary_id: id
 links:
-- name: match_to_player
+- name: match_to_player_away_player_10
   from_table: match
   to_table: player
   join_type: left
@@ -639,7 +639,7 @@ links:
   - left: match.away_player_10
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_away_player_11
   from_table: match
   to_table: player
   join_type: left
@@ -647,7 +647,7 @@ links:
   - left: match.away_player_11
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_away_player_1
   from_table: match
   to_table: player
   join_type: left
@@ -655,7 +655,7 @@ links:
   - left: match.away_player_1
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_away_player_2
   from_table: match
   to_table: player
   join_type: left
@@ -663,7 +663,7 @@ links:
   - left: match.away_player_2
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_away_player_3
   from_table: match
   to_table: player
   join_type: left
@@ -671,7 +671,7 @@ links:
   - left: match.away_player_3
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_away_player_4
   from_table: match
   to_table: player
   join_type: left
@@ -679,7 +679,7 @@ links:
   - left: match.away_player_4
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_away_player_5
   from_table: match
   to_table: player
   join_type: left
@@ -687,7 +687,7 @@ links:
   - left: match.away_player_5
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_away_player_6
   from_table: match
   to_table: player
   join_type: left
@@ -695,7 +695,7 @@ links:
   - left: match.away_player_6
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_away_player_7
   from_table: match
   to_table: player
   join_type: left
@@ -703,7 +703,7 @@ links:
   - left: match.away_player_7
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_away_player_8
   from_table: match
   to_table: player
   join_type: left
@@ -711,7 +711,7 @@ links:
   - left: match.away_player_8
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_away_player_9
   from_table: match
   to_table: player
   join_type: left
@@ -719,7 +719,7 @@ links:
   - left: match.away_player_9
     op: '='
     right: player.player_api_id
-- name: match_to_team
+- name: match_to_team_away_team_api_id
   from_table: match
   to_table: team
   join_type: left
@@ -727,7 +727,7 @@ links:
   - left: match.away_team_api_id
     op: '='
     right: team.team_api_id
-- name: match_to_player
+- name: match_to_player_home_player_10
   from_table: match
   to_table: player
   join_type: left
@@ -735,7 +735,7 @@ links:
   - left: match.home_player_10
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_home_player_11
   from_table: match
   to_table: player
   join_type: left
@@ -743,7 +743,7 @@ links:
   - left: match.home_player_11
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_home_player_1
   from_table: match
   to_table: player
   join_type: left
@@ -751,7 +751,7 @@ links:
   - left: match.home_player_1
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_home_player_2
   from_table: match
   to_table: player
   join_type: left
@@ -759,7 +759,7 @@ links:
   - left: match.home_player_2
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_home_player_3
   from_table: match
   to_table: player
   join_type: left
@@ -767,7 +767,7 @@ links:
   - left: match.home_player_3
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_home_player_4
   from_table: match
   to_table: player
   join_type: left
@@ -775,7 +775,7 @@ links:
   - left: match.home_player_4
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_home_player_5
   from_table: match
   to_table: player
   join_type: left
@@ -783,7 +783,7 @@ links:
   - left: match.home_player_5
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_home_player_6
   from_table: match
   to_table: player
   join_type: left
@@ -791,7 +791,7 @@ links:
   - left: match.home_player_6
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_home_player_7
   from_table: match
   to_table: player
   join_type: left
@@ -799,7 +799,7 @@ links:
   - left: match.home_player_7
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_home_player_8
   from_table: match
   to_table: player
   join_type: left
@@ -807,7 +807,7 @@ links:
   - left: match.home_player_8
     op: '='
     right: player.player_api_id
-- name: match_to_player
+- name: match_to_player_home_player_9
   from_table: match
   to_table: player
   join_type: left
@@ -815,7 +815,7 @@ links:
   - left: match.home_player_9
     op: '='
     right: player.player_api_id
-- name: match_to_team
+- name: match_to_team_home_team_api_id
   from_table: match
   to_table: team
   join_type: left
@@ -863,3 +863,19 @@ links:
   - left: team_attributes.team_fifa_api_id
     op: '='
     right: team.team_fifa_api_id
+- name: match_to_country_country_id
+  from_table: match
+  to_table: country
+  join_type: left
+  'on':
+  - left: match.country_id
+    op: '='
+    right: country.id
+- name: match_to_league_league_id
+  from_table: match
+  to_table: league
+  join_type: left
+  'on':
+  - left: match.league_id
+    op: '='
+    right: league.id

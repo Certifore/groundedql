@@ -9,6 +9,12 @@ Instead of letting an LLM generate free-form SQL, the LLM extracts a lightweight
 pip install intentql
 ```
 
+To use the OpenAI SDK adapter shown below:
+
+```bash
+pip install "intentql[openai]"
+```
+
 With optional few-shot memory (recommended for production):
 
 ```bash
@@ -109,3 +115,14 @@ Run `intentql --help` for full options.
 Full documentation, benchmarks, and guides are in the [intentql_docs](https://github.com/Certifore/intentql_docs) repository.
 
 See [ROADMAP.md](ROADMAP.md) for planned capabilities (lookup, trends, ratios, multi-step NL, and expressiveness goals).
+
+## Contributing
+
+Contributions are welcome through pull requests. Please read
+[CONTRIBUTING.md](CONTRIBUTING.md) before submitting changes. The lead maintainer reviews
+and merges all changes into the official repository and is the only person who publishes
+official releases.
+
+## License
+
+IntentQL is licensed under the [Apache License 2.0](LICENSE).

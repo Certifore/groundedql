@@ -55,9 +55,7 @@ def _task_class_from_question(question: str) -> str:
     q = question.lower().strip()
     if re.search(r"\b(most\s+recent|latest|newest)\b", q):
         return "sorted_list"
-    if re.search(r"\b(what percent|what %|proportion|what share)\b", q) or (
-        "%" in q and "work order" in q
-    ):
+    if re.search(r"\b(what percent|what %|proportion|what share)\b", q) or "%" in q:
         return "ratio"
     if any(
         p in q
@@ -73,8 +71,8 @@ def _task_class_from_question(question: str) -> str:
         )
     ):
         return "trend"
-    if re.search(r"\b(details?|show me|look\s*up|lookup)\b", q) and (
-        re.search(r"\b(id|number)\b", q) or re.search(r"\bwo[-\s]?\d", q, re.I)
+    if re.search(r"\b(details?|show me|look\s*up|lookup)\b", q) and re.search(
+        r"\b(id|number|code)\b", q
     ):
         return "detail_list"
     if re.search(
@@ -88,8 +86,7 @@ def _task_class_from_question(question: str) -> str:
     ):
         return "group_rank"
     if re.search(r"\b(how many|count|total|number of)\b", q) and not re.search(
-        r"\b(per|each|every|by\s+(asset|building|location))\b",
-        q,
+        r"\b(per|each|every|by)\b", q
     ):
         return "scalar_count"
     return "generic"

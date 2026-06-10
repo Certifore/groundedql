@@ -447,7 +447,7 @@ _TWO_STEP_PATTERNS = [
     r"\baverage\s+per\b",
     r"\bavg\s+per\b",
     r"\bmean\s+per\b",
-    # Allow any words between the stat function and "per" (e.g. "average number of work orders per")
+    # Allow any words between the statistic and "per" (e.g. "average number of records per")
     r"\baverage\s+\w+.*?\bper\b",
     r"\bmean\s+\w+.*?\bper\b",
     r"\bstandard\s+deviation\s+\w+.*?\bper\b",
@@ -589,7 +589,7 @@ def _check_grain_expr(
     if not col_ref:
         return
 
-    # Strip table prefix if present (e.g. "work_orders.phase_id" -> "phase_id")
+    # Strip table prefix if present (e.g. "records.category_id" -> "category_id")
     col_name = col_ref.split(".")[-1] if "." in col_ref else col_ref
 
     if col_name == "*":

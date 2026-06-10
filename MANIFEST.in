@@ -1,5 +1,9 @@
 include README.md
 include LICENSE
+include NOTICE
+include CONTRIBUTING.md
+include GOVERNANCE.md
+include SECURITY.md
 include ROADMAP.md
 
 exclude config/schema.yaml

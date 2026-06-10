@@ -88,7 +88,7 @@ class QueryPlan(BaseModel):
     model_config = STRICT
 
     version: Literal["1.0"] = "1.0"
-    dataset: str = Field(..., description="Logical dataset name, e.g. 'assets' or 'work_orders'")
+    dataset: str = Field(..., description="Logical dataset name from schema.yaml")
 
     filters: List[QueryFilter] = Field(default_factory=list)
     dimensions: List[QueryDimension] = Field(default_factory=list)
@@ -113,6 +113,10 @@ class QueryPlan(BaseModel):
         description="Advanced HAVING boolean expression.",
     )
     distinct: bool = False
+    distinct_on: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Postgres-style ordered deduplication keys.",
+    )
 
     order_by: List[OrderBy] = Field(default_factory=list)
     limit: Optional[int] = 100

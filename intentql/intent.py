@@ -143,11 +143,11 @@ class QueryIntent(BaseModel):
     """Structured intent that an LLM extracts from a question + schema context."""
     model_config = STRICT
 
-    dataset: str = Field(..., description="Table name from schema.yaml (e.g. 'work_orders', 'assets')")
+    dataset: str = Field(..., description="Table name from schema.yaml")
     keyword: Optional[str] = Field(
         None,
         description=(
-            "Free-text keyword to search across text columns (e.g. 'plumbing', 'electrical'). "
+            "Free-text keyword to search across configured text columns. "
             "Leave null if the question has no topic/keyword constraint."
         ),
     )

@@ -133,7 +133,7 @@ def _metadata_links(
 
 
 def _primary_id_links(tables: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Infer obvious FK links by matching columns to another table's primary_id."""
+    """Infer conventional FK links from primary-key and role-prefixed columns."""
     links = []
     seen = set()
 
@@ -147,23 +147,33 @@ def _primary_id_links(tables: list[dict[str, Any]]) -> list[dict[str, Any]]:
         from_name = str(from_table.get("name"))
         columns = {str(c.get("name")) for c in from_table.get("columns", []) or []}
         for to_name, to_pk in primary_ids.items():
-            if from_name == to_name or not to_pk or to_pk == "id" or to_pk not in columns:
+            if from_name == to_name or not to_pk:
                 continue
-            key = (from_name, to_pk, to_name, to_pk)
-            if key in seen:
-                continue
-            seen.add(key)
-            links.append({
-                "name": f"{from_name}_to_{to_name}_{to_pk}",
-                "from_table": from_name,
-                "to_table": to_name,
-                "join_type": "left",
-                "on": [{
-                    "left": f"{from_name}.{to_pk}",
-                    "op": "=",
-                    "right": f"{to_name}.{to_pk}",
-                }],
-            })
+            if to_pk == "id":
+                suffixes = {f"{to_name}_id"}
+            else:
+                suffixes = {to_pk}
+            candidates = sorted(
+                column
+                for column in columns
+                if any(column == suffix or column.endswith(f"_{suffix}") for suffix in suffixes)
+            )
+            for from_column in candidates:
+                key = (from_name, from_column, to_name, to_pk)
+                if key in seen:
+                    continue
+                seen.add(key)
+                links.append({
+                    "name": f"{from_name}_to_{to_name}_{from_column}",
+                    "from_table": from_name,
+                    "to_table": to_name,
+                    "join_type": "left",
+                    "on": [{
+                        "left": f"{from_name}.{from_column}",
+                        "op": "=",
+                        "right": f"{to_name}.{to_pk}",
+                    }],
+                })
 
     return links
 
@@ -182,7 +192,34 @@ def _merge_links(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 continue
             seen.add(key)
             merged.append(link)
-    return merged
+    return _unique_link_names(merged)
+
+
+def _unique_link_names(links: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Make role-specific links addressable even when introspection reused names."""
+    counts: dict[str, int] = {}
+    for link in links:
+        name = str(link.get("name") or "link")
+        counts[name] = counts.get(name, 0) + 1
+
+    used: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for link in links:
+        updated = dict(link)
+        base = str(updated.get("name") or "link")
+        if counts.get(base, 0) > 1:
+            first = (updated.get("on") or [{}])[0]
+            source = str(first.get("left") or "").split(".")[-1]
+            base = f"{base}_{source}" if source else base
+        name = base
+        suffix = 2
+        while name in used:
+            name = f"{base}_{suffix}"
+            suffix += 1
+        used.add(name)
+        updated["name"] = name
+        out.append(updated)
+    return out
 
 
 def build_schema_for_db(full_schema: dict[str, Any], dev_meta: dict[str, Any]) -> dict[str, Any]:
@@ -229,6 +266,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--schema-dir", default="test/benchmark/schemas")
     parser.add_argument("--db-url", default=env_value("BIRD_DB_URL"))
     parser.add_argument("--postgres-schema", default="public")
+    parser.add_argument("--db-id", action="append", default=[], help="Generate only the named database id (repeatable).")
     return parser
 
 
@@ -247,6 +285,8 @@ def main(argv: list[str] | None = None) -> int:
     schema_dir = Path(args.schema_dir)
     for dev_meta in dev_tables:
         db_id = str(dev_meta["db_id"])
+        if args.db_id and db_id not in set(args.db_id):
+            continue
         schema = build_schema_for_db(full_schema, dev_meta)
         output = schema_dir / db_id / "schema.yaml"
         _write_schema(schema, str(output))

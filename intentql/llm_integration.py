@@ -21,10 +21,10 @@ class OpenAIClient(BaseLLMClient):
 
     def generate_dsl(self, system_prompt: str, question: str) -> dict:
         print("--- LLM generating DSL (mock) ---")
-        # Mocked response for "How many assets are there?"
+        # Mocked response for "How many records are there?"
         return {
-            "dataset": "assets",
-            "metrics": [{"agg": "COUNT", "field": "*", "alias": "asset_count"}],
+            "dataset": "records",
+            "metrics": [{"agg": "COUNT", "field": "*", "alias": "record_count"}],
             "dimensions": [],
             "filters": [],
             "limit": 1

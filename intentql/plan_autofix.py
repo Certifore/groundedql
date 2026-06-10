@@ -88,8 +88,8 @@ def _fix_multi_contains_same_column(plan: Dict[str, Any]) -> None:
     """Convert multiple AND-ed `contains` filters on the same column into a where.or.
 
     When the LLM generates e.g.:
-      filters: [{field: building_name, op: contains, value: "page house"},
-                {field: building_name, op: contains, value: "loyd house"}]
+      filters: [{field: entity_name, op: contains, value: "alpha"},
+                {field: entity_name, op: contains, value: "beta"}]
     these are AND-ed (impossible).  This fix moves them into an OR tree.
     """
     filters = plan.get("filters")
@@ -584,4 +584,3 @@ def _fix_missing_dimension_for_multi_value(
                 f"(not in filters/multi-value columns)",
                 file=sys.stderr,
             )
-
