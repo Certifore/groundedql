@@ -1,5 +1,7 @@
 # IntentQL
 
+![IntentQL - Reliable natural-language analytics through deterministic SQL compilation](assets/intentql-social-preview.png)
+
 Intent-driven, deterministic natural language to SQL for Postgres.  
 Instead of letting an LLM generate free-form SQL, the LLM extracts a lightweight **QueryIntent**, and IntentQL deterministically compiles it into parameterized SQL and executes it safely.
 
