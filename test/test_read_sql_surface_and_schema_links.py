@@ -13,13 +13,13 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from intentql.read_sql_surface import (
+from groundedql.read_sql_surface import (
     READ_SQL_SURFACE_VERSION,
     read_sql_surface_capabilities,
     read_sql_surface_summary_for_spec,
 )
-from intentql.schema_validator import validate_schema
-from intentql.exceptions import SchemaError
+from groundedql.schema_validator import validate_schema
+from groundedql.exceptions import SchemaError
 
 
 def test_read_sql_surface_version_stable() -> None:

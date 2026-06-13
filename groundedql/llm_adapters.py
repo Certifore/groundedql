@@ -305,7 +305,7 @@ class OllamaChatJSONAdapter:
     """
     Minimal Ollama adapter for local models.
 
-    Defaults to the local Gemma model imported as intentql-gemma4. Override with
+    Defaults to the local Gemma model imported as groundedql-gemma4. Override with
     OLLAMA_MODEL or pass --llm ollama:<model-name> in the benchmark runner.
     """
 
@@ -317,7 +317,7 @@ class OllamaChatJSONAdapter:
         timeout: Optional[int] = None,
         num_ctx: Optional[int] = None,
     ):
-        self.model = model or env_value("OLLAMA_MODEL") or "intentql-gemma4"
+        self.model = model or env_value("OLLAMA_MODEL") or "groundedql-gemma4"
         self.base_url = (
             base_url
             or env_value("OLLAMA_BASE_URL")

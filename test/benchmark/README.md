@@ -1,6 +1,6 @@
-# IntentQL BIRD Mini-Dev Benchmark
+# GroundedQL BIRD Mini-Dev Benchmark
 
-This folder is for evaluating IntentQL against BIRD-SQL Mini-Dev.
+This folder is for evaluating GroundedQL against BIRD-SQL Mini-Dev.
 
 BIRD Mini-Dev provides:
 
@@ -11,7 +11,7 @@ BIRD Mini-Dev provides:
 - database files / setup scripts
 
 The benchmark runner executes the gold SQL to produce the expected answer, asks
-IntentQL the natural-language question, executes IntentQL's SQL, and compares the
+GroundedQL the natural-language question, executes GroundedQL's SQL, and compares the
 two result tables.
 
 ## Expected Layout
@@ -30,7 +30,7 @@ test/benchmark/bird_minidev/
       BIRD_dev.sql
 ```
 
-IntentQL also needs one `schema.yaml` per BIRD `db_id`:
+GroundedQL also needs one `schema.yaml` per BIRD `db_id`:
 
 ```text
 test/benchmark/schemas/
@@ -61,7 +61,7 @@ Keep the generated schemas if you want reproducible benchmark runs.
 One simple local setup is a dedicated Docker Postgres container:
 
 ```bash
-docker run --name intentql-bird-pg \
+docker run --name groundedql-bird-pg \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=BIRD \
   -p 55432:5432 \
@@ -97,7 +97,7 @@ Optional:
 
 ```env
 MISTRAL_MODEL=mistral-small-latest
-OLLAMA_MODEL=intentql-gemma4
+OLLAMA_MODEL=groundedql-gemma4
 OLLAMA_TIMEOUT=240
 OLLAMA_NUM_CTX=8192
 ```
@@ -131,7 +131,7 @@ python test/benchmark/bird_minidev.py --limit 25 --llm ollama
 or with an explicit Ollama model name:
 
 ```bash
-python test/benchmark/bird_minidev.py --limit 25 --llm ollama:intentql-gemma4
+python test/benchmark/bird_minidev.py --limit 25 --llm ollama:groundedql-gemma4
 ```
 
 Results are written to:

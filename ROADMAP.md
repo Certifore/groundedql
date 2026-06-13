@@ -1,6 +1,6 @@
-# IntentQL roadmap
+# GroundedQL roadmap
 
-This document describes how we plan to evolve IntentQL toward **broad coverage of natural-language questions that are answerable from an allowlisted database schema**—with deterministic, safe SQL and high consistency.
+This document describes how we plan to evolve GroundedQL toward **broad coverage of natural-language questions that are answerable from an allowlisted database schema**—with deterministic, safe SQL and high consistency.
 
 We do **not** claim every English sentence maps perfectly every time; we aim for **expressive completeness** of the intermediate representation (relative to SQL over the schema) and **high, measurable** quality on real questions.
 
@@ -66,5 +66,5 @@ Extend `QueryIntent` / `QueryPlan` and the compiler so that, for tables and colu
 
 ## Related
 
-- [Documentation](https://certifore.github.io/intentql_docs) (user guides and API)
-- Issues: [github.com/Certifore/intentql/issues](https://github.com/Certifore/intentql/issues)
+- [Documentation](https://certifore.github.io/groundedql_docs) (user guides and API)
+- Issues: [github.com/Certifore/groundedql/issues](https://github.com/Certifore/groundedql/issues)

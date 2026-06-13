@@ -1,16 +1,16 @@
 # Governance
 
-IntentQL is an open-source project led and maintained by Alexander Abakah.
+GroundedQL is an open-source project led and maintained by Alexander Abakah.
 
 ## Lead Maintainer
 
-The lead maintainer has final authority over the official IntentQL project, including:
+The lead maintainer has final authority over the official GroundedQL project, including:
 
 - reviewing, accepting, and merging pull requests;
 - setting the project roadmap and contribution policies;
-- managing the official `Certifore/intentql` repository;
+- managing the official `Certifore/groundedql` repository;
 - creating official GitHub releases and release tags;
-- publishing the official `intentql` package to PyPI;
+- publishing the official `groundedql` package to PyPI;
 - managing project infrastructure and security disclosures.
 
 Contributors may propose changes through issues and pull requests. A contribution becomes
@@ -19,11 +19,11 @@ Repository access or prior contribution does not grant merge or release authorit
 
 ## Official Releases
 
-Only the lead maintainer may publish an official IntentQL release, create an official
-release tag, or publish the official `intentql` package to PyPI.
+Only the lead maintainer may publish an official GroundedQL release, create an official
+release tag, or publish the official `groundedql` package to PyPI.
 
 The Apache License 2.0 permits forks and redistribution under its terms. Forks and modified
-distributions must not represent themselves as official IntentQL releases.
+distributions must not represent themselves as official GroundedQL releases.
 
 ## Changes To Governance
 

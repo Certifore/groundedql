@@ -1,25 +1,24 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "intentql"
-description = "IntentQL — Intent-driven, deterministic natural language to SQL for Postgres."
-version = "0.2.4"
+name = "groundedql"
+description = "GroundedQL — Intent-driven, deterministic natural language to SQL for Postgres."
+version = "0.3.0"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
 authors = [
   { name = "Alexander Abakah" }
 ]
-keywords = ["sql", "intent", "postgres", "sqlalchemy", "llm", "analytics", "natural-language"]
+keywords = ["sql", "intent", "grounded", "postgres", "sqlalchemy", "llm", "analytics", "natural-language", "text-to-sql"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
-  "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",
   "Topic :: Database",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -46,17 +45,17 @@ benchmark = [
 dev = ["ruff>=0.6.0", "build>=1.2.0", "twine>=5.0.0", "python-dotenv"]
 
 [project.scripts]
-intentql = "intentql.cli:main"
+groundedql = "groundedql.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/Certifore/intentql"
-Documentation = "https://certifore.github.io/intentql_docs"
-Repository = "https://github.com/Certifore/intentql"
-Issues = "https://github.com/Certifore/intentql/issues"
+Homepage = "https://github.com/Certifore/groundedql"
+Documentation = "https://certifore.github.io/groundedql_docs"
+Repository = "https://github.com/Certifore/groundedql"
+Issues = "https://github.com/Certifore/groundedql/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["intentql*"]
+include = ["groundedql*"]
 exclude = ["test*", "tests*"]
 
 [tool.setuptools]

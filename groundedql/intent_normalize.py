@@ -7,7 +7,7 @@ structure.  This eliminates a major source of inconsistency.
 
 Optional ``intent_id_patterns`` on a table in schema.yaml (list of regex strings)
 may be used to add a primary_id filter from the user question; patterns are
-application-defined — IntentQL does not ship domain-specific ID heuristics.
+application-defined — GroundedQL does not ship domain-specific ID heuristics.
 """
 from __future__ import annotations
 

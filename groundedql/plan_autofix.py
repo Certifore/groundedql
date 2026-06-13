@@ -129,7 +129,7 @@ def _fix_multi_contains_same_column(plan: Dict[str, Any]) -> None:
         or_groups.append({"or": or_branches})
 
         print(
-            f"[IntentQL autofix] Converted {len(flist)} AND-ed contains filters on '{col}' → where.or",
+            f"[GroundedQL autofix] Converted {len(flist)} AND-ed contains filters on '{col}' → where.or",
             file=sys.stderr,
         )
 
@@ -143,7 +143,7 @@ def _fix_multi_contains_same_column(plan: Dict[str, Any]) -> None:
         ]
         or_groups.append({"or": or_branches})
         print(
-            f"[IntentQL autofix] Converted {len(flist)} AND-ed '=' filters on '{col}' → where.or",
+            f"[GroundedQL autofix] Converted {len(flist)} AND-ed '=' filters on '{col}' → where.or",
             file=sys.stderr,
         )
 
@@ -174,14 +174,14 @@ def _fix_count_to_count_distinct(plan: Dict[str, Any], meta: Dict[str, Any]) -> 
 
         if agg == "count" and field in ("*", primary_id, ""):
             print(
-                f"[IntentQL autofix] count({field or '*'}) → count_distinct({primary_id})",
+                f"[GroundedQL autofix] count({field or '*'}) → count_distinct({primary_id})",
                 file=sys.stderr,
             )
             m["agg"] = "count_distinct"
             m["field"] = primary_id
         elif agg == "count_distinct" and field == "*":
             print(
-                f"[IntentQL autofix] count_distinct(*) → count_distinct({primary_id})",
+                f"[GroundedQL autofix] count_distinct(*) → count_distinct({primary_id})",
                 file=sys.stderr,
             )
             m["field"] = primary_id
@@ -384,7 +384,7 @@ def _fix_duplicate_keyword_filters(plan: Dict[str, Any], meta: Dict[str, Any], q
             else:
                 plan["where"] = {"and": [cleaned_where, correct_or]}
         print(
-            f"[IntentQL autofix] Built/completed where.or for keyword_search_or columns: {sorted(kso)}",
+            f"[GroundedQL autofix] Built/completed where.or for keyword_search_or columns: {sorted(kso)}",
             file=sys.stderr,
         )
 
@@ -407,7 +407,7 @@ def _fix_duplicate_keyword_filters(plan: Dict[str, Any], meta: Dict[str, Any], q
 
     if removed:
         print(
-            f"[IntentQL autofix] Stripped duplicate keyword filters: {sorted(set(removed))}",
+            f"[GroundedQL autofix] Stripped duplicate keyword filters: {sorted(set(removed))}",
             file=sys.stderr,
         )
         plan["filters"] = cleaned
@@ -463,7 +463,7 @@ def _fix_missing_date_filter(plan: Dict[str, Any], meta: Dict[str, Any], questio
     filters.append({"field": date_col, "op": ">=", "value": gte})
     filters.append({"field": date_col, "op": "<", "value": lt})
     print(
-        f"[IntentQL autofix] Added missing date filter on '{date_col}' from question",
+        f"[GroundedQL autofix] Added missing date filter on '{date_col}' from question",
         file=sys.stderr,
     )
 
@@ -560,7 +560,7 @@ def _fix_missing_dimension_for_multi_value(
             if plan.get("limit") == 1:
                 plan["limit"] = 100
             print(
-                f"[IntentQL autofix] Added missing dimension '{col}' for multi-value filter",
+                f"[GroundedQL autofix] Added missing dimension '{col}' for multi-value filter",
                 file=sys.stderr,
             )
 
@@ -580,7 +580,7 @@ def _fix_missing_dimension_for_multi_value(
         if removed_names:
             plan["dimensions"] = keep
             print(
-                f"[IntentQL autofix] Removed unneeded dimensions {removed_names} "
+                f"[GroundedQL autofix] Removed unneeded dimensions {removed_names} "
                 f"(not in filters/multi-value columns)",
                 file=sys.stderr,
             )

@@ -1,9 +1,9 @@
 """
-Public exception hierarchy for IntentQL.
+Public exception hierarchy for GroundedQL.
 
 Consuming code should catch these explicitly:
 
-    from intentql.exceptions import QueryPlanError, DatabaseExecutionError
+    from groundedql.exceptions import QueryPlanError, DatabaseExecutionError
 
     try:
         result = execute_query_plan(...)
@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 
 
 class DSLCompilerError(Exception):
-    """Base class for all IntentQL errors."""
+    """Base class for all GroundedQL errors."""
 
 
 class SchemaError(DSLCompilerError):

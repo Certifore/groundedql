@@ -8,10 +8,10 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from intentql.compiler import Compiler
-from intentql.evidence_planner import build_evidence_plan
-from intentql.intent_normalize import normalize_intent
-from intentql.join_planner import auto_inject_joins
+from groundedql.compiler import Compiler
+from groundedql.evidence_planner import build_evidence_plan
+from groundedql.intent_normalize import normalize_intent
+from groundedql.join_planner import auto_inject_joins
 
 
 def _linked_schema() -> dict:

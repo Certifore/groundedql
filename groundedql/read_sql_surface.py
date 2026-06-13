@@ -1,5 +1,5 @@
 """
-Frozen read-SQL surface for IntentQL (library contract, not user documentation).
+Frozen read-SQL surface for GroundedQL (library contract, not user documentation).
 
 Defines which read-only Postgres-shaped constructs the plan JSON + compiler
 target for a major line of development. Version bumps when the set of

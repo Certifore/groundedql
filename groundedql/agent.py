@@ -26,7 +26,7 @@ def _ensure_spec(schema_path: str, spec_path: Optional[str]) -> str:
         if p.exists():
             return spec_path
         print(
-            f"[IntentQL] Spec file not found at {spec_path}, generating from schema...",
+            f"[GroundedQL] Spec file not found at {spec_path}, generating from schema...",
             file=sys.stderr,
         )
     else:
@@ -39,7 +39,7 @@ def _ensure_spec(schema_path: str, spec_path: Optional[str]) -> str:
         if spec_mtime >= schema_mtime:
             return spec_path
         print(
-            "[IntentQL] Spec is older than schema.yaml, regenerating...",
+            "[GroundedQL] Spec is older than schema.yaml, regenerating...",
             file=sys.stderr,
         )
 
@@ -90,12 +90,12 @@ class QueryAgent:
         try:
             self.value_index = build_value_index(engine, schema_path)
             print(
-                f"[IntentQL] Value index built: "
+                f"[GroundedQL] Value index built: "
                 f"{sum(len(cols) for cols in self.value_index.values())} columns indexed",
                 file=sys.stderr,
             )
         except Exception as exc:
-            print(f"[IntentQL] Value index build failed ({exc}), continuing without it.", file=sys.stderr)
+            print(f"[GroundedQL] Value index build failed ({exc}), continuing without it.", file=sys.stderr)
 
         memory_dir = str(Path(schema_path).parent / ".intent_memory")
         self.intent_memory = IntentMemory(persist_directory=memory_dir)
@@ -118,7 +118,7 @@ class QueryAgent:
             plan_dict = self.intent_planner.plan(question)
         except Exception as exc:
             print(
-                f"[IntentQL] Intent pipeline failed ({exc}), falling back to legacy.",
+                f"[GroundedQL] Intent pipeline failed ({exc}), falling back to legacy.",
                 file=sys.stderr,
             )
             return self._ask_legacy(question)
@@ -126,7 +126,7 @@ class QueryAgent:
         parsed, errors = validate_query_plan_dict(plan_dict, self.schema_path)
         if errors:
             print(
-                f"[IntentQL] Intent plan failed validation, falling back to legacy.",
+                f"[GroundedQL] Intent plan failed validation, falling back to legacy.",
                 file=sys.stderr,
             )
             return self._ask_legacy(question)
@@ -196,7 +196,7 @@ class QueryAgent:
 
         subs = split_compound(question)
         print(
-            f"[IntentQL] Compound question detected — splitting into {len(subs)} sub-questions.",
+            f"[GroundedQL] Compound question detected — splitting into {len(subs)} sub-questions.",
             file=sys.stderr,
         )
 
@@ -204,7 +204,7 @@ class QueryAgent:
         has_success = False
 
         for sq in subs:
-            print(f"[IntentQL]   {sq.role}: {sq.text!r}", file=sys.stderr)
+            print(f"[GroundedQL]   {sq.role}: {sq.text!r}", file=sys.stderr)
             try:
                 r = self.ask(sq.text)
                 is_error = isinstance(r, dict) and bool(r.get("error"))
@@ -216,7 +216,7 @@ class QueryAgent:
                     "result": r,
                 })
             except Exception as exc:
-                print(f"[IntentQL]   {sq.role} failed: {exc}", file=sys.stderr)
+                print(f"[GroundedQL]   {sq.role} failed: {exc}", file=sys.stderr)
                 parts.append({
                     "role": sq.role,
                     "question": sq.text,

@@ -4,7 +4,7 @@
 
 Please do not open a public issue for a suspected security vulnerability.
 
-Use GitHub's private vulnerability reporting feature for the official IntentQL repository.
+Use GitHub's private vulnerability reporting feature for the official GroundedQL repository.
 Include:
 
 - the affected version or commit;
@@ -21,6 +21,6 @@ Security reports may include vulnerabilities in schema allowlist enforcement, SQ
 parameterization, validation, execution boundaries, dependency handling, or official
 release artifacts.
 
-IntentQL cannot secure database credentials, permissions, application code, or SQL executed
-outside IntentQL. Deployments should use least-privilege database roles and independent
+GroundedQL cannot secure database credentials, permissions, application code, or SQL executed
+outside GroundedQL. Deployments should use least-privilege database roles and independent
 operational controls.

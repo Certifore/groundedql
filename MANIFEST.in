@@ -5,6 +5,7 @@ include CONTRIBUTING.md
 include GOVERNANCE.md
 include SECURITY.md
 include ROADMAP.md
+include MIGRATION.md
 
 exclude config/schema.yaml
 exclude config/queryplan_spec.yaml

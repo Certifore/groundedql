@@ -110,13 +110,13 @@ class IntentMemory:
         self.max_examples = max_examples
         self._collection = None
 
-        if os.environ.get("INTENTQL_DISABLE_MEMORY", "").strip().lower() in (
+        if os.environ.get("GROUNDEDQL_DISABLE_MEMORY", "").strip().lower() in (
             "1",
             "true",
             "yes",
         ):
             print(
-                "[IntentMemory] Disabled via INTENTQL_DISABLE_MEMORY.",
+                "[IntentMemory] Disabled via GROUNDEDQL_DISABLE_MEMORY.",
                 file=sys.stderr,
             )
             return
@@ -126,7 +126,7 @@ class IntentMemory:
             from chromadb.config import Settings
 
             persist_dir = persist_directory or str(
-                Path.home() / ".intentql" / "intent_memory"
+                Path.home() / ".groundedql" / "intent_memory"
             )
             Path(persist_dir).mkdir(parents=True, exist_ok=True)
 
@@ -225,20 +225,20 @@ class IntentMemory:
         Returns a list of {"question": str, "intent": dict, "similarity": float}
         sorted by similarity descending.
 
-        Default min_similarity can be overridden with env INTENTQL_MEMORY_MIN_SIMILARITY
+        Default min_similarity can be overridden with env GROUNDEDQL_MEMORY_MIN_SIMILARITY
         (default 0.78 — 0.60 treated too many topic-overlap pairs as similar).
 
-        Set INTENTQL_MEMORY_TASK_FILTER=0 to disable task_class filtering (debug only).
+        Set GROUNDEDQL_MEMORY_TASK_FILTER=0 to disable task_class filtering (debug only).
         """
         if min_similarity is None:
-            raw = os.environ.get("INTENTQL_MEMORY_MIN_SIMILARITY", "0.78")
+            raw = os.environ.get("GROUNDEDQL_MEMORY_MIN_SIMILARITY", "0.78")
             try:
                 min_similarity = float(raw)
             except ValueError:
                 min_similarity = 0.78
 
         task_filter_on = os.environ.get(
-            "INTENTQL_MEMORY_TASK_FILTER", "1"
+            "GROUNDEDQL_MEMORY_TASK_FILTER", "1"
         ).strip().lower() not in ("0", "false", "no", "off")
 
         if self._collection is None or self._collection.count() == 0:

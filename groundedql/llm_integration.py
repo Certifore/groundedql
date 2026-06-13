@@ -1,4 +1,4 @@
-# intentql/llm_integration.py
+# groundedql/llm_integration.py
 from abc import ABC, abstractmethod
 
 class BaseLLMClient(ABC):

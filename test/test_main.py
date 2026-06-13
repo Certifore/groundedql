@@ -1,5 +1,5 @@
 """
-Regression test runner for IntentQL.
+Regression test runner for GroundedQL.
 
 Modes (set via TEST_MODE env var or command-line arg):
   run     — Full regression suite from test_qs.json (default)
@@ -51,13 +51,13 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 import yaml
 
-from intentql import execute_query_plan
-from intentql.join_planner import auto_inject_joins
-from intentql.plan_canonical import canonicalize_query_plan, plan_fingerprint
-from intentql.semantic_lint import semantic_lint
+from groundedql import execute_query_plan
+from groundedql.join_planner import auto_inject_joins
+from groundedql.plan_canonical import canonicalize_query_plan, plan_fingerprint
+from groundedql.semantic_lint import semantic_lint
 
 # ---------------------------------------------------------------------------
-# Paths (HERE, ROOT set at top for intentql import path)
+# Paths (HERE, ROOT set at top for groundedql import path)
 # ---------------------------------------------------------------------------
 ENV_PATH = ROOT / ".env"
 SCHEMA_PATH = ROOT / "config" / "schema.yaml"
@@ -171,7 +171,7 @@ def _schema_intent_phase1(*, intent_id_patterns: list[str] | None = None) -> dic
     """Minimal schema for intent pipeline compile tests (Phase 1).
 
     Optional *intent_id_patterns* mimics an app declaring regexes in schema.yaml
-    (IntentQL has no built-in domain ID formats).
+    (GroundedQL has no built-in domain ID formats).
     """
     row: dict = {
         "name": "work_orders",
@@ -197,10 +197,10 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
     import tempfile
     from pathlib import Path as P
 
-    from intentql.compiler import Compiler, QueryPlanError
-    from intentql.exceptions import SchemaError
-    from intentql.schema_validator import validate_schema
-    from intentql.validation import validate_query_plan_dict
+    from groundedql.compiler import Compiler, QueryPlanError
+    from groundedql.exceptions import SchemaError
+    from groundedql.schema_validator import validate_schema
+    from groundedql.validation import validate_query_plan_dict
 
     spec = test.get("compile") or {}
     kind = spec.get("kind", "")
@@ -400,7 +400,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
             return False, f"multi-hop join order compile: {e}"
 
     if kind == "evidence_formula_patterns_compile":
-        from intentql.evidence_planner import build_evidence_plan
+        from groundedql.evidence_planner import build_evidence_plan
 
         cases = [
             (
@@ -512,7 +512,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
     if kind == "relative_date_calendar_year":
         import datetime as dt
 
-        from intentql.api.api import _resolve_relative_dates
+        from groundedql.api.api import _resolve_relative_dates
 
         lo = _resolve_relative_dates(
             {"$relative_date": {"op": "calendar_year_start", "year_offset": -1}}
@@ -542,7 +542,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
 
     # --- Intent pipeline (Phase 1): normalize + build_plan_from_intent + compile ---
     if kind == "intent_phase1_normalize_injects_primary_id":
-        from intentql.intent_normalize import normalize_intent
+        from groundedql.intent_normalize import normalize_intent
 
         q = spec.get("question") or test.get("question") or ""
         schema = _schema_intent_phase1(
@@ -561,7 +561,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         return True, None
 
     if kind == "intent_phase1_normalize_work_word_no_inject":
-        from intentql.intent_normalize import normalize_intent
+        from groundedql.intent_normalize import normalize_intent
 
         q = spec.get("question") or test.get("question") or ""
         schema = _schema_intent_phase1()
@@ -579,7 +579,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         return True, None
 
     if kind == "intent_phase1_build_plan_id_equals_and_list_limit":
-        from intentql.intent_planner import build_plan_from_intent
+        from groundedql.intent_planner import build_plan_from_intent
 
         schema = _schema_intent_phase1()
         plan = build_plan_from_intent(
@@ -599,7 +599,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         return True, None
 
     if kind == "intent_phase1_last_3_years_filter":
-        from intentql.intent_planner import build_plan_from_intent
+        from groundedql.intent_planner import build_plan_from_intent
 
         schema = _schema_intent_phase1()
         plan = build_plan_from_intent(
@@ -618,7 +618,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         return True, None
 
     if kind == "intent_phase1_time_bucket_legacy_compiles":
-        from intentql.intent_planner import build_plan_from_intent
+        from groundedql.intent_planner import build_plan_from_intent
 
         schema = _schema_intent_phase1()
         plan = build_plan_from_intent(
@@ -646,8 +646,8 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         import tempfile
         from pathlib import Path as TmpPath
 
-        from intentql.intent_planner import build_plan_from_intent
-        from intentql.validation import validate_query_plan_dict
+        from groundedql.intent_planner import build_plan_from_intent
+        from groundedql.validation import validate_query_plan_dict
 
         schema = _schema_intent_phase1()
         plan = build_plan_from_intent(
@@ -684,8 +684,8 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         import tempfile
         from pathlib import Path as TmpPath
 
-        from intentql.intent_planner import build_plan_from_intent
-        from intentql.validation import validate_query_plan_dict
+        from groundedql.intent_planner import build_plan_from_intent
+        from groundedql.validation import validate_query_plan_dict
 
         schema = _schema_orders_customers_for_intent()
         plan = build_plan_from_intent(
@@ -718,7 +718,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         return True, None
 
     if kind == "intent_phase1_explicit_ops_and_between_compile":
-        from intentql.intent_planner import build_plan_from_intent
+        from groundedql.intent_planner import build_plan_from_intent
 
         schema = _schema_orders_customers_for_intent()
         plan = build_plan_from_intent(
@@ -747,7 +747,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         return True, None
 
     if kind == "intent_phase1_text_period_time_bucket_compiles":
-        from intentql.intent_planner import build_plan_from_intent
+        from groundedql.intent_planner import build_plan_from_intent
 
         schema = _schema_text_period_for_intent()
         plan = build_plan_from_intent(
@@ -777,7 +777,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         return True, None
 
     if kind == "intent_phase1_normalize_single_year_and_peak_month":
-        from intentql.intent_normalize import normalize_intent
+        from groundedql.intent_normalize import normalize_intent
 
         schema = _schema_text_period_for_intent()
         intent = {
@@ -804,7 +804,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         return True, None
 
     if kind == "intent_phase1_ranked_dimension_hides_metric":
-        from intentql.intent_planner import build_plan_from_intent
+        from groundedql.intent_planner import build_plan_from_intent
 
         schema = _schema_text_period_for_intent()
         plan = build_plan_from_intent(
@@ -838,7 +838,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         return True, None
 
     if kind == "intent_phase1_comparison_ratio_auto_joins_compiles":
-        from intentql.intent_planner import build_plan_from_intent
+        from groundedql.intent_planner import build_plan_from_intent
 
         schema = _schema_orders_customers_for_intent()
         plan = build_plan_from_intent(
@@ -880,7 +880,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         return True, None
 
     if kind == "intent_phase1_comparison_difference_auto_joins_compiles":
-        from intentql.intent_planner import build_plan_from_intent
+        from groundedql.intent_planner import build_plan_from_intent
 
         schema = _schema_orders_customers_for_intent()
         plan = build_plan_from_intent(
@@ -921,7 +921,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         return True, None
 
     if kind == "intent_phase1_conditional_formula_percent_change_compiles":
-        from intentql.intent_planner import build_plan_from_intent
+        from groundedql.intent_planner import build_plan_from_intent
 
         schema = _schema_orders_customers_for_intent()
         plan = build_plan_from_intent(
@@ -980,7 +980,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         return True, None
 
     if kind == "intent_phase1_conditional_formula_average_per_period_compiles":
-        from intentql.intent_planner import build_plan_from_intent
+        from groundedql.intent_planner import build_plan_from_intent
 
         schema = _schema_orders_customers_for_intent()
         plan = build_plan_from_intent(
@@ -1020,7 +1020,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         return True, None
 
     if kind == "intent_phase1_conditional_formula_multi_output_compiles":
-        from intentql.intent_planner import build_plan_from_intent
+        from groundedql.intent_planner import build_plan_from_intent
 
         schema = _schema_orders_customers_for_intent()
         plan = build_plan_from_intent(
@@ -1074,7 +1074,7 @@ def _run_compile_test(test: dict) -> tuple[bool, str | None]:
         import tempfile
         from pathlib import Path as TmpPath
 
-        from intentql.validation import validate_query_plan_dict
+        from groundedql.validation import validate_query_plan_dict
 
         schema = _schema_intent_phase1()
         plan = {
@@ -1168,8 +1168,8 @@ def _run_pipeline_mode() -> None:
     db_url = _db_url()
 
     if not openai_key and gemini_key:
-        print("\n[setup] OPENAI_API_KEY not set — running IntentQL full pipeline with Gemini only.")
-        print(f"\n[1/1] IntentQL full pipeline ({len(pipeline_questions)} questions)...")
+        print("\n[setup] OPENAI_API_KEY not set — running GroundedQL full pipeline with Gemini only.")
+        print(f"\n[1/1] GroundedQL full pipeline ({len(pipeline_questions)} questions)...")
         qce = bench_pipeline_qce(schema, pipeline_questions, db_url)
         pipe = [qce]
     else:
@@ -1177,7 +1177,7 @@ def _run_pipeline_mode() -> None:
         gpt4_client = make_client(openai_key)
         langchain_agent = make_agent(db_url, openai_key)
 
-        print(f"\n[1/3] IntentQL full pipeline ({len(pipeline_questions)} questions)...")
+        print(f"\n[1/3] GroundedQL full pipeline ({len(pipeline_questions)} questions)...")
         qce = bench_pipeline_qce(schema, pipeline_questions, db_url)
 
         print(f"\n[2/3] LangChain full pipeline ({len(pipeline_questions)} questions)...")

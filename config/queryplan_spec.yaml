@@ -1,8 +1,8 @@
 version: 1
-name: IntentQL QueryPlan Spec
+name: GroundedQL QueryPlan Spec
 description: >
-  Instructions for generating QueryPlan JSON for the IntentQL compiler.
-  IntentQL is a general-purpose SQL compiler for any Postgres database and any domain.
+  Instructions for generating QueryPlan JSON for the GroundedQL compiler.
+  GroundedQL is a general-purpose SQL compiler for any Postgres database and any domain.
   Output MUST be VALID JSON only (no markdown, no prose, no SQL).
 
 system_instructions: |

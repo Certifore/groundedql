@@ -1,5 +1,5 @@
 """
-Run IntentQL against BIRD-SQL Mini-Dev.
+Run GroundedQL against BIRD-SQL Mini-Dev.
 
 This harness intentionally lives under test/benchmark so it is separate from the
 normal regression tests. It expects the BIRD dataset and databases to be provided
@@ -29,8 +29,8 @@ if str(ROOT) not in sys.path:
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
-import intentql
-from intentql.llm_adapters import env_value
+import groundedql
+from groundedql.llm_adapters import env_value
 
 
 DEFAULT_RESULT_PATH = Path(__file__).resolve().parent / "results" / "bird_minidev_latest.json"
@@ -279,7 +279,7 @@ def run_example(
     example: BirdExample,
     *,
     engine: Engine,
-    agent: intentql.QueryAgent,
+    agent: groundedql.QueryAgent,
     include_evidence: bool,
     ordered: bool,
     sample_rows: int,
@@ -330,7 +330,7 @@ def run_example(
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run IntentQL on BIRD Mini-Dev.")
+    parser = argparse.ArgumentParser(description="Run GroundedQL on BIRD Mini-Dev.")
     parser.add_argument("--bird-root", default=env_value("BIRD_MINIDEV_ROOT") or "test/benchmark/bird_minidev")
     parser.add_argument("--data-file", default=None)
     parser.add_argument("--schema-dir", default="test/benchmark/schemas")
@@ -346,7 +346,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--delay-seconds", type=float, default=float(env_value("BIRD_BENCHMARK_DELAY_SECONDS") or 0))
     parser.add_argument("--checkpoint-every", type=int, default=10)
     parser.add_argument("--resume", action="store_true", help="Reuse completed examples from the output report.")
-    parser.add_argument("--quiet-agent", action="store_true", help="Suppress IntentQL planner logs during each example.")
+    parser.add_argument("--quiet-agent", action="store_true", help="Suppress GroundedQL planner logs during each example.")
     parser.add_argument("--sample-rows", type=int, default=5, help="Rows to include in diagnostic report samples.")
     parser.add_argument("--output", default=str(DEFAULT_RESULT_PATH))
     return parser
@@ -379,7 +379,7 @@ def main(argv: list[str] | None = None) -> int:
 
     results = []
     engines: dict[str, Engine] = {}
-    agents: dict[tuple[str, str, str], intentql.QueryAgent] = {}
+    agents: dict[tuple[str, str, str], groundedql.QueryAgent] = {}
     out_path = Path(args.output)
     existing_results = load_existing_results(out_path) if args.resume else {}
     if existing_results:
@@ -412,13 +412,13 @@ def main(argv: list[str] | None = None) -> int:
             if agent_key not in agents:
                 if args.quiet_agent:
                     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                        agents[agent_key] = intentql.QueryAgent(
+                        agents[agent_key] = groundedql.QueryAgent(
                             engine=engine,
                             schema_path=str(schema_path),
                             llm=args.llm,
                         )
                 else:
-                    agents[agent_key] = intentql.QueryAgent(
+                    agents[agent_key] = groundedql.QueryAgent(
                         engine=engine,
                         schema_path=str(schema_path),
                         llm=args.llm,

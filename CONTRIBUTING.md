@@ -1,6 +1,6 @@
-# Contributing To IntentQL
+# Contributing To GroundedQL
 
-Thank you for contributing to IntentQL. Contributions are proposed through pull requests
+Thank you for contributing to GroundedQL. Contributions are proposed through pull requests
 and become part of the official project only after maintainer review and merge.
 
 ## Before Opening A Pull Request
@@ -12,14 +12,14 @@ and become part of the official project only after maintainer review and merge.
 
 ```bash
 pip install -e ".[dev]"
-ruff check intentql/
+ruff check groundedql/
 python test/test_main.py lint
 python test/test_generic_planner_resolution.py
 ```
 
 ## Generality Requirement
 
-IntentQL uses benchmarks to reveal missing general capabilities. Core logic must not branch
+GroundedQL uses benchmarks to reveal missing general capabilities. Core logic must not branch
 on benchmark case IDs, benchmark domains, known questions, entity names, or expected
 answers.
 
@@ -40,7 +40,7 @@ or alignment with project direction.
 
 ## Releases
 
-Contributors should not publish packages or releases using the official IntentQL project
+Contributors should not publish packages or releases using the official GroundedQL project
 identity. Official GitHub releases, tags, and PyPI publications are handled only by the lead
 maintainer. See [GOVERNANCE.md](GOVERNANCE.md).
 

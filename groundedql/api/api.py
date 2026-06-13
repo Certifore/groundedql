@@ -82,7 +82,7 @@ def load_and_validate_schema(schema_path: str) -> Dict[str, Any]:
 
     warnings = validate_schema(schema)
     for w in warnings:
-        print(f"[IntentQL schema] {w}")
+        print(f"[GroundedQL schema] {w}")
 
     return schema
 

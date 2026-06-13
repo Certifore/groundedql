@@ -1,34 +1,34 @@
-# IntentQL
+# GroundedQL
 
-![IntentQL - Reliable natural-language analytics through deterministic SQL compilation](assets/intentql-social-preview.png)
+![GroundedQL - Reliable natural-language analytics through deterministic SQL compilation](assets/groundedql-social-preview.png)
 
 Intent-driven, deterministic natural language to SQL for Postgres.  
-Instead of letting an LLM generate free-form SQL, the LLM extracts a lightweight **QueryIntent**, and IntentQL deterministically compiles it into parameterized SQL and executes it safely.
+Instead of letting an LLM generate free-form SQL, the LLM extracts a lightweight **QueryIntent**, and GroundedQL deterministically compiles it into parameterized SQL and executes it safely.
 
 ## Install
 
 ```bash
-pip install intentql
+pip install groundedql
 ```
 
 To use the OpenAI SDK adapter shown below:
 
 ```bash
-pip install "intentql[openai]"
+pip install "groundedql[openai]"
 ```
 
 With optional few-shot memory (recommended for production):
 
 ```bash
-pip install "intentql[memory]"
+pip install "groundedql[memory]"
 ```
 
 <details>
 <summary>Install from source</summary>
 
 ```bash
-git clone https://github.com/Certifore/intentql
-cd intentql
+git clone https://github.com/Certifore/groundedql
+cd groundedql
 pip install -e ".[dev]"
 ```
 </details>
@@ -38,7 +38,7 @@ pip install -e ".[dev]"
 ### 1. Generate your schema from the database
 
 ```bash
-intentql init --db "postgresql://user:pass@host/db"
+groundedql init --db "postgresql://user:pass@host/db"
 # → config/schema.yaml  (tables, columns, types, PKs, links — all auto-detected)
 ```
 
@@ -46,7 +46,7 @@ intentql init --db "postgresql://user:pass@host/db"
 
 ```bash
 export LLM_API_KEY=sk-...   # works with any OpenAI-compatible provider
-intentql describe --schema config/schema.yaml --db "postgresql://user:pass@host/db"
+groundedql describe --schema config/schema.yaml --db "postgresql://user:pass@host/db"
 # → Adds table + column descriptions using sample data for context
 ```
 
@@ -55,7 +55,7 @@ intentql describe --schema config/schema.yaml --db "postgresql://user:pass@host/
 ```python
 from sqlalchemy import create_engine
 from openai import OpenAI
-from intentql.agent import QueryAgent
+from groundedql.agent import QueryAgent
 
 engine = create_engine("postgresql+psycopg2://user:pass@host/db")
 
@@ -89,7 +89,7 @@ agent = QueryAgent(
 ### Use a local Ollama model
 
 ```bash
-export OLLAMA_MODEL=intentql-gemma4
+export OLLAMA_MODEL=groundedql-gemma4
 # optional
 export OLLAMA_BASE_URL=http://127.0.0.1:11434
 export OLLAMA_NUM_CTX=8192
@@ -99,7 +99,7 @@ export OLLAMA_NUM_CTX=8192
 agent = QueryAgent(
     engine=engine,
     schema_path="config/schema.yaml",
-    llm="ollama",  # or "ollama:intentql-gemma4"
+    llm="ollama",  # or "ollama:groundedql-gemma4"
 )
 ```
 
@@ -107,16 +107,18 @@ agent = QueryAgent(
 
 | Command | Description |
 |---|---|
-| `intentql init --db URL` | Introspect Postgres and generate `schema.yaml` |
-| `intentql describe --schema PATH --db URL` | Enrich schema with LLM-generated descriptions |
+| `groundedql init --db URL` | Introspect Postgres and generate `schema.yaml` |
+| `groundedql describe --schema PATH --db URL` | Enrich schema with LLM-generated descriptions |
 
-Run `intentql --help` for full options.
+Run `groundedql --help` for full options.
 
 ## Documentation
 
-Full documentation, benchmarks, and guides are at [certifore.github.io/intentql_docs](https://certifore.github.io/intentql_docs) ([source](https://github.com/Certifore/intentql_docs)).
+Full documentation, benchmarks, and guides are at [certifore.github.io/groundedql_docs](https://certifore.github.io/groundedql_docs) ([source](https://github.com/Certifore/groundedql_docs)).
 
 See [ROADMAP.md](ROADMAP.md) for planned capabilities (lookup, trends, ratios, multi-step NL, and expressiveness goals).
+
+Existing users of the previous package name should read [MIGRATION.md](MIGRATION.md).
 
 ## Contributing
 
@@ -127,4 +129,4 @@ official releases.
 
 ## License
 
-IntentQL is licensed under the [Apache License 2.0](LICENSE).
+GroundedQL is licensed under the [Apache License 2.0](LICENSE).

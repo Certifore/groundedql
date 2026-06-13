@@ -1,5 +1,5 @@
 """
-Generate IntentQL schemas for BIRD Mini-Dev.
+Generate GroundedQL schemas for BIRD Mini-Dev.
 
 The PostgreSQL dump stores all BIRD Mini-Dev tables in one database, while the
 benchmark examples are grouped by ``db_id``.  This script introspects the shared
@@ -17,8 +17,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from intentql.cli import _make_logical_name, _write_schema, introspect_database
-from intentql.llm_adapters import env_value
+from groundedql.cli import _make_logical_name, _write_schema, introspect_database
+from groundedql.llm_adapters import env_value
 
 
 def _candidate_dev_tables_files(root: Path) -> list[Path]:
@@ -260,7 +260,7 @@ def build_schema_for_db(full_schema: dict[str, Any], dev_meta: dict[str, Any]) -
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Generate IntentQL schemas for BIRD Mini-Dev.")
+    parser = argparse.ArgumentParser(description="Generate GroundedQL schemas for BIRD Mini-Dev.")
     parser.add_argument("--bird-root", default=env_value("BIRD_MINIDEV_ROOT") or "test/benchmark/bird_minidev")
     parser.add_argument("--dev-tables", default=None)
     parser.add_argument("--schema-dir", default="test/benchmark/schemas")

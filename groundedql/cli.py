@@ -1,9 +1,9 @@
 """
-cli.py — IntentQL command-line interface.
+cli.py — GroundedQL command-line interface.
 
 Commands:
-    intentql init     — Introspect a Postgres database and generate schema.yaml
-    intentql describe — Enrich schema.yaml with LLM-generated column descriptions
+    groundedql init     — Introspect a Postgres database and generate schema.yaml
+    groundedql describe — Enrich schema.yaml with LLM-generated column descriptions
 """
 from __future__ import annotations
 
@@ -411,12 +411,12 @@ def describe_schema(
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="intentql",
-        description="IntentQL — Intent-driven natural language to SQL",
+        prog="groundedql",
+        description="GroundedQL — Intent-driven natural language to SQL",
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    # intentql init
+    # groundedql init
     init_parser = subparsers.add_parser(
         "init",
         help="Introspect a Postgres database and generate schema.yaml",
@@ -443,7 +443,7 @@ def main():
         help="Table names to exclude",
     )
 
-    # intentql describe
+    # groundedql describe
     desc_parser = subparsers.add_parser(
         "describe",
         help="Enrich schema.yaml with LLM-generated column descriptions",
@@ -490,7 +490,7 @@ def main():
 
     elif args.command == "describe":
         if not Path(args.schema).exists():
-            print(f"Error: {args.schema} not found. Run 'intentql init' first.", file=sys.stderr)
+            print(f"Error: {args.schema} not found. Run 'groundedql init' first.", file=sys.stderr)
             sys.exit(1)
         describe_schema(
             schema_path=args.schema,

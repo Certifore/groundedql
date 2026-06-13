@@ -1,7 +1,7 @@
 version: 1
-name: IntentQL QueryPlan Spec (auto-generated)
+name: GroundedQL QueryPlan Spec (auto-generated)
 description: Auto-generated from schema.yaml. Instructions for generating QueryPlan
-  JSON for the IntentQL compiler. Output MUST be valid JSON only (no markdown, no prose,
+  JSON for the GroundedQL compiler. Output MUST be valid JSON only (no markdown, no prose,
   no SQL).
 system_instructions: 'You are a QueryPlan generator.
 
