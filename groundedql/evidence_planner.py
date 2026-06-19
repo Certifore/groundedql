@@ -217,6 +217,10 @@ def _generic_evidence_plan(question: str, evidence: str, ctx: EvidenceContext) -
     if entity_extremum is not None:
         return entity_extremum
 
+    grouped_record_extremum = _extract_grouped_record_extremum_plan(question, evidence, ctx, filters, mapping_select)
+    if grouped_record_extremum is not None:
+        return grouped_record_extremum
+
     ranked_metric_values = _extract_ranked_metric_values_plan(question, evidence, ctx, filters, mapping_select)
     if ranked_metric_values is not None:
         return ranked_metric_values
@@ -254,6 +258,7 @@ def _generic_evidence_plan(question: str, evidence: str, ctx: EvidenceContext) -
             and not (_filter_refs([f]) and _filter_refs([f]) <= formula_condition_refs)
         ]
         metric_refs = formula.get("metric_refs") or formula["refs"]
+        outer_filters = _retarget_metric_temporal_filters(ctx, metric_refs, outer_filters, all_text)
         scoped = _entity_scoped_formula_dataset(ctx, metric_refs, outer_filters, text=all_text)
         if scoped is not None:
             dataset, outer_filters = scoped
@@ -394,7 +399,11 @@ def _generic_evidence_plan(question: str, evidence: str, ctx: EvidenceContext) -
     selects = _prefer_filter_backed_selects(selects, filters, ctx)
     selects = _sort_selects_by_question(selects, question, ctx)
     selects = _expand_sibling_measure_selects(selects, question, ctx)
-    selects = _prefer_order_context_selects(selects, _extract_ordering(question, evidence, ctx), ctx)
+    order_context = _extract_ordering(question, evidence, ctx)
+    selects = _prefer_order_context_selects(selects, order_context, ctx)
+    selects = _add_requested_order_source_selects(selects, question, order_context, ctx)
+    selects = _drop_modifier_conflicting_selects(selects, question, ctx)
+    selects = _sort_selects_by_question(selects, question, ctx)
     computed_selects = _extract_computed_selects(question, evidence, ctx)
     if computed_selects:
         selects = _add_ordered_computed_sources(selects, computed_selects, question, _extract_ordering(question, evidence, ctx), ctx)
@@ -1162,6 +1171,23 @@ def _extract_question_temporal_filters(
     if explicit_month:
         value = _month_value(explicit_month.group(1))
         filters.append(_cmp(_month_expr(col), "=", value))
+
+    month_year = re.search(
+        r"\b(January|February|March|April|May|June|July|August|September|October|November|December)\s*,?\s+((?:19|20)\d{2})\b",
+        question,
+        re.I,
+    )
+    if month_year:
+        value = f"{month_year.group(2)}-{_month_value(month_year.group(1))}"
+        if _text_date_like(col):
+            filters.append(_cmp({"col": col.ref}, "starts_with", value))
+        else:
+            filters.extend(
+                [
+                    _cmp(_year_expr(col), "=", _year_comparison_value(month_year.group(2), col)),
+                    _cmp(_month_expr(col), "=", _month_value(month_year.group(1))),
+                ]
+            )
     return _dedupe_bool(filters)
 
 
@@ -1557,13 +1583,11 @@ def _implicit_entity_label_column(
         name_norm = _norm(col.name)
         if name_norm != "name" and not name_norm.endswith(" name"):
             continue
-        table_norm = _norm(col.table)
-        singular = table_norm[:-1] if table_norm.endswith("s") else table_norm
-        plural = table_norm if table_norm.endswith("s") else f"{table_norm}s"
+        table_terms = _table_name_terms(col.table)
         score = 0
         if col.table in preferred_tables:
             score += 10
-        if any(_alias_in_text(item, q_norm) for item in {table_norm, singular, plural}):
+        if any(_alias_in_text(item, q_norm) for item in table_terms):
             score += 20
         if name_norm != "name":
             score += 2
@@ -1577,11 +1601,12 @@ def _implicit_entity_label_column(
 
 def _question_requests_entity_label(question: str, ctx: EvidenceContext) -> bool:
     q_norm = _norm(question)
+    asks_for_label = re.search(r"\b(?:who|which|list|name|names|identify|state|give|provide|show)\b", q_norm) is not None
     for table in ctx.tables:
-        table_norm = _norm(table)
-        singular = table_norm[:-1] if table_norm.endswith("s") else table_norm
-        plural = table_norm if table_norm.endswith("s") else f"{table_norm}s"
-        entity = rf"(?:{re.escape(table_norm)}|{re.escape(singular)}|{re.escape(plural)})"
+        terms = sorted(_table_name_terms(table), key=len, reverse=True)
+        entity = rf"(?:{'|'.join(re.escape(term) for term in terms)})"
+        if asks_for_label and any(_alias_in_text(term, q_norm) for term in terms):
+            return True
         if re.match(rf"\s*(?:who|which)\s+(?:[a-z]+\s+){{0,2}}{entity}\b", q_norm):
             return True
         if re.match(rf"\s*(?:list|name|identify)\b[^?.;,]{{0,40}}\b{entity}\b", q_norm):
@@ -1817,6 +1842,17 @@ def _extract_ranked_dimension_plan(
         if label is None:
             return None
         output.append({"ref": label.ref, "alias": _alias_for(label.name)})
+    metric_value_outputs: List[Dict[str, str]] = []
+    if re.search(r"\b(?:score|rating|value|amount|number|total|metric)\b", question, re.I):
+        for ref in metric_refs:
+            col = _column_by_ref(ctx, ref)
+            if col is None or not _numeric_column(col):
+                continue
+            if not _column_mentioned_in_text(col, question):
+                continue
+            metric_value_outputs.append({"ref": col.ref, "alias": _alias_for(col.name)})
+    if metric_value_outputs and not re.search(r"\bgive\s+(?:the\s+)?name\b|\blist\b[^?.;]*\bname", question, re.I):
+        output = _dedupe_selects(metric_value_outputs + output)
     refs = [s["ref"] for s in output] + list(metric_refs) + list(_filter_refs(filters))
     dataset = _choose_dataset(ctx, refs, filters, text=text)
     if dataset is None:
@@ -1842,6 +1878,10 @@ def _extract_ranked_temporal_answer(
     ctx: EvidenceContext,
     filters: Sequence[Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
+    metric_temporal = _extract_metric_temporal_extremum_answer(question, evidence, ctx, filters)
+    if metric_temporal is not None:
+        return metric_temporal
+
     if not re.search(r"\b(?:youngest|oldest|earliest|latest|most recent)\b", question, re.I):
         return None
     if not re.search(r"\b(?:when|date|born|birthday|birth date)\b", question, re.I):
@@ -1863,6 +1903,85 @@ def _extract_ranked_temporal_answer(
         order_by=[{"by": {"col": col.ref}, "dir": direction}],
         limit=1,
     )
+
+
+def _extract_metric_temporal_extremum_answer(
+    question: str,
+    evidence: str,
+    ctx: EvidenceContext,
+    filters: Sequence[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    if not re.search(r"\b(?:when|date|time|day)\b", question, re.I):
+        return None
+    text = f"{question}\n{evidence}"
+    extremum = re.search(r"\b(MAX|MIN)\s*\(\s*([A-Za-z0-9_.\"` -]+?)\s*\)", evidence or "", re.I)
+    metric = _resolve_column_for_context(extremum.group(2), ctx, filters, text) if extremum else None
+    if metric is None and re.search(r"\b(?:highest|lowest|largest|smallest|maximum|minimum)\b", text, re.I):
+        metric = _best_numeric_measure_for_text(text, ctx)
+    if metric is None or not _numeric_column(metric):
+        return None
+    date_col = _date_column_for_table(ctx, metric.table)
+    if date_col is None:
+        return None
+    metric_filter = _cmp({"col": metric.ref}, "is_not_null", True)
+    all_filters = _dedupe_bool(list(filters) + [metric_filter])
+    refs = [date_col.ref, metric.ref] + list(_filter_refs(all_filters))
+    dataset = _choose_dataset(ctx, refs, all_filters, text=text)
+    if dataset is None:
+        return None
+    metric_dir = "asc" if re.search(r"\b(?:lowest|smallest|minimum|MIN\s*\()\b", text, re.I) else "desc"
+    date_dir = "asc" if re.search(r"\b(?:earliest\s+date|minimum\s+date|MIN\s*\(\s*date\s*\))\b", text, re.I) else "desc"
+    plan = _advanced(
+        dataset,
+        [{"expr": {"col": date_col.ref}, "alias": _alias_for(date_col.name)}],
+        where=_and(all_filters),
+        order_by=[
+            {"by": {"col": metric.ref}, "dir": metric_dir},
+            {"by": {"col": date_col.ref}, "dir": date_dir},
+        ],
+        limit=1,
+    )
+    preferred_link = _preferred_direct_link_for_metric_table(ctx, dataset, metric.table)
+    if preferred_link is not None:
+        plan["joins"] = [{"link": preferred_link}]
+    return plan
+
+
+def _preferred_direct_link_for_metric_table(
+    ctx: EvidenceContext,
+    left_table: str,
+    right_table: str,
+) -> Optional[str]:
+    if left_table == right_table:
+        return None
+    candidates = []
+    for link in ctx.schema.get("links", []) or []:
+        if not isinstance(link, dict):
+            continue
+        endpoints = {link.get("from_table"), link.get("to_table")}
+        if endpoints != {left_table, right_table}:
+            continue
+        score = _link_column_order_score(ctx, link, right_table)
+        candidates.append((score, str(link.get("name") or "")))
+    if len(candidates) <= 1:
+        return None
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    return candidates[0][1] or None
+
+
+def _link_column_order_score(ctx: EvidenceContext, link: Dict[str, Any], table: str) -> int:
+    order = {col.name: idx for idx, col in enumerate(col for col in ctx.columns if col.table == table)}
+    scores: List[int] = []
+    for item in link.get("on", []) or []:
+        if not isinstance(item, dict):
+            continue
+        for ref in (item.get("left"), item.get("right")):
+            if not isinstance(ref, str) or "." not in ref:
+                continue
+            ref_table, ref_col = ref.split(".", 1)
+            if ref_table == table:
+                scores.append(order.get(ref_col, 10**6))
+    return min(scores) if scores else 10**6
 
 
 def _extract_explicit_ranked_aggregate_plan(
@@ -1940,6 +2059,126 @@ def _extract_explicit_ranked_aggregate_plan(
     )
     plan["group_by"] = [{"col": item["ref"]} for item in output]
     return plan
+
+
+def _extract_grouped_record_extremum_plan(
+    question: str,
+    evidence: str,
+    ctx: EvidenceContext,
+    filters: Sequence[Dict[str, Any]],
+    mapping_select: Sequence[Dict[str, str]],
+) -> Optional[Dict[str, Any]]:
+    """Return dimension values whose related record count is the group extremum."""
+    text = f"{question}\n{evidence}"
+    if not re.search(r"\b(?:most|least|fewest|highest|lowest|largest|smallest|maximum|minimum)\b", text, re.I):
+        return None
+    if not re.search(
+        r"\b(?:had|has|have|having|with)\s+(?:the\s+)?(?:most|least|fewest|highest|lowest|largest|smallest)\b",
+        question,
+        re.I,
+    ):
+        return None
+    if not re.search(r"\b(?:name|names|which|what|who|give|list|state|show|provide)\b", question, re.I):
+        return None
+    if re.search(r"\b(?:score|rating|amount|percentage|percent|ratio|average|avg|sum|total)\b", question, re.I):
+        return None
+
+    mapped = [
+        item
+        for item in mapping_select
+        if isinstance(item.get("ref"), str)
+        and (col := _column_by_ref(ctx, item["ref"])) is not None
+        and not _numeric_column(col)
+        and not _id_like_column(col)
+    ]
+    label = _column_by_ref(ctx, mapped[0]["ref"]) if mapped else _implicit_entity_label_column(question, ctx)
+    if label is None:
+        return None
+
+    counted_table = _counted_table_for_group_extremum(question, evidence, ctx, label.table, filters)
+    if counted_table is None or counted_table == label.table:
+        return None
+    if _join_distance(ctx, counted_table, label.table) is None:
+        return None
+
+    count_col = _count_column_for_table(ctx, counted_table)
+    count_expr = _func("count", {"col": count_col.ref}) if count_col is not None else _func("count")
+    label_alias = _alias_for(label.name)
+    count_alias = "record_count"
+    group_plan = _advanced(
+        counted_table,
+        [
+            {"expr": {"col": label.ref}, "alias": label_alias},
+            {"expr": count_expr, "alias": count_alias},
+        ],
+        where=_and(filters) if filters else None,
+        limit=None,
+    )
+    group_plan["group_by"] = [{"col": label.ref}]
+
+    direction = "min" if re.search(r"\b(?:least|fewest|lowest|smallest|minimum|MIN\s*\()\b", text, re.I) else "max"
+    aggregate_plan = _advanced(
+        "grouped_record_counts",
+        [{"expr": _func(direction, {"col": count_alias}), "alias": "value"}],
+        limit=1,
+    )
+    return {
+        "version": "1.0",
+        "with": [{"name": "grouped_record_counts", "plan": group_plan}],
+        "dataset": "grouped_record_counts",
+        "select": [{"expr": {"col": label_alias}, "alias": label_alias}],
+        "where": _cmp(
+            {"col": count_alias},
+            "=",
+            {"scalar_subquery": {"plan": aggregate_plan}},
+        ),
+        "limit": None,
+        "offset": 0,
+    }
+
+
+def _counted_table_for_group_extremum(
+    question: str,
+    evidence: str,
+    ctx: EvidenceContext,
+    label_table: str,
+    filters: Sequence[Dict[str, Any]],
+) -> Optional[str]:
+    text = f"{question}\n{evidence}"
+    text_norm = _norm(text)
+    scored: List[Tuple[int, str]] = []
+    filter_tables = {ref.split(".", 1)[0] for ref in _filter_refs(filters) if "." in ref}
+    for table in ctx.tables:
+        if table == label_table:
+            continue
+        if _join_distance(ctx, table, label_table) is None:
+            continue
+        score = 0
+        for term in _table_name_terms(table):
+            if _alias_in_text(term, text_norm):
+                score += 12 + min(len(term), 8)
+        if table in filter_tables:
+            score += 8
+        if ctx.primary_ids.get(table):
+            score += 2
+        if score:
+            scored.append((score, table))
+    if not scored:
+        return None
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return scored[0][1]
+
+
+def _count_column_for_table(ctx: EvidenceContext, table: str) -> Optional[ColumnInfo]:
+    primary = ctx.primary_ids.get(table)
+    if primary:
+        col = _column_by_table_name(ctx, table, primary)
+        if col is not None:
+            return col
+    for col in ctx.columns:
+        if col.table == table and _id_like_column(col):
+            return col
+    return None
 
 
 def _resolve_count_aggregate_column(raw: str, ctx: EvidenceContext, text: str) -> Optional[ColumnInfo]:
@@ -2309,7 +2548,7 @@ def _extract_represented_filters(question: str, evidence: str, ctx: EvidenceCont
     ):
         col = _resolve_column(m.group(2), ctx, table_hint=m.group(3))
         if col is not None:
-            filters.append(_cmp({"col": col.ref}, "=", _parse_literal(m.group(4))))
+            filters.append(_column_cmp(col, "=", _parse_literal(m.group(4))))
 
     for m in re.finditer(
         r"([A-Za-z0-9_.\"` -]+?)\s+can\s+be\s+represented\s+as\s+([A-Za-z0-9_.\"` -]+?)\s+BETWEEN\s+'([^']+)'\s+AND\s+'([^']+)'",
@@ -2332,7 +2571,7 @@ def _extract_represented_filters(question: str, evidence: str, ctx: EvidenceCont
         else:
             col = None
         if col is not None:
-            filters.append(_cmp({"col": col.ref}, "=", literal))
+            filters.append(_column_cmp(col, "=", literal))
 
     # Many benchmark/app questions put the literal time in the question and only
     # normalize the date in evidence. Bind those literals to obvious time/date
@@ -2347,7 +2586,7 @@ def _extract_represented_filters(question: str, evidence: str, ctx: EvidenceCont
         if time_value:
             col = _time_column_for_text(ctx, all_text)
             if col is not None:
-                filters.append(_cmp({"col": col.ref}, "=", time_value))
+                filters.append(_column_cmp(col, "=", time_value))
 
     date_value = _date_any_order(question)
     if (
@@ -2359,7 +2598,7 @@ def _extract_represented_filters(question: str, evidence: str, ctx: EvidenceCont
     ):
         col = _date_column_for_text(ctx, all_text)
         if col is not None:
-            filters.append(_cmp({"col": col.ref}, "=", date_value))
+            filters.append(_column_cmp(col, "=", date_value))
 
     return filters
 
@@ -2448,6 +2687,8 @@ def _extract_mapped_selects(
         if _mapping_lhs_filter_context(lhs, question):
             continue
         select_rhs = re.split(r"\bwhere\b", rhs, maxsplit=1, flags=re.I)[0].strip()
+        if re.search(r"\brank\s+based\s+on\b|\bbased\s+on\s+(?:the\s+)?rank\b", select_rhs, re.I):
+            continue
         extremum = re.search(r"\b(MAX|MIN)\s*\((.*?)\)", select_rhs, re.I)
         if extremum:
             select_rhs = extremum.group(2)
@@ -2489,14 +2730,15 @@ def _extract_question_selects(
     ctx: EvidenceContext,
     filters: Sequence[Dict[str, Any]],
 ) -> List[Dict[str, str]]:
-    matches = _question_select_matches(question, ctx, filters)
-    output_context = _output_context_columns(matches, question, filters, ctx)
-    if output_context:
-        return _dedupe_selects([{"ref": c.ref, "alias": _alias_for(c.name)} for c in output_context])
     if _question_requests_entity_label(question, ctx):
         label = _implicit_entity_label_column(question, ctx)
         if label is not None:
             return [{"ref": label.ref, "alias": _alias_for(label.name)}]
+
+    matches = _question_select_matches(question, ctx, filters)
+    output_context = _output_context_columns(matches, question, filters, ctx)
+    if output_context:
+        return _dedupe_selects([{"ref": c.ref, "alias": _alias_for(c.name)} for c in output_context])
 
     # Avoid returning every generic column named "id" or "date" when the question
     # does not ask for a list/detail answer.
@@ -2512,6 +2754,10 @@ def _extract_explicit_question_selects(
     ctx: EvidenceContext,
     filters: Sequence[Dict[str, Any]],
 ) -> List[Dict[str, str]]:
+    if _question_requests_entity_label(question, ctx):
+        label = _implicit_entity_label_column(question, ctx)
+        if label is not None:
+            return [{"ref": label.ref, "alias": _alias_for(label.name)}]
     matches = _question_select_matches(question, ctx, filters)
     output_context = _output_context_columns(matches, question, filters, ctx)
     return _dedupe_selects([{"ref": c.ref, "alias": _alias_for(c.name)} for c in output_context])
@@ -2579,6 +2825,9 @@ def _alias_in_question(alias: str, question: str, q_norm: str) -> bool:
     found = _alias_in_text(alias, q_norm)
     if not found and " " not in alias:
         found = _token_variant_in_text(alias, q_norm)
+    if not found and " " not in alias and len(alias) > 5:
+        compact_alias = _compact_identifier(alias)
+        found = bool(compact_alias and compact_alias in _compact_identifier(q_norm))
     if not found:
         return False
     if _query_command_phrase(alias) and re.match(rf"\s*{re.escape(alias)}\b", question or "", re.I):
@@ -2593,9 +2842,44 @@ def _alias_variants(alias: str) -> List[str]:
             variants.append(f"{alias[:-1]}ies")
         elif alias.endswith("s"):
             variants.append(alias[:-1])
+            variants.append(f"{alias}es")
+        elif alias.endswith(("ch", "sh", "x", "z")):
+            variants.append(f"{alias}es")
         else:
             variants.append(f"{alias}s")
     return _dedupe_strings(variants)
+
+
+def _table_name_terms(table: str) -> set[str]:
+    """Return normalized singular/plural variants for a logical table name."""
+    base = _norm(table)
+    if not base:
+        return set()
+    terms = {base}
+    pieces = base.split()
+    candidates = {base}
+    if pieces:
+        candidates.add(pieces[-1])
+        if len(pieces) > 1:
+            candidates.add(" ".join(pieces[:-1]))
+
+    for term in list(candidates):
+        if not term or len(term) <= 2:
+            continue
+        terms.add(term)
+        if term.endswith("ies") and len(term) > 3:
+            terms.add(f"{term[:-3]}y")
+        elif term.endswith(("ches", "shes", "xes", "ses", "zes")) and len(term) > 4:
+            terms.add(term[:-2])
+        elif term.endswith("s") and len(term) > 3:
+            terms.add(term[:-1])
+        if term.endswith("y"):
+            terms.add(f"{term[:-1]}ies")
+        elif term.endswith(("ch", "sh", "x", "s", "z")):
+            terms.add(f"{term}es")
+        else:
+            terms.add(f"{term}s")
+    return {term for term in terms if term}
 
 
 def _extract_formula_select(
@@ -2615,9 +2899,16 @@ def _extract_formula_select(
     expr = parsed["expr"]
     if re.search(r"\bpercentage\b|%\s*$|\*\s*100", text, re.I) and not parsed.get("scaled"):
         expr = _op("*", expr, {"lit": 100.0})
+    metric_refs = parsed.get("metric_refs") or [
+        ref
+        for ref in parsed["refs"]
+        for col in [_column_by_ref(ctx, ref)]
+        if col is not None and _numeric_column(col) and not _id_like_column(col)
+    ]
     return {
         "select": {"expr": expr, "alias": "value"},
         "refs": parsed["refs"] + list(_filter_refs(filters)),
+        "metric_refs": _dedupe_strings(metric_refs),
         "filter_keys": parsed["filter_keys"],
         "condition_refs": parsed.get("condition_refs") or set(),
     }
@@ -3096,6 +3387,21 @@ def _extract_average_age_aggregate(question: str, evidence: str, ctx: EvidenceCo
 
 def _age_source_date_column(ctx: EvidenceContext, text: str) -> Optional[ColumnInfo]:
     text_norm = _norm(text)
+    if re.search(r"\b(?:oldest|youngest|older|younger|born|birth|birthday)\b", text_norm, re.I):
+        birth_candidates = [
+            col for col in ctx.columns
+            if re.search(r"\bbirth", _norm(col.name)) and _column_is_temporal(col)
+        ]
+        if birth_candidates:
+            scored_birth = [
+                (
+                    _column_context_score(col, text, ctx, []),
+                    col,
+                )
+                for col in birth_candidates
+            ]
+            scored_birth.sort(key=lambda item: item[0], reverse=True)
+            return scored_birth[0][1]
     scored: List[Tuple[int, ColumnInfo]] = []
     for table, date_name in ctx.primary_dates.items():
         col = _column_by_table_name(ctx, table, date_name)
@@ -3199,12 +3505,14 @@ def _formula_expr(text: str, ctx: EvidenceContext, context_text: str = "") -> Op
         refs = left["refs"] + right["refs"]
         keys = set(left["filter_keys"]) | set(right["filter_keys"])
         condition_refs = set(left.get("condition_refs") or set()) | set(right.get("condition_refs") or set())
+        metric_refs = list(left.get("metric_refs") or []) + list(right.get("metric_refs") or [])
         if name in {"divide", "division"}:
             return {
                 "expr": _ratio_expr(left["expr"], right["expr"]),
                 "refs": refs,
                 "filter_keys": keys,
                 "condition_refs": condition_refs,
+                "metric_refs": _dedupe_strings(metric_refs),
                 "scaled": bool(left.get("scaled")) or bool(right.get("scaled")),
             }
         if name == "subtract":
@@ -3213,6 +3521,7 @@ def _formula_expr(text: str, ctx: EvidenceContext, context_text: str = "") -> Op
                 "refs": refs,
                 "filter_keys": keys,
                 "condition_refs": condition_refs,
+                "metric_refs": _dedupe_strings(metric_refs),
             }
         if name == "multiply":
             scaled = _literal_number_arg(args[1]) == 100 or bool(left.get("scaled")) or bool(right.get("scaled"))
@@ -3221,6 +3530,7 @@ def _formula_expr(text: str, ctx: EvidenceContext, context_text: str = "") -> Op
                 "refs": refs,
                 "filter_keys": keys,
                 "condition_refs": condition_refs,
+                "metric_refs": _dedupe_strings(metric_refs),
                 "scaled": scaled,
             }
 
@@ -3233,14 +3543,21 @@ def _formula_expr(text: str, ctx: EvidenceContext, context_text: str = "") -> Op
         if col is not None:
             return {"expr": _year_expr(col), "refs": [col.ref], "filter_keys": set()}
 
+    conditional = _conditional_metric_expr(text, ctx, context_text)
+    if conditional is not None:
+        return conditional
+
     metric_text, cond_text = _split_metric_where(text)
     if cond_text and metric_text != text and not re.search(r"\b(?:COUNT|SUM|AVG|MIN|MAX)\s*\(", metric_text, re.I):
         metric = _resolve_column_for_context(metric_text, ctx, [], context_text)
         cond = _condition_tree(cond_text, ctx)
+        if metric is not None:
+            cond = _prefer_condition_table(cond, metric.table, ctx)
         if metric is not None and cond is not None:
             return {
                 "expr": _case_sum(cond, {"col": metric.ref}),
                 "refs": [metric.ref] + list(_filter_refs([cond])),
+                "metric_refs": [metric.ref],
                 "filter_keys": _bool_keys(cond),
                 "condition_refs": _filter_refs([cond]),
             }
@@ -3257,7 +3574,10 @@ def _formula_expr(text: str, ctx: EvidenceContext, context_text: str = "") -> Op
     if col is None:
         col = _resolve_column_for_context(text, ctx, [], context_text)
     if col is not None:
-        return {"expr": {"col": col.ref}, "refs": [col.ref], "filter_keys": set()}
+        out = {"expr": {"col": col.ref}, "refs": [col.ref], "filter_keys": set()}
+        if _numeric_column(col) and not _id_like_column(col):
+            out["metric_refs"] = [col.ref]
+        return out
     return None
 
 
@@ -3298,6 +3618,127 @@ def _split_metric_where(text: str) -> Tuple[str, str]:
     return text.strip(), ""
 
 
+def _conditional_metric_expr(
+    text: str,
+    ctx: EvidenceContext,
+    context_text: str,
+) -> Optional[Dict[str, Any]]:
+    split = _split_conditional_metric_arg(text, ctx, context_text)
+    if split is None:
+        return None
+    metric, cond_text = split
+    cond = _condition_tree_for_metric(cond_text, metric.table, ctx)
+    cond = _prefer_condition_table(cond, metric.table, ctx)
+    cond = _align_condition_boundaries(cond, context_text or text, ctx)
+    if cond is None:
+        return None
+    refs = [metric.ref] + list(_filter_refs([cond]))
+    return {
+        "expr": _case_sum(cond, {"col": metric.ref}),
+        "refs": refs,
+        "metric_refs": [metric.ref],
+        "filter_keys": _bool_keys(cond),
+        "condition_refs": _filter_refs([cond]),
+    }
+
+
+def _split_conditional_metric_arg(
+    text: str,
+    ctx: EvidenceContext,
+    context_text: str,
+) -> Optional[Tuple[ColumnInfo, str]]:
+    clean = _strip_wrapping_parentheses(text.strip().strip(".;"))
+    if not clean:
+        return None
+
+    parts = _split_bool(clean, "and")
+    if len(parts) > 1:
+        for idx, part in enumerate(parts):
+            metric = _resolve_column_for_context(part, ctx, [], context_text or clean)
+            if metric is None or not _numeric_column(metric) or _id_like_column(metric):
+                continue
+            cond_text = " AND ".join(other for i, other in enumerate(parts) if i != idx)
+            if cond_text:
+                return metric, cond_text
+
+    condition_first = re.match(
+        r"(.+?\s*(?:=|>=|<=|>|<)\s*(?:'[^']*'|\"[^\"]*\"|[+-]?\d+(?:\.\d+)?|[A-Za-z_][A-Za-z0-9_+-]*))\s+(.+)$",
+        clean,
+        flags=re.I | re.S,
+    )
+    if condition_first:
+        cond_text = condition_first.group(1).strip()
+        metric_text = condition_first.group(2).strip()
+        metric = _resolve_column_for_context(metric_text, ctx, [], context_text or clean)
+        if metric is not None and _numeric_column(metric) and not _id_like_column(metric):
+            return metric, cond_text
+
+    metric_first = re.match(
+        r"(.+?)\s+((?:[A-Za-z0-9_.\"` -]+?)\s*(?:=|>=|<=|>|<)\s*(?:'[^']*'|\"[^\"]*\"|[+-]?\d+(?:\.\d+)?|[A-Za-z_][A-Za-z0-9_+-]*))$",
+        clean,
+        flags=re.I | re.S,
+    )
+    if metric_first:
+        metric_text = metric_first.group(1).strip()
+        cond_text = metric_first.group(2).strip()
+        metric = _resolve_column_for_context(metric_text, ctx, [], context_text or clean)
+        if metric is not None and _numeric_column(metric) and not _id_like_column(metric):
+            return metric, cond_text
+
+    return None
+
+
+def _condition_tree_for_metric(text: str, table: str, ctx: EvidenceContext) -> Optional[Dict[str, Any]]:
+    cond = _condition_tree(text, ctx)
+    if cond is not None:
+        return _prefer_condition_table(cond, table, ctx)
+
+    m = re.fullmatch(
+        r"([A-Za-z0-9_.\"` -]+?)\s*(=|>=|<=|>|<)\s*('(?:[^']*)'|\"(?:[^\"]*)\"|[+-]?\d+(?:\.\d+)?|[A-Za-z_][A-Za-z0-9_+-]*)",
+        text.strip(),
+        flags=re.I | re.S,
+    )
+    if not m:
+        return None
+    col = _resolve_column_for_context(m.group(1), ctx, [], text, table_hint=table)
+    if col is None:
+        col = _column_by_table_name(ctx, table, _norm(_clean_column_phrase(m.group(1))).replace(" ", "_"))
+    if col is None:
+        return None
+    return _column_cmp(col, m.group(2), _parse_literal_for_column(m.group(3), col, m.group(2)))
+
+
+def _prefer_condition_table(
+    cond: Optional[Dict[str, Any]],
+    table: str,
+    ctx: EvidenceContext,
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(cond, dict):
+        return cond
+    if "and" in cond:
+        return {"and": [_prefer_condition_table(item, table, ctx) for item in cond["and"]]}
+    if "or" in cond:
+        return {"or": [_prefer_condition_table(item, table, ctx) for item in cond["or"]]}
+    if "not" in cond:
+        return {"not": _prefer_condition_table(cond["not"], table, ctx)}
+
+    cmp_node = cond.get("cmp")
+    if not isinstance(cmp_node, dict):
+        return cond
+    left = cmp_node.get("left")
+    if not (isinstance(left, dict) and isinstance(left.get("col"), str)):
+        return cond
+    source = _column_by_ref(ctx, left["col"])
+    if source is None or source.table == table:
+        return cond
+    target = _column_by_table_name(ctx, table, source.name)
+    if target is None:
+        return cond
+    updated = dict(cmp_node)
+    updated["left"] = {"col": target.ref}
+    return {"cmp": updated}
+
+
 def _extract_ordering(question: str, evidence: str, ctx: EvidenceContext) -> List[Dict[str, Any]]:
     text = f"{question}\n{evidence}"
     direction = None
@@ -3316,6 +3757,12 @@ def _extract_ordering(question: str, evidence: str, ctx: EvidenceContext) -> Lis
             elif re.search(r"\b(?:oldest|older)\b", question, re.I):
                 direction = "asc"
             return [{"by": {"col": col.ref}, "dir": direction}]
+
+    if re.search(r"\b(?:tallest|taller|shortest|shorter)\b", question, re.I):
+        height = _resolve_column_for_context("height", ctx, [], text)
+        if height is not None and _numeric_column(height):
+            height_dir = "asc" if re.search(r"\b(?:shortest|shorter)\b", question, re.I) else "desc"
+            return [{"by": {"col": height.ref}, "dir": height_dir}]
 
     for lhs, rhs in _mapping_clauses(evidence):
         if not _mapping_lhs_requested(lhs, question):
@@ -3567,12 +4014,17 @@ def _column_context_score(
 ) -> int:
     text_norm = _norm(text)
     score = 0
-    table_norm = _norm(col.table)
-    singular = table_norm[:-1] if table_norm.endswith("s") else table_norm
-    plural = table_norm if table_norm.endswith("s") else f"{table_norm}s"
-    if _alias_in_text(table_norm, text_norm) or _alias_in_text(singular, text_norm) or _alias_in_text(plural, text_norm):
+    if any(_alias_in_text(term, text_norm) for term in _table_name_terms(col.table)):
         score += 8
     score += max((min(len(alias), 8) for alias in col.aliases if _alias_in_text(alias, text_norm)), default=0)
+    same_table_mentions = sum(
+        1
+        for other in ctx.columns
+        if other.table == col.table
+        and other.ref != col.ref
+        and _column_mentioned_in_text(other, text_norm)
+    )
+    score += min(same_table_mentions, 4) * 4
 
     filter_tables = {ref.split(".", 1)[0] for ref in _filter_refs(filters) if "." in ref}
     if col.table in filter_tables:
@@ -4024,6 +4476,9 @@ def _output_context_columns(
             if not alias or (len(alias) <= 2 and alias != "id"):
                 continue
             matched = False
+            if " " not in alias and len(alias) > 5 and _compact_identifier(alias) in _compact_identifier(q_norm):
+                requested.append(col)
+                continue
             for variant in _alias_variants(alias):
                 if variant.endswith("ed") and re.search(rf"\b{re.escape(variant)}\s+for\b", q_norm):
                     continue
@@ -4051,6 +4506,8 @@ def _output_context_columns(
                 break
     if not requested:
         return []
+    requested = _drop_subsumed_output_columns(requested)
+    requested = _drop_modifier_conflicting_output_columns(requested, question)
     requested.sort(key=lambda col: _column_request_pos(col, q_norm))
     by_name: Dict[str, List[ColumnInfo]] = {}
     for col in requested:
@@ -4070,6 +4527,23 @@ def _output_context_columns(
     return _dedupe_columns(out)
 
 
+def _drop_subsumed_output_columns(columns: Sequence[ColumnInfo]) -> List[ColumnInfo]:
+    out: List[ColumnInfo] = []
+    compact_names = {col.ref: _compact_identifier(col.name) for col in columns}
+    for col in columns:
+        compact = compact_names[col.ref]
+        if any(
+            other.ref != col.ref
+            and len(compact_names[other.ref]) > len(compact)
+            and compact
+            and compact in compact_names[other.ref]
+            for other in columns
+        ):
+            continue
+        out.append(col)
+    return out
+
+
 def _column_request_pos(col: ColumnInfo, q_norm: str) -> int:
     positions: List[int] = []
     if col.name in {"first_name", "last_name"}:
@@ -4082,6 +4556,54 @@ def _column_request_pos(col: ColumnInfo, q_norm: str) -> int:
             if idx >= 0:
                 positions.append(idx)
     return min(positions) if positions else 10**9
+
+
+def _drop_modifier_conflicting_output_columns(
+    columns: Sequence[ColumnInfo],
+    question: str,
+) -> List[ColumnInfo]:
+    q_norm = _norm(question)
+    requested_modifiers = {mod for mod in ("short", "long") if _alias_in_text(mod, q_norm)}
+    if not requested_modifiers:
+        return list(columns)
+
+    groups: Dict[Tuple[str, Tuple[str, ...]], List[ColumnInfo]] = {}
+    for col in columns:
+        words = re.split(r"[_\s]+", _norm(col.name))
+        key_words = tuple(word for word in words if word not in {"short", "long"})
+        groups.setdefault((col.table, key_words), []).append(col)
+
+    keep: List[ColumnInfo] = []
+    for group in groups.values():
+        requested = [
+            col for col in group
+            if any(mod in re.split(r"[_\s]+", _norm(col.name)) for mod in requested_modifiers)
+        ]
+        if requested:
+            keep.extend(requested)
+        else:
+            keep.extend(group)
+    return _dedupe_columns(keep)
+
+
+def _drop_modifier_conflicting_selects(
+    selects: Sequence[Dict[str, str]],
+    question: str,
+    ctx: EvidenceContext,
+) -> List[Dict[str, str]]:
+    cols: List[ColumnInfo] = []
+    by_ref: Dict[str, Dict[str, str]] = {}
+    for item in selects:
+        ref = item.get("ref")
+        col = _column_by_ref(ctx, ref) if isinstance(ref, str) else None
+        if col is None:
+            continue
+        cols.append(col)
+        by_ref[col.ref] = item
+    if not cols:
+        return list(selects)
+    kept_refs = {col.ref for col in _drop_modifier_conflicting_output_columns(cols, question)}
+    return [item for item in selects if not isinstance(item.get("ref"), str) or item["ref"] in kept_refs]
 
 
 def _general_synonym_hits(col: ColumnInfo, text_norm: str) -> bool:
@@ -4195,6 +4717,61 @@ def _entity_scoped_formula_dataset(
                 {"scalar_subquery": {"plan": subquery}},
             )
             return metric_table, metric_filters + [scoped_filter]
+    return None
+
+
+def _retarget_metric_temporal_filters(
+    ctx: EvidenceContext,
+    metric_refs: Sequence[str],
+    filters: Sequence[Dict[str, Any]],
+    text: str,
+) -> List[Dict[str, Any]]:
+    metric_tables = {
+        ref.split(".", 1)[0]
+        for ref in metric_refs
+        for col in [_column_by_ref(ctx, ref)]
+        if col is not None and _numeric_column(col) and not _id_like_column(col)
+    }
+    if len(metric_tables) != 1:
+        return list(filters)
+    if re.search(r"\b(?:born|birth|birthday)\b", text, re.I):
+        return list(filters)
+
+    metric_table = next(iter(metric_tables))
+    target = _date_column_for_table(ctx, metric_table)
+    if target is None:
+        return list(filters)
+
+    out: List[Dict[str, Any]] = []
+    changed = False
+    for filt in filters:
+        col = _single_filter_column(filt, ctx)
+        if col is None or col.table == metric_table or not _column_is_temporal(col):
+            out.append(filt)
+            continue
+        rewritten = _retarget_temporal_filter(filt, target)
+        if rewritten is None:
+            out.append(filt)
+            continue
+        out.append(rewritten)
+        changed = True
+    return _dedupe_bool(out) if changed else list(filters)
+
+
+def _retarget_temporal_filter(filt: Dict[str, Any], target: ColumnInfo) -> Optional[Dict[str, Any]]:
+    cmp_node = filt.get("cmp") if isinstance(filt, dict) else None
+    if not isinstance(cmp_node, dict):
+        return None
+    right = cmp_node.get("right")
+    op = str(cmp_node.get("op") or "=").lower()
+    if op == "starts_with":
+        if isinstance(right, str) and _text_date_like(target):
+            return _cmp({"col": target.ref}, "starts_with", right)
+        if isinstance(right, str) and re.fullmatch(r"(?:19|20)\d{2}-\d{2}-\d{2}", right):
+            return _column_cmp(target, "=", right)
+        return None
+    if op in {"=", ">=", "<=", ">", "<", "between"}:
+        return _column_cmp(target, op, right)
     return None
 
 
@@ -4461,19 +5038,16 @@ def _count_ref_for_question(
         if col is None:
             continue
         table_norm = _norm(table)
-        singular = table_norm[:-1] if table_norm.endswith("s") else table_norm
-        plural = table_norm if table_norm.endswith("s") else f"{table_norm}s"
+        table_terms = _table_name_terms(table)
         score = 0
-        if _alias_in_text(plural, q_norm):
-            score += 10
-        elif _alias_in_text(table_norm, q_norm) or _alias_in_text(singular, q_norm):
+        if any(_alias_in_text(term, q_norm) for term in table_terms):
             score += 8
         head = table_norm.split()[0] if table_norm.split() else ""
         if head and len(head) > 3 and _alias_in_text(head, q_norm):
             score += 9
-        explicit_names = {table_norm, singular, plural}
+        explicit_names = set(table_terms)
         if head and len(head) > 3:
-            explicit_names.update({head, f"{head}s"})
+            explicit_names.update(_table_name_terms(head))
         if any(re.search(rf"\b(?:how many|number of)\s+{re.escape(name)}\b", q_norm) for name in explicit_names if name):
             score += 20
         if any(
@@ -4570,8 +5144,15 @@ def _date_column_for_text(ctx: EvidenceContext, text: str) -> Optional[ColumnInf
         score = 0
         if _alias_in_text(_norm(col.name), text_norm):
             score += 4
-        if _alias_in_text(_norm(col.table), text_norm):
+        if any(_alias_in_text(term, text_norm) for term in _table_name_terms(col.table)):
             score += 2
+        score += 3 * sum(
+            1
+            for item in ctx.columns
+            if item.table == col.table
+            and item.ref != col.ref
+            and _column_mentioned_in_text(item, text_norm)
+        )
         if col.name in ctx.primary_dates.values():
             score += 1
         scored.append((score, col))
@@ -4602,7 +5183,7 @@ def _best_numeric_measure_for_text(text: str, ctx: EvidenceContext) -> Optional[
             score += 5
         if _column_mentioned_in_text(col, question_norm):
             score += 6
-        if _alias_in_text(_norm(col.table), text_norm):
+        if any(_alias_in_text(term, text_norm) for term in _table_name_terms(col.table)):
             score += 1
         scored.append((score, col))
     scored.sort(key=lambda item: item[0], reverse=True)
@@ -5140,6 +5721,30 @@ def _expand_sibling_measure_selects(
     expanded = _dedupe_selects(list(selects) + additions)
     expanded.sort(key=lambda item: _norm(_column_by_ref(ctx, item["ref"]).name).split()[-1:] if _column_by_ref(ctx, item["ref"]) else [""])
     return expanded
+
+
+def _add_requested_order_source_selects(
+    selects: Sequence[Dict[str, str]],
+    question: str,
+    order_by: Sequence[Dict[str, Any]],
+    ctx: EvidenceContext,
+) -> List[Dict[str, str]]:
+    if not re.search(r"\b(?:score|rating|value|amount|number|count|total|metric)\b", question, re.I):
+        return list(selects)
+    selected_refs = {item.get("ref") for item in selects}
+    additions: List[Dict[str, str]] = []
+    for ref in _filter_refs(order_by):
+        if ref in selected_refs:
+            continue
+        col = _column_by_ref(ctx, ref)
+        if col is None or not _numeric_column(col):
+            continue
+        if not _column_mentioned_in_text(col, question):
+            continue
+        additions.append({"ref": col.ref, "alias": _alias_for(col.name)})
+    if not additions:
+        return list(selects)
+    return _dedupe_selects(list(additions) + list(selects))
 
 
 def _drop_computed_source_selects(
@@ -5718,7 +6323,7 @@ def _split_top_level_args(text: str) -> List[str]:
                 args.append(text[start:idx].strip())
                 return args
             depth -= 1
-        elif ch == "," and depth == 0:
+        elif ch in {",", ";"} and depth == 0:
             args.append(text[start:idx].strip())
             start = idx + 1
     tail = text[start:].strip()
