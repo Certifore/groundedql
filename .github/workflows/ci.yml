@@ -59,3 +59,35 @@ jobs:
 
       - name: Build source and wheel distributions
         run: python -m build
+
+  wheel-smoke:
+    name: Clean wheel install smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheel
+        run: |
+          pip install build
+          python -m build --wheel --outdir "$GITHUB_WORKSPACE/dist"
+
+      - name: Install wheel into a clean virtual environment
+        run: |
+          python -m venv "$RUNNER_TEMP/clean-venv"
+          WHEEL=$(ls "$GITHUB_WORKSPACE"/dist/*.whl)
+          "$RUNNER_TEMP/clean-venv/bin/pip" install "$WHEEL"
+
+      - name: Smoke test import and CLI from the installed wheel
+        working-directory: ${{ runner.temp }}
+        run: |
+          # Run outside the checkout so the source tree cannot shadow the installed package.
+          VENV="$RUNNER_TEMP/clean-venv/bin"
+          "$VENV/python" -c "import groundedql; print(groundedql.__version__); assert groundedql.__version__ != '0.0.0-dev', 'package metadata not found'"
+          "$VENV/groundedql" --help
