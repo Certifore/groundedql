@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 from sqlalchemy.engine import Engine
 
 from ..compiler import Compiler
+from ..exceptions import DatabaseExecutionError, QueryPlanError, SchemaError
 from ..executor import Executor
-from ..exceptions import QueryPlanError, DatabaseExecutionError, SchemaError
 from ..join_planner import auto_inject_joins
 from ..plan_canonical import canonicalize_query_plan
 from ..schema_validator import validate_schema
@@ -69,7 +69,7 @@ def _resolve_relative_dates(plan: Any) -> Any:
     return plan
 
 
-def load_and_validate_schema(schema_path: str) -> Dict[str, Any]:
+def load_and_validate_schema(schema_path: str) -> dict[str, Any]:
     """
     Load schema.yaml and run load-time validation.
     Prints any non-fatal warnings. Raises SchemaError on fatal issues.
@@ -88,9 +88,9 @@ def load_and_validate_schema(schema_path: str) -> Dict[str, Any]:
 
 
 def validate_query_plan(
-    query_plan: Dict[str, Any],
+    query_plan: dict[str, Any],
     schema_path: str,
-) -> List[str]:
+) -> list[str]:
     """
     Validate a QueryPlan without executing it.
 
@@ -106,7 +106,7 @@ def validate_query_plan(
         if errors:
             print("Plan is invalid:", errors)
     """
-    schema = load_and_validate_schema(schema_path)
+    load_and_validate_schema(schema_path)
 
     # Strip meta before validation
     clean_plan = {k: v for k, v in query_plan.items() if k != "meta"}
@@ -120,10 +120,10 @@ def execute_query_plan(
     *,
     engine: Engine,
     schema_path: str,
-    query_plan: Dict[str, Any],
+    query_plan: dict[str, Any],
     raise_on_error: bool = False,
     statement_timeout_ms: int = 30_000,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Compile and execute a QueryPlan.
 
@@ -181,3 +181,99 @@ def execute_query_plan(
         if raise_on_error:
             raise DatabaseExecutionError(str(e)) from e
         return {"error": {"message": str(e)}}
+
+
+def compile_query_plan(
+    *,
+    schema_path: str,
+    query_plan: dict[str, Any],
+) -> dict[str, Any]:
+    """Compile a QueryPlan into parameterized SQL without executing it."""
+    schema = load_and_validate_schema(schema_path)
+
+    clean_plan = {
+        key: value
+        for key, value in query_plan.items()
+        if key != "meta"
+    }
+
+    resolved_plan = _resolve_relative_dates(clean_plan)
+
+    _, errors = validate_query_plan_dict(
+        resolved_plan, schema_path
+    )
+
+    if errors:
+        details = "; ".join(
+            f"{error.path}: {error.message}"
+            for error in errors
+        )
+        raise QueryPlanError(f"Invalid QueryPlan: {details}")
+
+    resolved_plan = auto_inject_joins(resolved_plan, schema)
+    resolved_plan = canonicalize_query_plan(resolved_plan)
+
+    sql, params = Compiler(schema).compile(resolved_plan)
+
+    return {"sql": sql, "params": params}
+
+
+def plan_query(
+    *,
+    question: str,
+    schema_path: str,
+    llm: Any,
+    spec_path: str | None = None,
+    max_retries: int = 1,
+) -> dict[str, Any]:
+    """Generate a QueryPlan without connecting to a database."""
+    from ..planner import QueryPlanPlanner
+
+    planner = QueryPlanPlanner(
+        llm=llm,
+        schema_path=schema_path,
+        spec_path=spec_path,
+    )
+
+    plan = planner.plan_with_retry(
+        question,
+        max_retries=max_retries,
+    )
+
+    errors = validate_query_plan(plan, schema_path)
+
+    if errors:
+        raise QueryPlanError(
+            "Invalid QueryPlan: " + "; ".join(errors)
+        )
+
+    return plan
+
+
+def plan_and_compile_query(
+    *,
+    question: str,
+    schema_path: str,
+    llm: Any,
+    spec_path: str | None = None,
+    max_retries: int = 1,
+) -> dict[str, Any]:
+    """Plan and compile a question without executing SQL."""
+    plan = plan_query(
+        question=question,
+        schema_path=schema_path,
+        llm=llm,
+        spec_path=spec_path,
+        max_retries=max_retries,
+    )
+
+    compiled = compile_query_plan(
+        schema_path=schema_path,
+        query_plan=plan,
+    )
+
+    return {
+        "query_plan": plan,
+        "sql": compiled["sql"],
+        "params": compiled["params"],
+    }

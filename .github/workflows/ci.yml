@@ -37,6 +37,9 @@ jobs:
       - name: Run generic planner resolution tests
         run: python test/test_generic_planner_resolution.py
 
+      - name: Run public API tests
+        run: python -m unittest discover -s test -p "test_public_api.py" -v
+
   package:
     name: Build package
     runs-on: ubuntu-latest
