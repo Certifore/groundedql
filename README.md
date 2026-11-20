@@ -103,6 +103,89 @@ agent = QueryAgent(
 )
 ```
 
+## Planning and Compilation APIs
+
+GroundedQL supports generating and compiling query plans without
+connecting to a database or executing SQL.
+
+### Generate a QueryPlan
+
+```python
+from openai import OpenAI
+from groundedql import plan_query
+
+plan = plan_query(
+    question="Show customers in Ghana",
+    schema_path="config/schema.yaml",
+    llm=OpenAI(),
+)
+
+print(plan)
+```
+
+`plan_query()` uses GroundedQL's existing QueryPlanPlanner.
+It requires an LLM client but does not require a database engine.
+
+### Compile a QueryPlan without execution
+
+```python
+from groundedql import compile_query_plan
+
+result = compile_query_plan(
+    schema_path="config/schema.yaml",
+    query_plan=plan,
+)
+
+print(result["sql"])
+print(result["params"])
+```
+
+The compiler returns parameterized SQL and its bound parameters.
+It does not execute the query or connect to PostgreSQL.
+
+You can also compile an existing QueryPlan dictionary directly,
+without using an LLM:
+
+```python
+result = compile_query_plan(
+    schema_path="config/schema.yaml",
+    query_plan={
+        "version": "1.0",
+        "dataset": "customers",
+        "dimensions": [{"field": "country"}],
+        "filters": [
+            {"field": "country", "op": "=", "value": "Ghana"}
+        ],
+    },
+)
+```
+
+Invalid query plans raise `QueryPlanError`.
+
+### Plan and compile in one call
+
+Use `plan_and_compile_query()` to generate a QueryPlan and
+parameterized SQL from a natural-language question without
+connecting to a database or executing the SQL.
+
+```python
+from openai import OpenAI
+from groundedql import plan_and_compile_query
+
+result = plan_and_compile_query(
+    question="Show customers in Ghana",
+    schema_path="config/schema.yaml",
+    llm=OpenAI(),
+)
+
+print(result["query_plan"])
+print(result["sql"])
+print(result["params"])
+```
+
+The returned dictionary contains the generated QueryPlan,
+parameterized SQL, and bind parameters.
+
 ## CLI Reference
 
 | Command | Description |
